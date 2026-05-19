@@ -32,7 +32,7 @@ type AuthConfig struct {
 }
 
 type TelemetryConfig struct {
-	ServiceName string `mapstructure:"service_name"`
+	ServiceName  string `mapstructure:"service_name"`
 	OTLPEndpoint string `mapstructure:"otlp_endpoint"`
 }
 
