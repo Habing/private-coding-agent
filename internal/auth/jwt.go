@@ -24,9 +24,17 @@ type JWT struct {
 	cfg JWTConfig
 }
 
-// NewJWT returns a JWT service that signs and verifies tokens with the given
-// HMAC secret and TTL.
-func NewJWT(cfg JWTConfig) *JWT { return &JWT{cfg: cfg} }
+// NewJWT constructs a JWT service from cfg. Panics if cfg fails
+// ValidateJWTConfig — guards against accidental insecure secrets even when
+// callers forget to validate at startup. main.go is expected to call
+// ValidateJWTConfig first and surface a friendly error; this panic is a
+// last-resort defense.
+func NewJWT(cfg JWTConfig) *JWT {
+	if err := ValidateJWTConfig(cfg); err != nil {
+		panic("auth.NewJWT: " + err.Error())
+	}
+	return &JWT{cfg: cfg}
+}
 
 type jwtClaims struct {
 	UserID   string `json:"uid"`

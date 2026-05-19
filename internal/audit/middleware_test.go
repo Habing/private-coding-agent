@@ -79,5 +79,5 @@ func TestAuditMiddleware_SurvivesCanceledRequestCtx(t *testing.T) {
 	// detached ctx 应带有自己的 5s deadline
 	dl, ok := s.lastCtx.Deadline()
 	require.True(t, ok, "ctx should have a deadline")
-	require.WithinDuration(t, time.Now().Add(5*time.Second), dl, 6*time.Second)
+	require.WithinDuration(t, time.Now().Add(5*time.Second), dl, time.Second)
 }

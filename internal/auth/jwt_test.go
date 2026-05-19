@@ -12,8 +12,11 @@ import (
 	"github.com/yourorg/private-coding-agent/internal/auth"
 )
 
+const testSecret = "test-secret-thirty-two-chars-ok!"  // exactly 32 chars
+const testSecret2 = "another-32-char-secret-okk!!!!!!" // exactly 32 chars
+
 func TestIssueAndParse(t *testing.T) {
-	svc := auth.NewJWT(auth.JWTConfig{Secret: "test-secret", TTL: time.Hour})
+	svc := auth.NewJWT(auth.JWTConfig{Secret: testSecret, TTL: time.Hour})
 	uid, tid := uuid.New(), uuid.New()
 	tok, err := svc.Issue(uid, tid, "member")
 	require.NoError(t, err)
@@ -27,16 +30,17 @@ func TestIssueAndParse(t *testing.T) {
 }
 
 func TestParse_Expired(t *testing.T) {
-	svc := auth.NewJWT(auth.JWTConfig{Secret: "test-secret", TTL: -time.Minute})
+	svc := auth.NewJWT(auth.JWTConfig{Secret: testSecret, TTL: time.Millisecond})
 	tok, err := svc.Issue(uuid.New(), uuid.New(), "member")
 	require.NoError(t, err)
+	time.Sleep(10 * time.Millisecond)
 	_, err = svc.Parse(tok)
 	require.Error(t, err)
 }
 
 func TestParse_BadSecret(t *testing.T) {
-	a := auth.NewJWT(auth.JWTConfig{Secret: "k1", TTL: time.Hour})
-	b := auth.NewJWT(auth.JWTConfig{Secret: "k2", TTL: time.Hour})
+	a := auth.NewJWT(auth.JWTConfig{Secret: testSecret, TTL: time.Hour})
+	b := auth.NewJWT(auth.JWTConfig{Secret: testSecret2, TTL: time.Hour})
 	tok, _ := a.Issue(uuid.New(), uuid.New(), "member")
 	_, err := b.Parse(tok)
 	require.Error(t, err)
@@ -50,7 +54,19 @@ func TestParse_RejectsAlgNone(t *testing.T) {
 		`{"uid":"00000000-0000-0000-0000-000000000001","tid":"00000000-0000-0000-0000-000000000002","role":"member","exp":%d}`, now)))
 	tok := header + "." + payload + "."
 
-	svc := auth.NewJWT(auth.JWTConfig{Secret: "s", TTL: time.Hour})
+	svc := auth.NewJWT(auth.JWTConfig{Secret: testSecret, TTL: time.Hour})
 	_, err := svc.Parse(tok)
 	require.Error(t, err)
+}
+
+func TestNewJWT_PanicsOnDefaultSecret(t *testing.T) {
+	require.Panics(t, func() {
+		auth.NewJWT(auth.JWTConfig{Secret: "change-me-in-production", TTL: time.Hour})
+	})
+}
+
+func TestNewJWT_PanicsOnShortSecret(t *testing.T) {
+	require.Panics(t, func() {
+		auth.NewJWT(auth.JWTConfig{Secret: "shortie", TTL: time.Hour})
+	})
 }

@@ -9,6 +9,8 @@ import (
 	"github.com/yourorg/private-coding-agent/internal/auth"
 )
 
+// Sink accepts audit entries produced by Middleware. Implementations must be
+// safe for concurrent use and must respect ctx cancellation for IO operations.
 type Sink interface {
 	Append(ctx context.Context, e Entry) error
 }

@@ -17,7 +17,7 @@ import (
 
 func TestRegisterMe_OK(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	j := auth.NewJWT(auth.JWTConfig{Secret: "s", TTL: time.Hour})
+	j := auth.NewJWT(auth.JWTConfig{Secret: "test-secret-thirty-two-chars-ok!", TTL: time.Hour})
 	uid, tid := uuid.New(), uuid.New()
 	tok, err := j.Issue(uid, tid, "admin")
 	require.NoError(t, err)

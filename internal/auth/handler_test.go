@@ -43,7 +43,7 @@ func TestLoginOK(t *testing.T) {
 	h := auth.NewHandler(auth.HandlerDeps{
 		Tenants: fakeTenants{id: tid},
 		Auth:    fakeAuth{user: &user.User{ID: uid, TenantID: tid, Role: user.RoleMember}},
-		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "s", TTL: time.Hour}),
+		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "test-secret-thirty-two-chars-ok!", TTL: time.Hour}),
 	})
 	r := gin.New()
 	h.Register(r)
@@ -65,7 +65,7 @@ func TestLogin_BadCredentials(t *testing.T) {
 	h := auth.NewHandler(auth.HandlerDeps{
 		Tenants: fakeTenants{id: uuid.New()},
 		Auth:    fakeAuth{err: user.ErrBadCredentials},
-		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "s", TTL: time.Hour}),
+		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "test-secret-thirty-two-chars-ok!", TTL: time.Hour}),
 	})
 	r := gin.New()
 	h.Register(r)
@@ -84,7 +84,7 @@ func TestLogin_InternalError(t *testing.T) {
 	h := auth.NewHandler(auth.HandlerDeps{
 		Tenants: fakeTenants{id: uuid.New()},
 		Auth:    fakeAuth{err: errors.New("boom")},
-		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "s", TTL: time.Hour}),
+		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "test-secret-thirty-two-chars-ok!", TTL: time.Hour}),
 	})
 	r := gin.New()
 	h.Register(r)
@@ -102,7 +102,7 @@ func TestLogin_TenantNotFound(t *testing.T) {
 	h := auth.NewHandler(auth.HandlerDeps{
 		Tenants: fakeTenants{err: tenant.ErrNotFound},
 		Auth:    fakeAuth{},
-		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "s", TTL: time.Hour}),
+		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "test-secret-thirty-two-chars-ok!", TTL: time.Hour}),
 	})
 	r := gin.New()
 	h.Register(r)
@@ -121,7 +121,7 @@ func TestLogin_TenantLookupError(t *testing.T) {
 	h := auth.NewHandler(auth.HandlerDeps{
 		Tenants: fakeTenants{err: errors.New("db connection refused")},
 		Auth:    fakeAuth{},
-		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "s", TTL: time.Hour}),
+		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "test-secret-thirty-two-chars-ok!", TTL: time.Hour}),
 	})
 	r := gin.New()
 	h.Register(r)
@@ -140,7 +140,7 @@ func TestLogin_BindFailure(t *testing.T) {
 	h := auth.NewHandler(auth.HandlerDeps{
 		Tenants: fakeTenants{id: uuid.New()},
 		Auth:    fakeAuth{},
-		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "s", TTL: time.Hour}),
+		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "test-secret-thirty-two-chars-ok!", TTL: time.Hour}),
 	})
 	r := gin.New()
 	h.Register(r)
