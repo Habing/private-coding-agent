@@ -121,7 +121,7 @@ func TestSessionRepo_SetContainerID(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, sandbox.StatusRunning, got.Status)
 
-	cid, err := repo.GetContainerID(ctx, sb.ID)
+	cid, err := repo.GetContainerID(ctx, tid, sb.ID)
 	require.NoError(t, err)
 	require.Equal(t, "abc123", cid)
 }
@@ -176,4 +176,19 @@ func TestSessionRepo_ListActive(t *testing.T) {
 		require.NotEqual(t, sandbox.StatusFailed, s.Status)
 	}
 	require.True(t, foundRunning)
+}
+
+func TestSessionRepo_SetContainerID_RejectsNonPending(t *testing.T) {
+	repo, tid, uid := setupRepoWithUser(t)
+	ctx := context.Background()
+
+	sb := &sandbox.Sandbox{
+		ID: uuid.New(), TenantID: tid, OwnerUserID: uid,
+		Image: "x", Status: sandbox.StatusPending, Network: sandbox.NetworkInternal,
+		Resources: sandbox.ResourceLimits{CPUs: 1, MemoryMB: 512, PIDsLimit: 256},
+	}
+	require.NoError(t, repo.Insert(ctx, sb))
+	require.NoError(t, repo.SetContainerID(ctx, sb.ID, "first-cid"))
+	// 第二次应失败 (status 已经是 running)
+	require.Error(t, repo.SetContainerID(ctx, sb.ID, "second-cid"))
 }

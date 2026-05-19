@@ -21,8 +21,9 @@ func NewSessionRepo(pool *pgxpool.Pool) *SessionRepo {
 	return &SessionRepo{pool: pool}
 }
 
-// Insert creates a new sandbox row in status=pending. Returns the inserted
-// Sandbox with CreatedAt/UpdatedAt populated.
+// Insert creates a new sandbox row in status=pending. The Sandbox argument
+// supplies the immutable fields; CreatedAt/UpdatedAt are stamped by the DB
+// and NOT written back to the struct.
 func (r *SessionRepo) Insert(ctx context.Context, sb *Sandbox) error {
 	labels, _ := json.Marshal(map[string]string{})
 	_, err := r.pool.Exec(ctx, `
@@ -41,13 +42,18 @@ VALUES ($1,$2,$3,$4,NULL,$5,$6,$7,$8,$9,$10,$11)`,
 }
 
 // SetContainerID transitions a pending sandbox to running with its container_id.
+// Returns an error if the sandbox is not in 'pending' status (i.e., the caller
+// must not call this twice or against a destroyed sandbox).
 func (r *SessionRepo) SetContainerID(ctx context.Context, id uuid.UUID, containerID string) error {
-	_, err := r.pool.Exec(ctx, `
+	tag, err := r.pool.Exec(ctx, `
 UPDATE sandbox_sessions
 SET container_id=$2, status='running', updated_at=now()
-WHERE id=$1`, id, containerID)
+WHERE id=$1 AND status='pending'`, id, containerID)
 	if err != nil {
 		return fmt.Errorf("update container_id: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return fmt.Errorf("set container_id: sandbox %s not in pending status", id)
 	}
 	return nil
 }
@@ -105,10 +111,12 @@ WHERE id=$1 AND tenant_id=$2`, id, tenantID)
 }
 
 // GetContainerID returns the container_id (may be empty for pending) for
-// internal use that doesn't need full Sandbox load.
-func (r *SessionRepo) GetContainerID(ctx context.Context, id uuid.UUID) (string, error) {
+// internal use that doesn't need full Sandbox load. Scoped to tenantID.
+func (r *SessionRepo) GetContainerID(ctx context.Context, tenantID, id uuid.UUID) (string, error) {
 	var cid *string
-	err := r.pool.QueryRow(ctx, `SELECT container_id FROM sandbox_sessions WHERE id=$1`, id).Scan(&cid)
+	err := r.pool.QueryRow(ctx,
+		`SELECT container_id FROM sandbox_sessions WHERE id=$1 AND tenant_id=$2`,
+		id, tenantID).Scan(&cid)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", ErrSandboxNotFound
