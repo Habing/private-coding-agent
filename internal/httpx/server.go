@@ -5,14 +5,20 @@ import "github.com/gin-gonic/gin"
 
 // Deps holds the dependencies needed to build the HTTP engine.
 type Deps struct {
-	Ready func() bool
+	Ready    func() bool
+	Register func(r *gin.Engine)
 }
 
 // NewEngine constructs a Gin engine wired with recovery and health routes.
+// If Deps.Register is non-nil, it is invoked after health routes so callers
+// can mount additional module routes on the engine.
 func NewEngine(d Deps) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
 	registerHealth(r, d)
+	if d.Register != nil {
+		d.Register(r)
+	}
 	return r
 }
