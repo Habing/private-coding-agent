@@ -6,3 +6,7 @@
 .idea/
 .vscode/
 deploy/compose
+*.exe
+*.test
+coverage.txt
+*.out

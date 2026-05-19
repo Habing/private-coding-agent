@@ -60,7 +60,7 @@ func (s *JWT) Parse(token string) (*Claims, error) {
 			return nil, fmt.Errorf("unexpected method: %v", t.Header["alg"])
 		}
 		return []byte(s.cfg.Secret), nil
-	})
+	}, jwt.WithValidMethods([]string{"HS256"}))
 	if err != nil {
 		return nil, err
 	}
