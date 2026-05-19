@@ -69,10 +69,14 @@ func run() error {
 
 	tenantLookup := tenant.NewLookup(tenant.NewRepo(pool))
 	userSvc := user.NewService(user.NewRepo(pool))
-	jwtSvc := auth.NewJWT(auth.JWTConfig{
+	jwtCfg := auth.JWTConfig{
 		Secret: cfg.Auth.JWTSecret,
 		TTL:    cfg.Auth.JWTTTL,
-	})
+	}
+	if err := auth.ValidateJWTConfig(jwtCfg); err != nil {
+		return fmt.Errorf("auth config: %w", err)
+	}
+	jwtSvc := auth.NewJWT(jwtCfg)
 	auditRepo := audit.NewRepo(pool)
 
 	var ready atomic.Bool
