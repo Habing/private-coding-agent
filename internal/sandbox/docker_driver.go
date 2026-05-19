@@ -273,3 +273,13 @@ func (d *DockerDriver) Destroy(ctx context.Context, tenantID, id uuid.UUID) erro
 
 	return d.repo.UpdateStatus(ctx, sb.ID, StatusDestroyed)
 }
+
+// Snapshot is reserved for future MinIO-backed workspace persistence.
+// Returns ErrNotImplemented in Slice 2.
+func (d *DockerDriver) Snapshot(ctx context.Context, tenantID, id uuid.UUID) (string, error) {
+	// 仍然校验沙箱存在,防泄露
+	if _, err := d.repo.Get(ctx, tenantID, id); err != nil {
+		return "", err
+	}
+	return "", ErrNotImplemented
+}

@@ -290,3 +290,14 @@ func TestDockerDriver_ReadFile_TooLarge(t *testing.T) {
 	_, err = d.ReadFile(ctx, tid, sb.ID, "big.bin")
 	require.ErrorIs(t, err, sandbox.ErrTooLarge)
 }
+
+func TestDockerDriver_Snapshot_NotImplemented(t *testing.T) {
+	ctx := context.Background()
+	d, tid, uid := newDockerDriverForTest(t)
+	sb, err := d.Create(ctx, sandbox.CreateOpts{TenantID: tid, OwnerUserID: uid})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = d.Destroy(ctx, tid, sb.ID) })
+
+	_, err = d.Snapshot(ctx, tid, sb.ID)
+	require.ErrorIs(t, err, sandbox.ErrNotImplemented)
+}
