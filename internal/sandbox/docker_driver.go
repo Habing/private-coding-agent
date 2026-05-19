@@ -104,8 +104,11 @@ func (d *DockerDriver) Create(ctx context.Context, opts CreateOpts) (*Sandbox, e
 	}
 
 	if err := d.repo.SetContainerID(ctx, sb.ID, cid); err != nil {
-		_ = d.cli.ContainerRemove(ctx, cid, container.RemoveOptions{Force: true, RemoveVolumes: true})
-		return nil, err
+		// Use detached ctx for cleanup: parent ctx may be canceled by the
+		// time we get here, which would silently skip the ContainerRemove
+		// and leak a running container.
+		_ = d.cli.ContainerRemove(context.Background(), cid, container.RemoveOptions{Force: true, RemoveVolumes: true})
+		return nil, fmt.Errorf("set container id: %w", err)
 	}
 	sb.Status = StatusRunning
 	return sb, nil
