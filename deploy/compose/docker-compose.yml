@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  server:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PCA_DB_DSN: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
+      PCA_SERVER_PORT: 8080
+      PCA_SERVER_MODE: release
+      PCA_AUTH_JWT_SECRET: ${PCA_AUTH_JWT_SECRET}
+      PCA_AUTH_JWT_TTL: 24h
+      PCA_TELEMETRY_SERVICE_NAME: private-coding-agent
+      PCA_TELEMETRY_OTLP_ENDPOINT: ${PCA_TELEMETRY_OTLP_ENDPOINT}
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:
