@@ -1,0 +1,359 @@
+package sandbox
+
+import (
+	"encoding/base64"
+	"errors"
+	"net/http"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+
+	"github.com/yourorg/private-coding-agent/internal/auth"
+)
+
+// Handler exposes the sandbox Runtime as HTTP endpoints.
+type Handler struct {
+	rt Runtime
+}
+
+func NewHandler(rt Runtime) *Handler { return &Handler{rt: rt} }
+
+// Register mounts /sandbox/* routes on rg. rg should already have
+// auth.Middleware applied (handler relies on auth.FromCtx for claims).
+func (h *Handler) Register(rg *gin.RouterGroup) {
+	g := rg.Group("/sandbox/sessions")
+	g.POST("", h.create)
+	g.GET("/:id", h.get)
+	g.DELETE("/:id", h.destroy)
+	g.POST("/:id/exec", h.exec)
+	g.GET("/:id/files", h.readFile)
+	g.PUT("/:id/files", h.writeFile)
+	g.POST("/:id/snapshot", h.snapshot)
+}
+
+func (h *Handler) claims(c *gin.Context) (*auth.Claims, bool) {
+	cl := auth.FromCtx(c.Request.Context())
+	if cl == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return nil, false
+	}
+	return cl, true
+}
+
+func (h *Handler) parseID(c *gin.Context) (uuid.UUID, bool) {
+	idStr := c.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "validation: id"})
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
+type createReq struct {
+	Image     string             `json:"image,omitempty"`
+	ProjectID *string            `json:"project_id,omitempty"`
+	Resources *resourceLimitsDTO `json:"resources,omitempty"`
+	Network   string             `json:"network,omitempty"`
+	Env       map[string]string  `json:"env,omitempty"`
+	Labels    map[string]string  `json:"labels,omitempty"`
+}
+
+type resourceLimitsDTO struct {
+	CPUs      float64 `json:"cpus,omitempty"`
+	MemoryMB  int64   `json:"memory_mb,omitempty"`
+	PIDsLimit int64   `json:"pids_limit,omitempty"`
+}
+
+type sandboxDTO struct {
+	ID          uuid.UUID  `json:"id"`
+	TenantID    uuid.UUID  `json:"tenant_id"`
+	OwnerUserID uuid.UUID  `json:"owner_user_id"`
+	ProjectID   *uuid.UUID `json:"project_id,omitempty"`
+	Status      string     `json:"status"`
+	Image       string     `json:"image"`
+	NetworkMode string     `json:"network_mode"`
+	CPUs        float64    `json:"cpus"`
+	MemoryMB    int64      `json:"memory_mb"`
+	PIDsLimit   int64      `json:"pids_limit"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	DestroyedAt *time.Time `json:"destroyed_at,omitempty"`
+}
+
+func toDTO(sb *Sandbox) sandboxDTO {
+	return sandboxDTO{
+		ID:          sb.ID,
+		TenantID:    sb.TenantID,
+		OwnerUserID: sb.OwnerUserID,
+		ProjectID:   sb.ProjectID,
+		Status:      string(sb.Status),
+		Image:       sb.Image,
+		NetworkMode: string(sb.Network),
+		CPUs:        sb.Resources.CPUs,
+		MemoryMB:    sb.Resources.MemoryMB,
+		PIDsLimit:   sb.Resources.PIDsLimit,
+		CreatedAt:   sb.CreatedAt,
+		UpdatedAt:   sb.UpdatedAt,
+		DestroyedAt: sb.DestroyedAt,
+	}
+}
+
+func (h *Handler) create(c *gin.Context) {
+	cl, ok := h.claims(c)
+	if !ok {
+		return
+	}
+	var req createReq
+	_ = c.ShouldBindJSON(&req) // 全字段 optional,body 可为空
+
+	opts := CreateOpts{
+		TenantID:    cl.TenantID,
+		OwnerUserID: cl.UserID,
+		Image:       req.Image,
+		Network:     NetworkMode(req.Network),
+		Env:         req.Env,
+		Labels:      req.Labels,
+	}
+	if req.Resources != nil {
+		opts.Resources = ResourceLimits{
+			CPUs:      req.Resources.CPUs,
+			MemoryMB:  req.Resources.MemoryMB,
+			PIDsLimit: req.Resources.PIDsLimit,
+		}
+	}
+	if req.ProjectID != nil {
+		pid, err := uuid.Parse(*req.ProjectID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "validation: project_id"})
+			return
+		}
+		opts.ProjectID = &pid
+	}
+
+	sb, err := h.rt.Create(c.Request.Context(), opts)
+	if err != nil {
+		if isValidationError(err) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "runtime_error"})
+		return
+	}
+	c.JSON(http.StatusCreated, toDTO(sb))
+}
+
+func (h *Handler) get(c *gin.Context) {
+	cl, ok := h.claims(c)
+	if !ok {
+		return
+	}
+	id, ok := h.parseID(c)
+	if !ok {
+		return
+	}
+	sb, err := h.rt.Get(c.Request.Context(), cl.TenantID, id)
+	if err != nil {
+		if errors.Is(err, ErrSandboxNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "runtime_error"})
+		return
+	}
+	c.JSON(http.StatusOK, toDTO(sb))
+}
+
+func (h *Handler) destroy(c *gin.Context) {
+	cl, ok := h.claims(c)
+	if !ok {
+		return
+	}
+	id, ok := h.parseID(c)
+	if !ok {
+		return
+	}
+	err := h.rt.Destroy(c.Request.Context(), cl.TenantID, id)
+	if err != nil {
+		if errors.Is(err, ErrSandboxNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "runtime_error"})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+type execReq struct {
+	Cmd         []string          `json:"cmd"`
+	WorkingDir  string            `json:"working_dir,omitempty"`
+	Env         map[string]string `json:"env,omitempty"`
+	StdinBase64 string            `json:"stdin_base64,omitempty"`
+	TimeoutSec  int               `json:"timeout_sec,omitempty"`
+}
+
+type execResp struct {
+	ExitCode     int    `json:"exit_code"`
+	StdoutBase64 string `json:"stdout_base64"`
+	StderrBase64 string `json:"stderr_base64"`
+	Truncated    bool   `json:"truncated"`
+	DurationMS   int64  `json:"duration_ms"`
+	TimedOut     bool   `json:"timed_out"`
+}
+
+func (h *Handler) exec(c *gin.Context) {
+	cl, ok := h.claims(c)
+	if !ok {
+		return
+	}
+	id, ok := h.parseID(c)
+	if !ok {
+		return
+	}
+	var req execReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad_request"})
+		return
+	}
+
+	opts := ExecOpts{
+		Cmd:        req.Cmd,
+		WorkingDir: req.WorkingDir,
+		Env:        req.Env,
+		TimeoutSec: req.TimeoutSec,
+	}
+	if req.StdinBase64 != "" {
+		b, err := base64.StdEncoding.DecodeString(req.StdinBase64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "validation: stdin_base64"})
+			return
+		}
+		opts.Stdin = b
+	}
+
+	res, err := h.rt.Exec(c.Request.Context(), cl.TenantID, id, opts)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrSandboxNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+		case errors.Is(err, ErrSandboxNotReady):
+			c.JSON(http.StatusConflict, gin.H{"error": "not_ready"})
+		case isValidationError(err):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "runtime_error"})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, execResp{
+		ExitCode:     res.ExitCode,
+		StdoutBase64: base64.StdEncoding.EncodeToString(res.Stdout),
+		StderrBase64: base64.StdEncoding.EncodeToString(res.Stderr),
+		Truncated:    res.Truncated,
+		DurationMS:   res.DurationMS,
+		TimedOut:     res.TimedOut,
+	})
+}
+
+type writeFileReq struct {
+	ContentBase64 string `json:"content_base64"`
+}
+
+func (h *Handler) writeFile(c *gin.Context) {
+	cl, ok := h.claims(c)
+	if !ok {
+		return
+	}
+	id, ok := h.parseID(c)
+	if !ok {
+		return
+	}
+	rel := c.Query("path")
+	if rel == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "validation: path"})
+		return
+	}
+	var req writeFileReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad_request"})
+		return
+	}
+	data, err := base64.StdEncoding.DecodeString(req.ContentBase64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "validation: content_base64"})
+		return
+	}
+	if err := h.rt.WriteFile(c.Request.Context(), cl.TenantID, id, rel, data); err != nil {
+		fileErrToHTTP(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) readFile(c *gin.Context) {
+	cl, ok := h.claims(c)
+	if !ok {
+		return
+	}
+	id, ok := h.parseID(c)
+	if !ok {
+		return
+	}
+	rel := c.Query("path")
+	if rel == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "validation: path"})
+		return
+	}
+	data, err := h.rt.ReadFile(c.Request.Context(), cl.TenantID, id, rel)
+	if err != nil {
+		fileErrToHTTP(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"content_base64": base64.StdEncoding.EncodeToString(data),
+		"size":           len(data),
+	})
+}
+
+func (h *Handler) snapshot(c *gin.Context) {
+	cl, ok := h.claims(c)
+	if !ok {
+		return
+	}
+	id, ok := h.parseID(c)
+	if !ok {
+		return
+	}
+	_, err := h.rt.Snapshot(c.Request.Context(), cl.TenantID, id)
+	if errors.Is(err, ErrSandboxNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+		return
+	}
+	c.JSON(http.StatusNotImplemented, gin.H{"error": "not_implemented"})
+}
+
+func fileErrToHTTP(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, ErrSandboxNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+	case errors.Is(err, ErrSandboxNotReady):
+		c.JSON(http.StatusConflict, gin.H{"error": "not_ready"})
+	case errors.Is(err, ErrPathOutsideWorkspace):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path_outside_workspace"})
+	case errors.Is(err, ErrTooLarge):
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "payload_too_large"})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "runtime_error"})
+	}
+}
+
+func isValidationError(err error) bool {
+	// validate.go 用 fmt.Errorf("validation: ...") 包装
+	if err == nil {
+		return false
+	}
+	const prefix = "validation:"
+	return len(err.Error()) >= len(prefix) && err.Error()[:len(prefix)] == prefix
+}
