@@ -1,13 +1,16 @@
+// Command server runs the private-coding-agent HTTP service.
 package main
 
 import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -25,12 +28,18 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatalf("server: %v", err)
+	}
+}
+
+func run() error {
 	cfgPath := flag.String("config", "config/config.yaml", "path to config yaml")
 	flag.Parse()
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
-		log.Fatalf("config: %v", err)
+		return fmt.Errorf("config: %w", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -41,7 +50,7 @@ func main() {
 		OTLPEndpoint: cfg.Telemetry.OTLPEndpoint,
 	})
 	if err != nil {
-		log.Fatalf("otel: %v", err)
+		return fmt.Errorf("otel: %w", err)
 	}
 	defer func() {
 		sctx, c := context.WithTimeout(context.Background(), 5*time.Second)
@@ -50,16 +59,15 @@ func main() {
 	}()
 
 	if err := db.Migrate(cfg.DB.DSN); err != nil {
-		log.Fatalf("migrate: %v", err)
+		return fmt.Errorf("migrate: %w", err)
 	}
 	pool, err := db.Connect(ctx, cfg.DB.DSN)
 	if err != nil {
-		log.Fatalf("db connect: %v", err)
+		return fmt.Errorf("db connect: %w", err)
 	}
 	defer pool.Close()
 
-	tenantRepo := tenant.NewRepo(pool)
-	tenantLookup := tenant.NewLookup(tenantRepo)
+	tenantLookup := tenant.NewLookup(tenant.NewRepo(pool))
 	userSvc := user.NewService(user.NewRepo(pool))
 	jwtSvc := auth.NewJWT(auth.JWTConfig{
 		Secret: cfg.Auth.JWTSecret,
@@ -77,7 +85,6 @@ func main() {
 	})
 
 	register := func(r *gin.Engine) {
-		// audit on all routes
 		r.Use(audit.Middleware(auditRepo, func(err error) {
 			log.Printf("audit append: %v", err)
 		}))
@@ -95,7 +102,7 @@ func main() {
 	})
 
 	srv := &http.Server{
-		Addr:              ":" + itoa(cfg.Server.Port),
+		Addr:              ":" + strconv.Itoa(cfg.Server.Port),
 		Handler:           engine,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -103,37 +110,27 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
+	errCh := make(chan error, 1)
 	go func() {
 		log.Printf("server listening on :%d", cfg.Server.Port)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("listen: %v", err)
+			errCh <- err
 		}
 	}()
 
-	<-stop
-	log.Println("shutting down...")
+	select {
+	case <-stop:
+		log.Println("shutting down...")
+	case err := <-errCh:
+		return fmt.Errorf("listen: %w", err)
+	}
+
 	ready.Store(false)
 
 	sctx, cncl := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cncl()
-	_ = srv.Shutdown(sctx)
-}
-
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
+	if err := srv.Shutdown(sctx); err != nil {
+		return fmt.Errorf("shutdown: %w", err)
 	}
-	sign := ""
-	if i < 0 {
-		sign = "-"
-		i = -i
-	}
-	var b [20]byte
-	n := len(b)
-	for i > 0 {
-		n--
-		b[n] = byte('0' + i%10)
-		i /= 10
-	}
-	return sign + string(b[n:])
+	return nil
 }
