@@ -46,7 +46,7 @@ func TestMain(m *testing.M) {
 
 	pool.MaxWait = 60 * time.Second
 	if err := pool.Retry(func() error {
-		return db.Migrate(testDSN)
+		return db.Migrate(context.Background(), testDSN)
 	}); err != nil {
 		log.Fatalf("migrate: %v", err)
 	}

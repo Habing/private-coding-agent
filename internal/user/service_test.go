@@ -39,7 +39,7 @@ func TestMain(m *testing.M) {
 	testDSN = fmt.Sprintf("postgres://app:app@localhost:%s/app?sslmode=disable",
 		res.GetPort("5432/tcp"))
 	pool.MaxWait = 60 * time.Second
-	if err := pool.Retry(func() error { return db.Migrate(testDSN) }); err != nil {
+	if err := pool.Retry(func() error { return db.Migrate(context.Background(), testDSN) }); err != nil {
 		log.Fatalf("migrate: %v", err)
 	}
 

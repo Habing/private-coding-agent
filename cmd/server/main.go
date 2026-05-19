@@ -58,7 +58,7 @@ func run() error {
 		_ = shutdownTel(sctx)
 	}()
 
-	if err := db.Migrate(cfg.DB.DSN); err != nil {
+	if err := db.Migrate(ctx, cfg.DB.DSN); err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
 	pool, err := db.Connect(ctx, cfg.DB.DSN)
