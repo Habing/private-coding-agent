@@ -3,7 +3,9 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	"strings"
 
+	"github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
@@ -46,7 +48,7 @@ func (d *DockerDriver) ensureInternalNetwork(ctx context.Context) error {
 	f.Add("name", d.cfg.InternalNetworkName)
 	nets, err := d.cli.NetworkList(ctx, network.ListOptions{Filters: f})
 	if err != nil {
-		return err
+		return fmt.Errorf("list networks: %w", err)
 	}
 	for _, n := range nets {
 		if n.Name == d.cfg.InternalNetworkName {
@@ -58,5 +60,14 @@ func (d *DockerDriver) ensureInternalNetwork(ctx context.Context) error {
 		Internal:   true,
 		Attachable: false,
 	})
-	return err
+	if err != nil {
+		// TOCTOU defense: between List and Create, another process / replica
+		// may have created the same network. Docker returns "already exists"
+		// in that case; treat it as success.
+		if errdefs.IsConflict(err) || strings.Contains(err.Error(), "already exists") {
+			return nil
+		}
+		return fmt.Errorf("create network %q: %w", d.cfg.InternalNetworkName, err)
+	}
+	return nil
 }
