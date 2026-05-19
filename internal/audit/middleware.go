@@ -9,13 +9,20 @@ import (
 	"github.com/yourorg/private-coding-agent/internal/auth"
 )
 
-// Sink accepts audit entries produced by Middleware.
 type Sink interface {
 	Append(ctx context.Context, e Entry) error
 }
 
+// auditWriteTimeout caps how long the audit append call may take. Independent
+// of any per-request deadline so that audit records survive client disconnects.
+const auditWriteTimeout = 5 * time.Second
+
 // Middleware writes an audit entry per request. Failure to write is logged via
 // the optional onErr callback but does not block the request.
+//
+// The audit append uses a context derived from context.Background() with a
+// 5s timeout (auditWriteTimeout) rather than the request context, so that
+// records are written even if the client disconnects mid-response.
 func Middleware(s Sink, onErr func(error)) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
@@ -34,7 +41,10 @@ func Middleware(s Sink, onErr func(error)) gin.HandlerFunc {
 			t, u := cl.TenantID, cl.UserID
 			e.TenantID, e.UserID = &t, &u
 		}
-		if err := s.Append(c.Request.Context(), e); err != nil && onErr != nil {
+
+		appendCtx, cancel := context.WithTimeout(context.Background(), auditWriteTimeout)
+		defer cancel()
+		if err := s.Append(appendCtx, e); err != nil && onErr != nil {
 			onErr(err)
 		}
 	}
