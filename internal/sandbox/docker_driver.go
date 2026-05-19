@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -191,25 +192,51 @@ func (d *DockerDriver) Get(ctx context.Context, tenantID, id uuid.UUID) (*Sandbo
 	return d.repo.Get(ctx, tenantID, id)
 }
 
-const destroyLockTTL = 30 * time.Second
+const (
+	destroyLockTTL         = 30 * time.Second
+	destroyStopGracePeriod = 5 // seconds
+)
+
+// destroyLockReleaseScript 使用 Lua 原子地"按值比较再删除"。
+// 防止 A 持锁 → 锁超时 → B 拿到锁 → A 苏醒误删 B 的锁。
+const destroyLockReleaseScript = `
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+    return redis.call("DEL", KEYS[1])
+end
+return 0`
 
 // Destroy stops and removes the sandbox. Idempotent.
 func (d *DockerDriver) Destroy(ctx context.Context, tenantID, id uuid.UUID) error {
 	lockKey := "pca:sandbox:destroy:" + id.String()
+	lockVal := uuid.NewString()
 
-	ok, err := d.redis.SetNX(ctx, lockKey, "1", destroyLockTTL).Result()
+	ok, err := d.redis.SetNX(ctx, lockKey, lockVal, destroyLockTTL).Result()
 	if err != nil {
 		return fmt.Errorf("acquire destroy lock: %w", err)
 	}
 	if !ok {
-		// 锁被他人持有,等待最多 destroyLockTTL 后重试一次
-		time.Sleep(2 * time.Second)
-		ok, _ = d.redis.SetNX(ctx, lockKey, "1", destroyLockTTL).Result()
+		// 锁被他人持有,等待最多 2 秒后重试一次,期间响应 ctx 取消
+		select {
+		case <-time.After(2 * time.Second):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		ok, err = d.redis.SetNX(ctx, lockKey, lockVal, destroyLockTTL).Result()
+		if err != nil {
+			return fmt.Errorf("retry destroy lock: %w", err)
+		}
 		if !ok {
 			return fmt.Errorf("destroy already in progress")
 		}
 	}
-	defer func() { _ = d.redis.Del(context.Background(), lockKey).Err() }()
+	// 释放锁: 用 Lua 脚本按 value 匹配再 Del,防止误删他人锁
+	defer func() {
+		_, err := d.redis.Eval(context.Background(), destroyLockReleaseScript,
+			[]string{lockKey}, lockVal).Result()
+		if err != nil && err != redis.Nil {
+			log.Printf("sandbox destroy: release lock %s: %v", lockKey, err)
+		}
+	}()
 
 	sb, err := d.repo.Get(ctx, tenantID, id)
 	if err != nil {
@@ -219,18 +246,29 @@ func (d *DockerDriver) Destroy(ctx context.Context, tenantID, id uuid.UUID) erro
 		return err
 	}
 	if sb.Status == StatusDestroyed {
-		return nil // 幂等
+		return nil
 	}
 
 	if err := d.repo.UpdateStatus(ctx, sb.ID, StatusDestroying); err != nil {
 		return err
 	}
 
-	cid, _ := d.repo.GetContainerID(ctx, sb.TenantID, sb.ID)
+	cid, err := d.repo.GetContainerID(ctx, sb.TenantID, sb.ID)
+	if err != nil {
+		log.Printf("sandbox destroy: get container_id for %s: %v", sb.ID, err)
+	}
 	if cid != "" {
-		stopTimeout := 5
-		_ = d.cli.ContainerStop(ctx, cid, container.StopOptions{Timeout: &stopTimeout})
-		_ = d.cli.ContainerRemove(ctx, cid, container.RemoveOptions{Force: true, RemoveVolumes: true})
+		// 容器层清理用 detached ctx + 短超时:即使调用方取消 ctx,
+		// 我们也要把容器停掉,避免悬挂运行容器。
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		stopTimeout := destroyStopGracePeriod
+		if err := d.cli.ContainerStop(cleanupCtx, cid, container.StopOptions{Timeout: &stopTimeout}); err != nil {
+			log.Printf("sandbox destroy: ContainerStop %s: %v", cid, err)
+		}
+		if err := d.cli.ContainerRemove(cleanupCtx, cid, container.RemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
+			log.Printf("sandbox destroy: ContainerRemove %s: %v", cid, err)
+		}
 	}
 
 	return d.repo.UpdateStatus(ctx, sb.ID, StatusDestroyed)
