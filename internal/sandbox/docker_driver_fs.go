@@ -121,7 +121,7 @@ func (d *DockerDriver) ReadFile(ctx context.Context, tenantID, id uuid.UUID, rel
 	}
 
 	execCfg := container.ExecOptions{
-		Cmd:          []string{"tar", "-c", "-C", workspaceRoot, rel},
+		Cmd:          []string{"tar", "-c", "-C", workspaceRoot, "--", rel},
 		AttachStdout: true,
 		AttachStderr: true,
 	}
