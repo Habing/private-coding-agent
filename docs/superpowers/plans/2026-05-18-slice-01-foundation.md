@@ -7,7 +7,7 @@
 **Architecture:** 模块化单体 Go 服务。`/cmd/server` 是入口；`/internal/*` 按子域划分；接口与实现隔离，便于后续切片插入（Sandbox、ModelGW、ToolBus、Memory…）。多租户从 schema 层就带 `tenant_id`，但 P0 默认部署单租户（一个 default tenant）。
 
 **Tech Stack:**
-- Go 1.22+
+- Go 1.26+
 - Gin (HTTP)
 - pgx v5（PG 驱动）
 - golang-migrate（迁移工具，作为库）
@@ -2201,7 +2201,7 @@ deploy/compose
 
 `Dockerfile`:
 ```dockerfile
-FROM golang:1.22-alpine AS build
+FROM golang:1.26-alpine AS build
 WORKDIR /src
 RUN apk add --no-cache git ca-certificates
 COPY go.mod go.sum ./
