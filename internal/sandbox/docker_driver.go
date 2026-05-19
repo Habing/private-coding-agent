@@ -4,11 +4,15 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/containerd/errdefs"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/strslice"
 	"github.com/docker/docker/client"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -70,4 +74,110 @@ func (d *DockerDriver) ensureInternalNetwork(ctx context.Context) error {
 		return fmt.Errorf("create network %q: %w", d.cfg.InternalNetworkName, err)
 	}
 	return nil
+}
+
+// Create starts a new container per opts and persists metadata.
+func (d *DockerDriver) Create(ctx context.Context, opts CreateOpts) (*Sandbox, error) {
+	opts, err := NormalizeCreateOpts(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	sb := &Sandbox{
+		ID:          uuid.New(),
+		TenantID:    opts.TenantID,
+		OwnerUserID: opts.OwnerUserID,
+		ProjectID:   opts.ProjectID,
+		Image:       opts.Image,
+		Status:      StatusPending,
+		Network:     opts.Network,
+		Resources:   opts.Resources,
+	}
+	if err := d.repo.Insert(ctx, sb); err != nil {
+		return nil, err
+	}
+
+	cid, err := d.createAndStartContainer(ctx, sb, opts)
+	if err != nil {
+		_ = d.repo.UpdateStatus(ctx, sb.ID, StatusFailed)
+		return nil, fmt.Errorf("create container: %w", err)
+	}
+
+	if err := d.repo.SetContainerID(ctx, sb.ID, cid); err != nil {
+		_ = d.cli.ContainerRemove(ctx, cid, container.RemoveOptions{Force: true, RemoveVolumes: true})
+		return nil, err
+	}
+	sb.Status = StatusRunning
+	return sb, nil
+}
+
+func (d *DockerDriver) createAndStartContainer(ctx context.Context, sb *Sandbox, opts CreateOpts) (string, error) {
+	pidsLimit := opts.Resources.PIDsLimit
+	cfg := &container.Config{
+		Image:      opts.Image,
+		Cmd:        []string{"sleep", "infinity"},
+		WorkingDir: workspaceRoot,
+		Labels: map[string]string{
+			"pca.tenant_id":     opts.TenantID.String(),
+			"pca.sandbox_id":    sb.ID.String(),
+			"pca.owner_user_id": opts.OwnerUserID.String(),
+		},
+		Env: envToSlice(opts.Env),
+	}
+	hostCfg := &container.HostConfig{
+		ReadonlyRootfs: true,
+		Tmpfs: map[string]string{
+			workspaceRoot: "size=1g,uid=10001,gid=10001",
+			"/tmp":        "size=1g",
+		},
+		CapDrop:     strslice.StrSlice{"ALL"},
+		CapAdd:      strslice.StrSlice{"CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID", "FOWNER"},
+		SecurityOpt: []string{"no-new-privileges:true"},
+		Resources: container.Resources{
+			NanoCPUs:  int64(opts.Resources.CPUs * 1e9),
+			Memory:    opts.Resources.MemoryMB * 1024 * 1024,
+			PidsLimit: &pidsLimit,
+		},
+	}
+	hostCfg.NetworkMode = networkModeFor(opts.Network, d.cfg.InternalNetworkName)
+
+	createCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	resp, err := d.cli.ContainerCreate(createCtx, cfg, hostCfg, nil, nil, "")
+	if err != nil {
+		return "", err
+	}
+	if err := d.cli.ContainerStart(createCtx, resp.ID, container.StartOptions{}); err != nil {
+		_ = d.cli.ContainerRemove(context.Background(), resp.ID,
+			container.RemoveOptions{Force: true, RemoveVolumes: true})
+		return "", err
+	}
+	return resp.ID, nil
+}
+
+func envToSlice(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k, v := range m {
+		out = append(out, k+"="+v)
+	}
+	return out
+}
+
+func networkModeFor(mode NetworkMode, internalName string) container.NetworkMode {
+	switch mode {
+	case NetworkInternal:
+		return container.NetworkMode(internalName)
+	case NetworkBridge:
+		return container.NetworkMode("bridge")
+	case NetworkNone:
+		return container.NetworkMode("none")
+	}
+	return container.NetworkMode("none")
+}
+
+// GetContainerIDForTest exposes container_id for integration tests. Not in the
+// public Runtime interface.
+func (d *DockerDriver) GetContainerIDForTest(ctx context.Context, tenantID, id uuid.UUID) (string, error) {
+	return d.repo.GetContainerID(ctx, tenantID, id)
 }
