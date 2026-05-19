@@ -132,3 +132,107 @@ func TestDockerDriver_Destroy_NotFound(t *testing.T) {
 	err := d.Destroy(ctx, uuid.New(), uuid.New())
 	require.ErrorIs(t, err, sandbox.ErrSandboxNotFound)
 }
+
+func TestDockerDriver_Exec_Hello(t *testing.T) {
+	ctx := context.Background()
+	d, tid, uid := newDockerDriverForTest(t)
+
+	sb, err := d.Create(ctx, sandbox.CreateOpts{TenantID: tid, OwnerUserID: uid})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = d.Destroy(ctx, tid, sb.ID) })
+
+	res, err := d.Exec(ctx, tid, sb.ID, sandbox.ExecOpts{
+		Cmd:        []string{"echo", "hello"},
+		TimeoutSec: 5,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 0, res.ExitCode)
+	require.Equal(t, "hello\n", string(res.Stdout))
+	require.Empty(t, res.Stderr)
+	require.False(t, res.TimedOut)
+	require.False(t, res.Truncated)
+}
+
+func TestDockerDriver_Exec_NonZeroExit(t *testing.T) {
+	ctx := context.Background()
+	d, tid, uid := newDockerDriverForTest(t)
+
+	sb, err := d.Create(ctx, sandbox.CreateOpts{TenantID: tid, OwnerUserID: uid})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = d.Destroy(ctx, tid, sb.ID) })
+
+	res, err := d.Exec(ctx, tid, sb.ID, sandbox.ExecOpts{
+		Cmd:        []string{"false"},
+		TimeoutSec: 5,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, res.ExitCode)
+	require.False(t, res.TimedOut)
+}
+
+func TestDockerDriver_Exec_StderrSplit(t *testing.T) {
+	ctx := context.Background()
+	d, tid, uid := newDockerDriverForTest(t)
+
+	sb, err := d.Create(ctx, sandbox.CreateOpts{TenantID: tid, OwnerUserID: uid})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = d.Destroy(ctx, tid, sb.ID) })
+
+	res, err := d.Exec(ctx, tid, sb.ID, sandbox.ExecOpts{
+		Cmd:        []string{"sh", "-c", "echo out; echo err >&2; exit 3"},
+		TimeoutSec: 5,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 3, res.ExitCode)
+	require.Equal(t, "out\n", string(res.Stdout))
+	require.Equal(t, "err\n", string(res.Stderr))
+}
+
+func TestDockerDriver_Exec_Timeout(t *testing.T) {
+	ctx := context.Background()
+	d, tid, uid := newDockerDriverForTest(t)
+
+	sb, err := d.Create(ctx, sandbox.CreateOpts{TenantID: tid, OwnerUserID: uid})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = d.Destroy(ctx, tid, sb.ID) })
+
+	res, err := d.Exec(ctx, tid, sb.ID, sandbox.ExecOpts{
+		Cmd:        []string{"sleep", "10"},
+		TimeoutSec: 1,
+	})
+	require.NoError(t, err)
+	require.True(t, res.TimedOut)
+}
+
+func TestDockerDriver_Exec_Truncated(t *testing.T) {
+	ctx := context.Background()
+	d, tid, uid := newDockerDriverForTest(t)
+
+	sb, err := d.Create(ctx, sandbox.CreateOpts{TenantID: tid, OwnerUserID: uid})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = d.Destroy(ctx, tid, sb.ID) })
+
+	// 200 KB of zeros from /dev/zero, well over the 128 KB MaxStreamBytes cap
+	res, err := d.Exec(ctx, tid, sb.ID, sandbox.ExecOpts{
+		Cmd:        []string{"sh", "-c", "head -c 200000 /dev/zero"},
+		TimeoutSec: 10,
+	})
+	require.NoError(t, err)
+	require.True(t, res.Truncated)
+	require.LessOrEqual(t, len(res.Stdout), sandbox.MaxStreamBytes)
+}
+
+func TestDockerDriver_Exec_NotReady_Destroyed(t *testing.T) {
+	ctx := context.Background()
+	d, tid, uid := newDockerDriverForTest(t)
+
+	sb, err := d.Create(ctx, sandbox.CreateOpts{TenantID: tid, OwnerUserID: uid})
+	require.NoError(t, err)
+	require.NoError(t, d.Destroy(ctx, tid, sb.ID))
+
+	_, err = d.Exec(ctx, tid, sb.ID, sandbox.ExecOpts{
+		Cmd:        []string{"echo", "hi"},
+		TimeoutSec: 5,
+	})
+	require.ErrorIs(t, err, sandbox.ErrSandboxNotReady)
+}
