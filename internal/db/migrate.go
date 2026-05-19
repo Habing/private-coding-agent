@@ -18,11 +18,11 @@ var migrationsFS embed.FS
 // ErrNoChange is treated as success. Migrations are versioned by filename
 // prefix (NNNN_*.up.sql / NNNN_*.down.sql).
 //
-// ctx is checked before opening the migrate connection and is honored via the
-// underlying database driver for connection-level operations. Once `m.Up()`
-// has started it will run to completion (golang-migrate v4 does not currently
-// support cancellation mid-migration); use ctx primarily to abort before any
-// work begins.
+// ctx is honored at two checkpoints only: before opening the migrate source
+// and immediately before calling Up(). Once Up() begins executing migrations
+// it runs to completion regardless of ctx state; golang-migrate v4 does not
+// support cancellation mid-migration. Use ctx primarily to abort startup
+// before any DB work begins (e.g., shutdown signal during boot).
 func Migrate(ctx context.Context, dsn string) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("ctx: %w", err)
