@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -183,4 +184,54 @@ func networkModeFor(mode NetworkMode, internalName string) container.NetworkMode
 // public Runtime interface.
 func (d *DockerDriver) GetContainerIDForTest(ctx context.Context, tenantID, id uuid.UUID) (string, error) {
 	return d.repo.GetContainerID(ctx, tenantID, id)
+}
+
+// Get returns the sandbox scoped to tenant.
+func (d *DockerDriver) Get(ctx context.Context, tenantID, id uuid.UUID) (*Sandbox, error) {
+	return d.repo.Get(ctx, tenantID, id)
+}
+
+const destroyLockTTL = 30 * time.Second
+
+// Destroy stops and removes the sandbox. Idempotent.
+func (d *DockerDriver) Destroy(ctx context.Context, tenantID, id uuid.UUID) error {
+	lockKey := "pca:sandbox:destroy:" + id.String()
+
+	ok, err := d.redis.SetNX(ctx, lockKey, "1", destroyLockTTL).Result()
+	if err != nil {
+		return fmt.Errorf("acquire destroy lock: %w", err)
+	}
+	if !ok {
+		// 锁被他人持有,等待最多 destroyLockTTL 后重试一次
+		time.Sleep(2 * time.Second)
+		ok, _ = d.redis.SetNX(ctx, lockKey, "1", destroyLockTTL).Result()
+		if !ok {
+			return fmt.Errorf("destroy already in progress")
+		}
+	}
+	defer func() { _ = d.redis.Del(context.Background(), lockKey).Err() }()
+
+	sb, err := d.repo.Get(ctx, tenantID, id)
+	if err != nil {
+		if errors.Is(err, ErrSandboxNotFound) {
+			return ErrSandboxNotFound
+		}
+		return err
+	}
+	if sb.Status == StatusDestroyed {
+		return nil // 幂等
+	}
+
+	if err := d.repo.UpdateStatus(ctx, sb.ID, StatusDestroying); err != nil {
+		return err
+	}
+
+	cid, _ := d.repo.GetContainerID(ctx, sb.TenantID, sb.ID)
+	if cid != "" {
+		stopTimeout := 5
+		_ = d.cli.ContainerStop(ctx, cid, container.StopOptions{Timeout: &stopTimeout})
+		_ = d.cli.ContainerRemove(ctx, cid, container.RemoveOptions{Force: true, RemoveVolumes: true})
+	}
+
+	return d.repo.UpdateStatus(ctx, sb.ID, StatusDestroyed)
 }

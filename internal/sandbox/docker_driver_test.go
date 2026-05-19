@@ -92,3 +92,43 @@ func TestDockerDriver_Create_PullFailure(t *testing.T) {
 	// 给一点时间让 Docker 异步快速失败
 	time.Sleep(200 * time.Millisecond)
 }
+
+func TestDockerDriver_Get_RespectsTenant(t *testing.T) {
+	ctx := context.Background()
+	d, tid, uid := newDockerDriverForTest(t)
+
+	sb, err := d.Create(ctx, sandbox.CreateOpts{TenantID: tid, OwnerUserID: uid})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = d.Destroy(ctx, tid, sb.ID) })
+
+	got, err := d.Get(ctx, tid, sb.ID)
+	require.NoError(t, err)
+	require.Equal(t, sb.ID, got.ID)
+
+	// 不同租户查不到
+	_, err = d.Get(ctx, uuid.New(), sb.ID)
+	require.ErrorIs(t, err, sandbox.ErrSandboxNotFound)
+}
+
+func TestDockerDriver_Destroy_Idempotent(t *testing.T) {
+	ctx := context.Background()
+	d, tid, uid := newDockerDriverForTest(t)
+
+	sb, err := d.Create(ctx, sandbox.CreateOpts{TenantID: tid, OwnerUserID: uid})
+	require.NoError(t, err)
+
+	require.NoError(t, d.Destroy(ctx, tid, sb.ID))
+	// 第二次依然 nil
+	require.NoError(t, d.Destroy(ctx, tid, sb.ID))
+
+	got, err := d.Get(ctx, tid, sb.ID)
+	require.NoError(t, err)
+	require.Equal(t, sandbox.StatusDestroyed, got.Status)
+}
+
+func TestDockerDriver_Destroy_NotFound(t *testing.T) {
+	ctx := context.Background()
+	d, _, _ := newDockerDriverForTest(t)
+	err := d.Destroy(ctx, uuid.New(), uuid.New())
+	require.ErrorIs(t, err, sandbox.ErrSandboxNotFound)
+}
