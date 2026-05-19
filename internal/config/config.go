@@ -13,6 +13,7 @@ import (
 type Config struct {
 	Server    ServerConfig    `mapstructure:"server"`
 	DB        DBConfig        `mapstructure:"db"`
+	Redis     RedisConfig     `mapstructure:"redis"`
 	Auth      AuthConfig      `mapstructure:"auth"`
 	Telemetry TelemetryConfig `mapstructure:"telemetry"`
 }
@@ -24,6 +25,10 @@ type ServerConfig struct {
 
 type DBConfig struct {
 	DSN string `mapstructure:"dsn"`
+}
+
+type RedisConfig struct {
+	Addr string `mapstructure:"addr"`
 }
 
 type AuthConfig struct {

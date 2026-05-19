@@ -3,6 +3,8 @@ server:
   mode: debug
 db:
   dsn: "postgres://app:app@localhost:5432/app?sslmode=disable"
+redis:
+  addr: "localhost:6379"
 auth:
   jwt_secret: "change-me-in-production"
   jwt_ttl: "24h"
