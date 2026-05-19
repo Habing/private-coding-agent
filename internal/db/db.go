@@ -11,6 +11,9 @@ import (
 
 type Pool = pgxpool.Pool
 
+// Connect builds a pgx connection pool from the given DSN, verifies it with a
+// 5s ping, and returns a ready-to-use pool. The pool is closed automatically
+// if the ping fails. Caller owns the pool and must Close it on shutdown.
 func Connect(ctx context.Context, dsn string) (*Pool, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {

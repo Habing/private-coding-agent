@@ -13,6 +13,9 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
+// Migrate applies all pending up migrations embedded under migrations/.
+// ErrNoChange is treated as success. Migrations are versioned by filename
+// prefix (NNNN_*.up.sql / NNNN_*.down.sql).
 func Migrate(dsn string) error {
 	src, err := iofs.New(migrationsFS, "migrations")
 	if err != nil {
