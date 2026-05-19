@@ -192,6 +192,11 @@ func (d *DockerDriver) requireContainerID(ctx context.Context, tenantID, id uuid
 	if err != nil {
 		return "", err
 	}
+	// destroyed sandboxes are reported as not found to match the "no
+	// distinction exposed" contract on Get.
+	if sb.Status == StatusDestroyed {
+		return "", ErrSandboxNotFound
+	}
 	if sb.Status != StatusRunning {
 		return "", ErrSandboxNotReady
 	}

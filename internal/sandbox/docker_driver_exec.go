@@ -24,6 +24,11 @@ func (d *DockerDriver) Exec(ctx context.Context, tenantID, id uuid.UUID, opts Ex
 	if err != nil {
 		return nil, err
 	}
+	// destroyed sandboxes are reported as not found to match the "no
+	// distinction exposed" contract on Get.
+	if sb.Status == StatusDestroyed {
+		return nil, ErrSandboxNotFound
+	}
 	if sb.Status != StatusRunning {
 		return nil, ErrSandboxNotReady
 	}

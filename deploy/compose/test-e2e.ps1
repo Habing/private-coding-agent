@@ -9,13 +9,28 @@
 
 $ErrorActionPreference = 'Stop'
 
+# Docker 客户端把进度信息写到 stderr。Windows PowerShell 5.1 把 stderr 包装成
+# NativeCommandError, 配合 ErrorActionPreference=Stop 会让脚本误以为命令失败。
+# 用 helper 调用 docker, 显式按退出码判定成功/失败。
+function Invoke-Docker {
+    param([Parameter(ValueFromRemainingArguments=$true)] $DockerArgs)
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & docker @DockerArgs 2>&1 | Out-Null
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = $prev
+    if ($code -ne 0) {
+        throw ("docker " + ($DockerArgs -join " ") + " failed exit=" + $code)
+    }
+}
+
 if (-not (Test-Path .\.env)) {
     Copy-Item .env.example .env
     Write-Host "[setup] copied .env.example -> .env"
 }
 
 Write-Host "[1/8] starting compose ..."
-docker compose up -d --build | Out-Null
+Invoke-Docker compose up -d --build
 Start-Sleep -Seconds 20
 
 Write-Host "[2/8] inserting demo user via psql ..."
@@ -56,21 +71,19 @@ if ($out -ne 'hello world from e2e') { throw "stdout mismatch" }
 Write-Host "[7/8] destroy ..."
 Invoke-RestMethod -Method DELETE -Uri "http://localhost:8080/sandbox/sessions/$id" -Headers $H | Out-Null
 
-Write-Host "[8/8] verify exec rejected after destroy ..."
-# After destroy, sandbox row remains with status=destroyed; exec returns
-# ErrSandboxNotReady -> 409 Conflict (matches handler unit tests). 404 would
-# only occur if the row were absent, e.g. cross-tenant.
+Write-Host "[8/8] verify 404 after destroy ..."
+# Destroyed sandboxes are reported as not found at the API boundary
+# (the runtime layer maps StatusDestroyed -> ErrSandboxNotFound).
 try {
     Invoke-RestMethod -Method POST -Uri "http://localhost:8080/sandbox/sessions/$id/exec" `
         -Headers $H -ContentType application/json -Body '{"cmd":["true"]}'
-    throw "expected non-2xx after destroy"
+    throw "expected 404 after destroy"
 } catch {
     $code = $_.Exception.Response.StatusCode.value__
-    if ($code -ne 409 -and $code -ne 404) {
-        throw "expected 409 or 404 after destroy, got $code"
+    if ($code -ne 404) {
+        throw "expected 404 after destroy, got $code"
     }
-    Write-Host "  -> got $code as expected"
 }
 
-docker compose down | Out-Null
+Invoke-Docker compose down
 Write-Host "`nE2E PASS"

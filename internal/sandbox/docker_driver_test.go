@@ -222,7 +222,7 @@ func TestDockerDriver_Exec_Truncated(t *testing.T) {
 	require.LessOrEqual(t, len(res.Stdout), sandbox.MaxStreamBytes)
 }
 
-func TestDockerDriver_Exec_NotReady_Destroyed(t *testing.T) {
+func TestDockerDriver_Exec_AfterDestroyed_NotFound(t *testing.T) {
 	ctx := context.Background()
 	d, tid, uid := newDockerDriverForTest(t)
 
@@ -234,7 +234,7 @@ func TestDockerDriver_Exec_NotReady_Destroyed(t *testing.T) {
 		Cmd:        []string{"echo", "hi"},
 		TimeoutSec: 5,
 	})
-	require.ErrorIs(t, err, sandbox.ErrSandboxNotReady)
+	require.ErrorIs(t, err, sandbox.ErrSandboxNotFound)
 }
 
 func TestDockerDriver_WriteRead_RoundTrip(t *testing.T) {
