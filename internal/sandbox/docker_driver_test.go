@@ -236,3 +236,57 @@ func TestDockerDriver_Exec_NotReady_Destroyed(t *testing.T) {
 	})
 	require.ErrorIs(t, err, sandbox.ErrSandboxNotReady)
 }
+
+func TestDockerDriver_WriteRead_RoundTrip(t *testing.T) {
+	ctx := context.Background()
+	d, tid, uid := newDockerDriverForTest(t)
+	sb, err := d.Create(ctx, sandbox.CreateOpts{TenantID: tid, OwnerUserID: uid})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = d.Destroy(ctx, tid, sb.ID) })
+
+	want := []byte("hello\x00binary\xff data")
+	require.NoError(t, d.WriteFile(ctx, tid, sb.ID, "foo/bar/baz.bin", want))
+	got, err := d.ReadFile(ctx, tid, sb.ID, "foo/bar/baz.bin")
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestDockerDriver_WriteFile_PathOutside(t *testing.T) {
+	ctx := context.Background()
+	d, tid, uid := newDockerDriverForTest(t)
+	sb, err := d.Create(ctx, sandbox.CreateOpts{TenantID: tid, OwnerUserID: uid})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = d.Destroy(ctx, tid, sb.ID) })
+
+	err = d.WriteFile(ctx, tid, sb.ID, "../../etc/passwd", []byte("evil"))
+	require.ErrorIs(t, err, sandbox.ErrPathOutsideWorkspace)
+}
+
+func TestDockerDriver_WriteFile_TooLarge(t *testing.T) {
+	ctx := context.Background()
+	d, tid, uid := newDockerDriverForTest(t)
+	sb, err := d.Create(ctx, sandbox.CreateOpts{TenantID: tid, OwnerUserID: uid})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = d.Destroy(ctx, tid, sb.ID) })
+
+	big := make([]byte, sandbox.MaxFileSize+1)
+	err = d.WriteFile(ctx, tid, sb.ID, "big.bin", big)
+	require.ErrorIs(t, err, sandbox.ErrTooLarge)
+}
+
+func TestDockerDriver_ReadFile_TooLarge(t *testing.T) {
+	ctx := context.Background()
+	d, tid, uid := newDockerDriverForTest(t)
+	sb, err := d.Create(ctx, sandbox.CreateOpts{TenantID: tid, OwnerUserID: uid})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = d.Destroy(ctx, tid, sb.ID) })
+
+	// 沙箱内造 2 MB 文件
+	_, err = d.Exec(ctx, tid, sb.ID, sandbox.ExecOpts{
+		Cmd: []string{"sh", "-c", "head -c 2000000 /dev/urandom > /workspace/big.bin"},
+	})
+	require.NoError(t, err)
+
+	_, err = d.ReadFile(ctx, tid, sb.ID, "big.bin")
+	require.ErrorIs(t, err, sandbox.ErrTooLarge)
+}
