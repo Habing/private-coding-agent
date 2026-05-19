@@ -10,3 +10,4 @@ deploy/compose
 *.test
 coverage.txt
 *.out
+sandbox/image
