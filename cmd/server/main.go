@@ -93,10 +93,9 @@ func run() error {
 	sandboxHandler := sandbox.NewHandler(sandboxDriver)
 
 	// Reconciler (Task 16)
-	// TODO Task 16: enable reconciler
-	// if err := sandbox.RunReconciler(ctx, sandboxRepo, dockerCli); err != nil {
-	// 	return fmt.Errorf("reconciler: %w", err)
-	// }
+	if err := sandbox.RunReconciler(ctx, sandboxRepo, dockerCli); err != nil {
+		return fmt.Errorf("reconciler: %w", err)
+	}
 
 	// Standard auth/tenant/user wiring
 	tenantLookup := tenant.NewLookup(tenant.NewRepo(pool))
