@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/yourorg/private-coding-agent/internal/tenant"
 	"github.com/yourorg/private-coding-agent/internal/user"
 )
 
@@ -60,7 +61,11 @@ func (h *Handler) login(c *gin.Context) {
 	}
 	tid, err := h.d.Tenants.GetBySlug(c.Request.Context(), req.Tenant)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "bad_credentials"})
+		if errors.Is(err, tenant.ErrNotFound) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "bad_credentials"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
 		return
 	}
 	u, err := h.d.Auth.Authenticate(c.Request.Context(), tid, req.Email, req.Password)

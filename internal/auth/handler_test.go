@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/yourorg/private-coding-agent/internal/auth"
+	"github.com/yourorg/private-coding-agent/internal/tenant"
 	"github.com/yourorg/private-coding-agent/internal/user"
 )
 
@@ -28,11 +29,12 @@ func (f fakeAuth) Authenticate(_ context.Context, _ uuid.UUID, _, _ string) (*us
 }
 
 type fakeTenants struct {
-	id uuid.UUID
+	id  uuid.UUID
+	err error
 }
 
 func (f fakeTenants) GetBySlug(_ context.Context, _ string) (uuid.UUID, error) {
-	return f.id, nil
+	return f.id, f.err
 }
 
 func TestLoginOK(t *testing.T) {
@@ -93,4 +95,60 @@ func TestLogin_InternalError(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/auth/login",
 		bytes.NewReader(body)))
 	require.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestLogin_TenantNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := auth.NewHandler(auth.HandlerDeps{
+		Tenants: fakeTenants{err: tenant.ErrNotFound},
+		Auth:    fakeAuth{},
+		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "s", TTL: time.Hour}),
+	})
+	r := gin.New()
+	h.Register(r)
+
+	body, _ := json.Marshal(map[string]string{
+		"tenant": "missing", "email": "a@b", "password": "x",
+	})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/auth/login",
+		bytes.NewReader(body)))
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestLogin_TenantLookupError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := auth.NewHandler(auth.HandlerDeps{
+		Tenants: fakeTenants{err: errors.New("db connection refused")},
+		Auth:    fakeAuth{},
+		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "s", TTL: time.Hour}),
+	})
+	r := gin.New()
+	h.Register(r)
+
+	body, _ := json.Marshal(map[string]string{
+		"tenant": "default", "email": "a@b", "password": "x",
+	})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/auth/login",
+		bytes.NewReader(body)))
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestLogin_BindFailure(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := auth.NewHandler(auth.HandlerDeps{
+		Tenants: fakeTenants{id: uuid.New()},
+		Auth:    fakeAuth{},
+		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "s", TTL: time.Hour}),
+	})
+	r := gin.New()
+	h.Register(r)
+
+	// missing required fields
+	body := []byte(`{"tenant":""}`)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/auth/login",
+		bytes.NewReader(body)))
+	require.Equal(t, http.StatusBadRequest, w.Code)
 }
