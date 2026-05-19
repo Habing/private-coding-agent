@@ -1135,7 +1135,7 @@ git commit -m "feat(auth): JWT issue + parse with claims"
 - [ ] **Step 1：装依赖**
 
 ```powershell
-go get github.com/gin-gonic/gin go.uber.org/zap
+go get github.com/gin-gonic/gin
 ```
 
 - [ ] **Step 2：写测试**
