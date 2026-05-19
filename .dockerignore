@@ -1,0 +1,8 @@
+.git
+.gitignore
+*.md
+/bin/
+/dist/
+.idea/
+.vscode/
+deploy/compose
