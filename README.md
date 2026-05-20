@@ -10,7 +10,7 @@
 - [x] 切片 3：Model Gateway
 - [x] 切片 4：Tool Bus + Internal MCP
 - [x] 切片 5：Agent Engine
-- [ ] 切片 6：Session API + WebSocket
+- [x] 切片 6：Session API + WebSocket
 - [ ] 切片 7：Memory (basic)
 - [ ] 切片 8：Web Frontend
 - [ ] 切片 9：Integration & Audit
@@ -67,6 +67,12 @@ pwsh ./test-e2e.ps1
 | GET | /tools | Bearer | 列出 8 个 internal tools |
 | POST | /tools/invoke | Bearer | 调用 tool |
 | POST | /agent/run | Bearer | ReAct 循环,返回 events 数组 (非流式) |
+| POST | /sessions | Bearer | 创建会话 |
+| GET  | /sessions | Bearer | 列出当前用户会话 |
+| GET  | /sessions/{id} | Bearer | 查询会话 |
+| DELETE | /sessions/{id} | Bearer | 归档会话 |
+| GET  | /sessions/{id}/messages | Bearer | 列出会话消息 |
+| GET  | /sessions/{id}/ws | Bearer | WebSocket 流: 发 user_message,收 event/done/error |
 
 ## 配置
 
