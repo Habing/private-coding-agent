@@ -19,6 +19,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/yourorg/private-coding-agent/internal/agent"
 	"github.com/yourorg/private-coding-agent/internal/audit"
 	"github.com/yourorg/private-coding-agent/internal/auth"
 	"github.com/yourorg/private-coding-agent/internal/config"
@@ -140,6 +141,13 @@ func run() error {
 	}
 	toolHandler := toolbus.NewHandler(toolBus)
 
+	// Agent Engine (slice 5)
+	agentProfiles := map[string]agent.Profile{
+		"coding": agent.DefaultCodingProfile(),
+	}
+	agentEngine := agent.NewEngine(modelGateway, toolBus, agentProfiles)
+	agentHandler := agent.NewHandler(agentEngine)
+
 	// Reconciler (Task 16)
 	if err := sandbox.RunReconciler(ctx, sandboxRepo, dockerCli); err != nil {
 		return fmt.Errorf("reconciler: %w", err)
@@ -174,6 +182,7 @@ func run() error {
 		sandboxHandler.Register(protected)
 		modelHandler.Register(protected)
 		toolHandler.Register(protected)
+		agentHandler.Register(protected)
 	}
 
 	engine := httpx.NewEngine(httpx.Deps{
