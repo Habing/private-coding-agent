@@ -93,7 +93,7 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest, mo
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, int64(MaxProviderBody)))
 	if resp.StatusCode >= 400 {
-		return nil, &ProviderError{StatusCode: resp.StatusCode, Body: string(body)}
+		return nil, &ProviderError{StatusCode: resp.StatusCode, Body: redact(string(body), []string{p.apiKeyEnv})}
 	}
 
 	var out ChatResponse
@@ -128,7 +128,7 @@ func (p *OpenAIProvider) ChatCompletionStream(ctx context.Context, req ChatReque
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, int64(MaxProviderBody)))
-		return &ProviderError{StatusCode: resp.StatusCode, Body: string(body)}
+		return &ProviderError{StatusCode: resp.StatusCode, Body: redact(string(body), []string{p.apiKeyEnv})}
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -172,7 +172,7 @@ func (p *OpenAIProvider) Embeddings(ctx context.Context, req EmbeddingsRequest, 
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, int64(MaxProviderBody)))
 	if resp.StatusCode >= 400 {
-		return nil, &ProviderError{StatusCode: resp.StatusCode, Body: string(body)}
+		return nil, &ProviderError{StatusCode: resp.StatusCode, Body: redact(string(body), []string{p.apiKeyEnv})}
 	}
 
 	var out EmbeddingsResponse

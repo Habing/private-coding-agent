@@ -88,7 +88,7 @@ func (p *ClaudeProvider) ChatCompletion(ctx context.Context, req ChatRequest, mo
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, int64(MaxProviderBody)))
 	if resp.StatusCode >= 400 {
-		return nil, &ProviderError{StatusCode: resp.StatusCode, Body: string(body)}
+		return nil, &ProviderError{StatusCode: resp.StatusCode, Body: redact(string(body), []string{p.apiKeyEnv})}
 	}
 
 	var ar anthropicMessagesResp
@@ -115,7 +115,7 @@ func (p *ClaudeProvider) ChatCompletionStream(ctx context.Context, req ChatReque
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, int64(MaxProviderBody)))
-		return &ProviderError{StatusCode: resp.StatusCode, Body: string(body)}
+		return &ProviderError{StatusCode: resp.StatusCode, Body: redact(string(body), []string{p.apiKeyEnv})}
 	}
 
 	return ConvertClaudeStream(resp.Body, p.name, model, yield)
