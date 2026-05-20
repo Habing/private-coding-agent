@@ -29,11 +29,11 @@ if ! docker image inspect "$JQ_IMG" >/dev/null 2>&1; then
 fi
 jq() { docker run --rm -i "$JQ_IMG" "$@"; }
 
-echo "[1/21] starting compose ..."
+echo "[1/25] starting compose ..."
 docker compose up -d --build >/dev/null
 sleep 20
 
-echo "[2/21] inserting demo user via psql ..."
+echo "[2/25] inserting demo user via psql ..."
 HASH='$2a$10$WJBaC0mXl/yIgPXKW8WbPujOAidLdmaDPlduPdV8i11ZHaFvcgUrC'
 docker compose exec -T postgres psql -U app -d app -v ON_ERROR_STOP=1 <<SQL >/dev/null
 INSERT INTO users (tenant_id, email, password_hash, name, role)
@@ -42,14 +42,14 @@ VALUES ((SELECT id FROM tenants WHERE slug='default'),
 ON CONFLICT (tenant_id, email) DO NOTHING;
 SQL
 
-echo "[3/21] login ..."
+echo "[3/25] login ..."
 LOGIN=$(curl -fsS -X POST http://localhost:8080/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"tenant":"default","email":"demo@example.com","password":"demo123"}')
 TOK=$(echo "$LOGIN" | jq -r .token)
 [[ -n "$TOK" && "$TOK" != "null" ]] || { echo "login failed: $LOGIN"; exit 1; }
 
-echo "[4/21] create sandbox ..."
+echo "[4/25] create sandbox ..."
 SB=$(curl -fsS -X POST http://localhost:8080/sandbox/sessions \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d '{}')
 ID=$(echo "$SB" | jq -r .id)
@@ -57,13 +57,13 @@ STATUS=$(echo "$SB" | jq -r .status)
 echo "  -> sandbox $ID, status=$STATUS"
 [[ "$STATUS" == "running" ]] || { echo "expected running, got $STATUS"; exit 1; }
 
-echo "[5/21] write file ..."
+echo "[5/25] write file ..."
 CONTENT=$(printf "hello world from e2e" | base64 -w0 2>/dev/null || printf "hello world from e2e" | base64)
 curl -fsS -X PUT "http://localhost:8080/sandbox/sessions/$ID/files?path=hello.txt" \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d "{\"content_base64\":\"$CONTENT\"}" >/dev/null
 
-echo "[6/21] exec cat ..."
+echo "[6/25] exec cat ..."
 EXEC=$(curl -fsS -X POST "http://localhost:8080/sandbox/sessions/$ID/exec" \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"cmd":["cat","/workspace/hello.txt"]}')
@@ -72,50 +72,50 @@ OUT=$(echo "$EXEC" | jq -r .stdout_base64 | base64 -d)
 echo "  -> stdout: $OUT (exit=$EXIT)"
 [[ "$OUT" == "hello world from e2e" ]] || { echo "stdout mismatch: $OUT"; exit 1; }
 
-echo "[7/21] destroy ..."
+echo "[7/25] destroy ..."
 curl -fsS -X DELETE "http://localhost:8080/sandbox/sessions/$ID" \
   -H "Authorization: Bearer $TOK" >/dev/null
 
-echo "[8/21] verify 404 after destroy ..."
+echo "[8/25] verify 404 after destroy ..."
 HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
   "http://localhost:8080/sandbox/sessions/$ID/exec" \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"cmd":["true"]}')
 [[ "$HTTP_CODE" == "404" ]] || { echo "expected 404 got $HTTP_CODE"; exit 1; }
 
-echo "[9/21] chat completion (non-stream) via mock-provider ..."
+echo "[9/25] chat completion (non-stream) via mock-provider ..."
 CHAT=$(curl -fsS -X POST http://localhost:8080/v1/chat/completions \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"model":"default-mock:gpt-4o","messages":[{"role":"user","content":"hi"}]}')
 TEXT=$(echo "$CHAT" | jq -r '.choices[0].message.content')
 [[ "$TEXT" == "hello from mock" ]] || { echo "chat content mismatch: $TEXT"; exit 1; }
 
-echo "[10/21] chat completion (stream) via mock-provider ..."
+echo "[10/25] chat completion (stream) via mock-provider ..."
 STREAM=$(curl -fsS -N -X POST http://localhost:8080/v1/chat/completions \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"model":"default-mock:gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}')
 echo "$STREAM" | grep -q "data: \[DONE\]" || { echo "stream missing [DONE]"; exit 1; }
 echo "$STREAM" | grep -q '"content":"hello "' || { echo "stream missing chunk"; exit 1; }
 
-echo "[11/21] embeddings via mock-provider ..."
+echo "[11/25] embeddings via mock-provider ..."
 EMB=$(curl -fsS -X POST http://localhost:8080/v1/embeddings \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"model":"default-mock:text","input":["hi"]}')
 LEN=$(echo "$EMB" | jq '.data[0].embedding | length')
 [[ "$LEN" == "3" ]] || { echo "embedding length mismatch: $LEN"; exit 1; }
 
-echo "[12/21] verify model_usage rows ..."
+echo "[12/25] verify model_usage rows ..."
 docker compose exec -T postgres psql -U app -d app -t -c \
   "SELECT count(*) FROM model_usage WHERE status='ok';" | grep -q "[1-9]" \
   || { echo "model_usage has no rows"; exit 1; }
 
-echo "[13/21] list tools ..."
+echo "[13/25] list tools ..."
 TOOLS=$(curl -fsS http://localhost:8080/tools -H "Authorization: Bearer $TOK")
 NAMES=$(echo "$TOOLS" | jq -r '.tools[].name' | sort | tr '\n' ',')
-[[ "$NAMES" == "fs.glob,fs.list,fs.read,fs.write,grep,llm.chat,llm.embed,shell.exec," ]] \
+[[ "$NAMES" == "fs.glob,fs.list,fs.read,fs.write,grep,llm.chat,llm.embed,memory.delete,memory.list,memory.save,memory.search,shell.exec," ]] \
   || { echo "tools list mismatch: $NAMES"; exit 1; }
 
-echo "[14/21] fs.write + fs.read round-trip ..."
+echo "[14/25] fs.write + fs.read round-trip ..."
 SB2=$(curl -fsS -X POST http://localhost:8080/sandbox/sessions \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d '{}')
 ID2=$(echo "$SB2" | jq -r .id)
@@ -130,14 +130,14 @@ READ=$(curl -fsS -X POST http://localhost:8080/tools/invoke \
 CONTENT=$(echo "$READ" | jq -r '.output.content')
 [[ "$CONTENT" == "tool e2e" ]] || { echo "fs.read content mismatch: $CONTENT"; exit 1; }
 
-echo "[15/21] shell.exec ls ..."
+echo "[15/25] shell.exec ls ..."
 SHOUT=$(curl -fsS -X POST http://localhost:8080/tools/invoke \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d "{\"tool\":\"shell.exec\",\"input\":{\"sandbox_id\":\"$ID2\",\"cmd\":[\"ls\",\"/workspace\"]}}")
 echo "$SHOUT" | jq -r '.output.stdout' | grep -q "a.txt" || { echo "shell.exec stdout missing a.txt"; exit 1; }
 curl -fsS -X DELETE "http://localhost:8080/sandbox/sessions/$ID2" -H "Authorization: Bearer $TOK" >/dev/null
 
-echo "[16/21] llm.chat + tool_invocations ..."
+echo "[16/25] llm.chat + tool_invocations ..."
 CHATTOOL=$(curl -fsS -X POST http://localhost:8080/tools/invoke \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"tool":"llm.chat","input":{"model":"default-mock:gpt-4o","messages":[{"role":"user","content":"hi"}]}}')
@@ -147,7 +147,7 @@ docker compose exec -T postgres psql -U app -d app -t -c \
   "SELECT count(*) FROM tool_invocations WHERE status='ok';" | grep -q "[1-9]" \
   || { echo "tool_invocations has no rows"; exit 1; }
 
-echo "[17/21] agent.run direct final ..."
+echo "[17/25] agent.run direct final ..."
 RUN=$(curl -fsS -X POST http://localhost:8080/agent/run \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"model":"default-mock:gpt-4o","profile":"coding","messages":[{"role":"user","content":"hi"}]}')
@@ -156,7 +156,7 @@ LAST_KIND=$(echo "$RUN" | jq -r '.events[-1].kind')
 LAST_TEXT=$(echo "$RUN" | jq -r '.events[-1].text')
 [[ "$LAST_TEXT" == "hello from mock" ]] || { echo "final text mismatch: $LAST_TEXT"; exit 1; }
 
-echo "[18/21] agent.run with tool_call chain ..."
+echo "[18/25] agent.run with tool_call chain ..."
 SBA=$(curl -fsS -X POST http://localhost:8080/sandbox/sessions \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d '{}')
 IDA=$(echo "$SBA" | jq -r .id)
@@ -171,7 +171,7 @@ LAST2=$(echo "$RUN2" | jq -r '.events[-1].kind')
 [[ "$LAST2" == "final" ]] || { echo "expected final got $LAST2"; echo "$RUN2"; exit 1; }
 curl -fsS -X DELETE "http://localhost:8080/sandbox/sessions/$IDA" -H "Authorization: Bearer $TOK" >/dev/null
 
-echo "[19/21] POST /sessions ..."
+echo "[19/25] POST /sessions ..."
 SESS=$(curl -fsS -X POST http://localhost:8080/sessions \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"model":"default-mock:gpt-4o","profile":"coding","title":"e2e"}')
@@ -179,12 +179,12 @@ SID=$(echo "$SESS" | jq -r .id)
 [[ -n "$SID" && "$SID" != "null" ]] || { echo "session create failed: $SESS"; exit 1; }
 echo "  -> session $SID"
 
-echo "[20/21] GET /sessions + GET /sessions/:id/messages ..."
+echo "[20/25] GET /sessions + GET /sessions/:id/messages ..."
 LIST=$(curl -fsS http://localhost:8080/sessions -H "Authorization: Bearer $TOK")
 echo "$LIST" | jq -e --arg id "$SID" '.sessions[] | select(.id==$id)' >/dev/null \
   || { echo "session $SID not in list: $LIST"; exit 1; }
 
-echo "[21/21] WS round-trip via docker websocat ..."
+echo "[21/25] WS round-trip via docker websocat ..."
 WS_IMG=solsson/websocat
 docker pull -q "$WS_IMG" >/dev/null 2>&1 || true
 # Use the compose network and reach the server by service name —
@@ -199,6 +199,45 @@ echo "$WS_OUT" | grep -q '"type":"event"' || { echo "ws missing event frame: $WS
 MSGS=$(curl -fsS "http://localhost:8080/sessions/$SID/messages" -H "Authorization: Bearer $TOK")
 echo "$MSGS" | jq -e '.messages | length >= 2' >/dev/null \
   || { echo "messages not persisted: $MSGS"; exit 1; }
+
+echo "[22/25] POST /memories x2 (different types) ..."
+MEM1=$(curl -fsS -X POST http://localhost:8080/memories \
+  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"type":"preference","content":"user prefers Go","tags":["go","lang"]}')
+MID1=$(echo "$MEM1" | jq -r .id)
+[[ -n "$MID1" && "$MID1" != "null" ]] || { echo "memory create 1 failed: $MEM1"; exit 1; }
+MEM2=$(curl -fsS -X POST http://localhost:8080/memories \
+  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"type":"knowledge","content":"uses postgres 16","tags":["db","pg"]}')
+MID2=$(echo "$MEM2" | jq -r .id)
+[[ -n "$MID2" && "$MID2" != "null" ]] || { echo "memory create 2 failed: $MEM2"; exit 1; }
+
+echo "[23/25] GET /memories?type=preference&tag=go filter ..."
+LISTMEM=$(curl -fsS "http://localhost:8080/memories?type=preference&tag=go" \
+  -H "Authorization: Bearer $TOK")
+echo "$LISTMEM" | jq -e --arg id "$MID1" '.memories[] | select(.id==$id)' >/dev/null \
+  || { echo "filtered list missing preference memory: $LISTMEM"; exit 1; }
+COUNT_PREF=$(echo "$LISTMEM" | jq '.memories | length')
+[[ "$COUNT_PREF" == "1" ]] || { echo "expected 1 preference, got $COUNT_PREF"; exit 1; }
+
+echo "[24/25] memory.save via tool -> memory.search via tool round-trip ..."
+SAVE=$(curl -fsS -X POST http://localhost:8080/tools/invoke \
+  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"tool":"memory.save","input":{"type":"lesson","content":"rate-limit external APIs","tags":["infra","rl"]}}')
+MID3=$(echo "$SAVE" | jq -r '.output.id')
+[[ -n "$MID3" && "$MID3" != "null" ]] || { echo "memory.save failed: $SAVE"; exit 1; }
+SRCH=$(curl -fsS -X POST http://localhost:8080/tools/invoke \
+  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"tool":"memory.search","input":{"query":"rate-limit"}}')
+echo "$SRCH" | jq -e --arg id "$MID3" '.output.items[] | select(.id==$id)' >/dev/null \
+  || { echo "memory.search did not find saved entry: $SRCH"; exit 1; }
+
+echo "[25/25] DELETE /memories/{id} -> GET 404 ..."
+curl -fsS -X DELETE "http://localhost:8080/memories/$MID1" \
+  -H "Authorization: Bearer $TOK" >/dev/null
+GET_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+  "http://localhost:8080/memories/$MID1" -H "Authorization: Bearer $TOK")
+[[ "$GET_CODE" == "404" ]] || { echo "expected 404 after delete, got $GET_CODE"; exit 1; }
 
 echo
 echo "E2E PASS"
