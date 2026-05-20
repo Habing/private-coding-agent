@@ -8,7 +8,10 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM alpine:latest
+RUN apk add --no-cache ca-certificates \
+    && addgroup -g 65532 nonroot \
+    && adduser -D -u 65532 -G nonroot nonroot
 WORKDIR /app
 COPY --from=build /out/server /app/server
 COPY config/config.example.yaml /app/config/config.yaml
