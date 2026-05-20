@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -62,11 +63,6 @@ func (d *DockerDriver) Exec(ctx context.Context, tenantID, id uuid.UUID, opts Ex
 	}
 	defer attached.Close()
 
-	if len(opts.Stdin) > 0 {
-		_, _ = attached.Conn.Write(opts.Stdin)
-		_ = attached.CloseWrite()
-	}
-
 	stdoutBuf := newLimitedBuffer(MaxStreamBytes)
 	stderrBuf := newLimitedBuffer(MaxStreamBytes)
 
@@ -76,6 +72,15 @@ func (d *DockerDriver) Exec(ctx context.Context, tenantID, id uuid.UUID, opts Ex
 		_, err := stdcopy.StdCopy(stdoutBuf, stderrBuf, attached.Reader)
 		copyErr <- err
 	}()
+
+	// 必须先启 stdcopy 才写 stdin: 否则 stdin > 64KB 时, daemon 反向缓冲被
+	// stderr/stdout 填满会让 Write 阻塞死锁。
+	if len(opts.Stdin) > 0 {
+		go func() {
+			_, _ = attached.Conn.Write(opts.Stdin)
+			_ = attached.CloseWrite()
+		}()
+	}
 
 	timedOut := false
 	select {
@@ -94,7 +99,9 @@ func (d *DockerDriver) Exec(ctx context.Context, tenantID, id uuid.UUID, opts Ex
 	defer cancel2()
 	insp, err := d.cli.ContainerExecInspect(inspectCtx, created.ID)
 	exitCode := -1
-	if err == nil {
+	if err != nil {
+		log.Printf("sandbox exec: inspect %s: %v", created.ID, err)
+	} else {
 		exitCode = insp.ExitCode
 	}
 

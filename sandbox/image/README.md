@@ -25,3 +25,13 @@ docker build -t pca/sandbox:base ./sandbox/image
 ## 升级
 
 更新 Dockerfile 后重新 build。不打 latest tag；推荐月度 tag 如 `pca/sandbox:base-2026.05`。
+
+## 安全扫描
+
+镜像未在 CI 中跑 trivy / grype。生产部署前建议:
+
+```bash
+trivy image pca/sandbox:base
+```
+
+发现高危 CVE 应升级 debian 基础或具体包。
