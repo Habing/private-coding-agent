@@ -19,8 +19,9 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Port int    `mapstructure:"port"`
-	Mode string `mapstructure:"mode"` // "release" | "debug"
+	Port              int      `mapstructure:"port"`
+	Mode              string   `mapstructure:"mode"` // "release" | "debug"
+	WSAllowedOrigins  []string `mapstructure:"ws_allowed_origins"`
 }
 
 type DBConfig struct {

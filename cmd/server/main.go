@@ -27,6 +27,7 @@ import (
 	"github.com/yourorg/private-coding-agent/internal/httpx"
 	"github.com/yourorg/private-coding-agent/internal/modelgw"
 	"github.com/yourorg/private-coding-agent/internal/sandbox"
+	"github.com/yourorg/private-coding-agent/internal/session"
 	"github.com/yourorg/private-coding-agent/internal/telemetry"
 	"github.com/yourorg/private-coding-agent/internal/tenant"
 	"github.com/yourorg/private-coding-agent/internal/toolbus"
@@ -148,6 +149,19 @@ func run() error {
 	agentEngine := agent.NewEngine(modelGateway, toolBus, agentProfiles)
 	agentHandler := agent.NewHandler(agentEngine)
 
+	// Session Orchestrator (slice 6)
+	sessionService := session.NewService(
+		session.NewSessionRepo(pool),
+		session.NewMessageRepo(pool),
+		agentEngine,
+	)
+	sessionHandler := session.NewHandler(sessionService)
+	wsAllowed := cfg.Server.WSAllowedOrigins
+	if len(wsAllowed) == 0 {
+		wsAllowed = []string{"*"}
+	}
+	sessionWSHandler := session.NewWSHandler(sessionService, wsAllowed)
+
 	// Reconciler (Task 16)
 	if err := sandbox.RunReconciler(ctx, sandboxRepo, dockerCli); err != nil {
 		return fmt.Errorf("reconciler: %w", err)
@@ -183,6 +197,8 @@ func run() error {
 		modelHandler.Register(protected)
 		toolHandler.Register(protected)
 		agentHandler.Register(protected)
+		sessionHandler.Register(protected)
+		sessionWSHandler.Register(protected)
 	}
 
 	engine := httpx.NewEngine(httpx.Deps{

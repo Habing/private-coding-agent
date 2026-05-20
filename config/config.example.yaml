@@ -1,6 +1,7 @@
 server:
   port: 8080
   mode: debug
+  ws_allowed_origins: ["*"]
 db:
   dsn: "postgres://app:app@localhost:5432/app?sslmode=disable"
 redis:
