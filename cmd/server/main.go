@@ -34,6 +34,7 @@ import (
 	"github.com/yourorg/private-coding-agent/internal/toolbus"
 	"github.com/yourorg/private-coding-agent/internal/toolbus/tools"
 	"github.com/yourorg/private-coding-agent/internal/user"
+	"github.com/yourorg/private-coding-agent/internal/webui"
 )
 
 func main() {
@@ -208,8 +209,26 @@ func run() error {
 		toolHandler.Register(protected)
 		agentHandler.Register(protected)
 		sessionHandler.Register(protected)
-		sessionWSHandler.Register(protected)
 		memoryHandler.Register(protected)
+
+		// WebSocket group: browsers cannot set Authorization headers on the WS
+		// upgrade, so a narrow query-token shim runs before auth.Middleware on
+		// this group only. Keep this off the REST group to avoid token leakage
+		// in proxy access logs for the API surface.
+		wsGroup := r.Group("/")
+		wsGroup.Use(auth.WSTokenFromQuery())
+		wsGroup.Use(auth.Middleware(jwtSvc))
+		sessionWSHandler.Register(wsGroup)
+
+		// SPA fallback last: API routes already on the tree take precedence;
+		// unmatched GETs serve index.html so client-side routing works.
+		if fsys, err := webui.FS(); err == nil {
+			if err := httpx.RegisterSPAFallback(r, fsys); err != nil {
+				log.Printf("spa fallback disabled: %v", err)
+			}
+		} else {
+			log.Printf("spa fallback disabled: webui.FS: %v", err)
+		}
 	}
 
 	engine := httpx.NewEngine(httpx.Deps{

@@ -11,3 +11,8 @@ deploy/compose
 coverage.txt
 *.out
 sandbox/image
+# Front-end dev artifacts: the `web` stage rebuilds from package.json and
+# the `go` stage COPYs --from=web. Excluding these keeps the build context
+# small and avoids stale node_modules / dist leaking in from the host.
+internal/webui/node_modules
+internal/webui/dist
