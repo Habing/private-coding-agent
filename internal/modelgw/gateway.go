@@ -138,3 +138,6 @@ func usagePtrOrZero(p *Usage) Usage {
 	}
 	return *p
 }
+
+// Registry returns the underlying registry (for handler-side pre-resolve checks).
+func (g *Gateway) Registry() *ProviderRegistry { return g.reg }
