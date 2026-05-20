@@ -92,6 +92,22 @@ func TestSPAFallback_NonGET_Returns404JSON(t *testing.T) {
 	}
 }
 
+func TestSPAFallback_HEAD_TreatedAsGET(t *testing.T) {
+	r, _ := newSPAFixture(t)
+
+	// HEAD / should return 200 with text/html headers (no body required).
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodHead, "/", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Header().Get("Content-Type"), "text/html")
+
+	// HEAD on an unknown client route should also serve the shell headers.
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, httptest.NewRequest(http.MethodHead, "/login", nil))
+	require.Equal(t, http.StatusOK, w2.Code)
+	require.Contains(t, w2.Header().Get("Content-Type"), "text/html")
+}
+
 func TestSPAFallback_MissingIndexHTML(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()

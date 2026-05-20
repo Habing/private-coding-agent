@@ -35,7 +35,10 @@ func RegisterSPAFallback(r *gin.Engine, fsys fs.FS) error {
 	fileServer := http.FileServer(http.FS(fsys))
 
 	r.NoRoute(func(c *gin.Context) {
-		if c.Request.Method != http.MethodGet {
+		// HEAD is semantically GET-without-body per RFC 9110; treat it as GET so
+		// curl -I / health checks against /, /login, /assets/... return the same
+		// Content-Type as the equivalent GET would.
+		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
 			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "not_found"})
 			return
 		}
