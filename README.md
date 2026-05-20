@@ -11,7 +11,7 @@
 - [x] 切片 4：Tool Bus + Internal MCP
 - [x] 切片 5：Agent Engine
 - [x] 切片 6：Session API + WebSocket
-- [ ] 切片 7：Memory (basic)
+- [x] 切片 7：Memory (basic)
 - [ ] 切片 8：Web Frontend
 - [ ] 切片 9：Integration & Audit
 
@@ -64,7 +64,7 @@ pwsh ./test-e2e.ps1
 | POST | /sandbox/sessions/{id}/snapshot | Bearer | (501) |
 | POST | /v1/chat/completions | Bearer | OpenAI 兼容,支持 stream |
 | POST | /v1/embeddings | Bearer | OpenAI 兼容 |
-| GET | /tools | Bearer | 列出 8 个 internal tools |
+| GET | /tools | Bearer | 列出 12 个 internal tools |
 | POST | /tools/invoke | Bearer | 调用 tool |
 | POST | /agent/run | Bearer | ReAct 循环,返回 events 数组 (非流式) |
 | POST | /sessions | Bearer | 创建会话 |
@@ -73,6 +73,21 @@ pwsh ./test-e2e.ps1
 | DELETE | /sessions/{id} | Bearer | 归档会话 |
 | GET  | /sessions/{id}/messages | Bearer | 列出会话消息 |
 | GET  | /sessions/{id}/ws | Bearer | WebSocket 流: 发 user_message,收 event/done/error |
+| POST | /memories | Bearer | 创建一条记忆 |
+| GET  | /memories | Bearer | 列出当前用户记忆,可按 ?type=&tag=&q= 过滤 |
+| GET  | /memories/{id} | Bearer | 查询单条记忆 |
+| PUT  | /memories/{id} | Bearer | 更新 content / tags / type |
+| DELETE | /memories/{id} | Bearer | 删除一条记忆 |
+
+## 内部 MCP 工具
+
+8 个基础工具 + 4 个记忆工具 = 12 个（通过 `GET /tools` 列出）：
+
+- `fs.read / fs.write / fs.list / fs.glob` 沙箱内文件读写
+- `grep` 沙箱内全文搜索
+- `shell.exec` 沙箱内执行命令
+- `llm.chat / llm.embed` 调 Model Gateway
+- `memory.save / memory.search / memory.list / memory.delete` 持久化记忆（User scope）
 
 ## 配置
 
