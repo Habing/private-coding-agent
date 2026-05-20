@@ -12,7 +12,7 @@
 - [x] 切片 5：Agent Engine
 - [x] 切片 6：Session API + WebSocket
 - [x] 切片 7：Memory (basic)
-- [ ] 切片 8：Web Frontend
+- [x] 切片 8：Web Frontend
 - [ ] 切片 9：Integration & Audit
 
 ## 本地开发
@@ -78,6 +78,8 @@ pwsh ./test-e2e.ps1
 | GET  | /memories/{id} | Bearer | 查询单条记忆 |
 | PUT  | /memories/{id} | Bearer | 更新 content / tags / type |
 | DELETE | /memories/{id} | Bearer | 删除一条记忆 |
+| GET | / | - | SPA 首页（embed 进二进制） |
+| GET | /login, /sessions/{id} | - | SPA 前端路由，由 NoRoute fallback 返回 index.html |
 
 ## 内部 MCP 工具
 
@@ -88,6 +90,33 @@ pwsh ./test-e2e.ps1
 - `shell.exec` 沙箱内执行命令
 - `llm.chat / llm.embed` 调 Model Gateway
 - `memory.save / memory.search / memory.list / memory.delete` 持久化记忆（User scope）
+
+## Web Frontend
+
+React + Vite + Tailwind + shadcn/ui SPA，源码在 `internal/webui/`，由 `go:embed` 打进 server 二进制。登录、会话列表、Chat（含 WebSocket 流式 + 工具调用折叠卡）。
+
+### 本地开发（前后端分离）
+
+```powershell
+# 终端 1: 起后端 (:8080)
+go run ./cmd/server --config config\config.yaml
+
+# 终端 2: 起 vite dev server (:5173, 自动 proxy /api /sessions /tools /auth ... 到 :8080)
+cd internal\webui
+npm install
+npm run dev
+# 浏览器访问 http://localhost:5173
+```
+
+### 生产构建（单二进制）
+
+```powershell
+make build         # = make web + go build -o bin/server ./cmd/server
+.\bin\server --config config\config.yaml
+# 浏览器访问 http://localhost:8080
+```
+
+docker-compose 路径会自动跑多阶段 build：`node:20-alpine` 先 `npm run build`，再 `COPY --from=web` 进 Go build。
 
 ## 配置
 
