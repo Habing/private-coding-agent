@@ -8,7 +8,7 @@
 - [x] 切片 1.5：Foundation Hardening
 - [x] 切片 2：Sandbox Runtime + DockerDriver
 - [x] 切片 3：Model Gateway
-- [ ] 切片 4：Tool Bus + Internal MCP
+- [x] 切片 4：Tool Bus + Internal MCP
 - [ ] 切片 5：Agent Engine
 - [ ] 切片 6：Session API + WebSocket
 - [ ] 切片 7：Memory (basic)
@@ -64,6 +64,8 @@ pwsh ./test-e2e.ps1
 | POST | /sandbox/sessions/{id}/snapshot | Bearer | (501) |
 | POST | /v1/chat/completions | Bearer | OpenAI 兼容,支持 stream |
 | POST | /v1/embeddings | Bearer | OpenAI 兼容 |
+| GET | /tools | Bearer | 列出 8 个 internal tools |
+| POST | /tools/invoke | Bearer | 调用 tool |
 
 ## 配置
 
