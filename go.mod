@@ -3,6 +3,7 @@ module github.com/yourorg/private-coding-agent
 go 1.26.3
 
 require (
+	github.com/bmatcuk/doublestar/v4 v4.6.1
 	github.com/containerd/errdefs v1.0.0
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/gin-gonic/gin v1.12.0
