@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/yourorg/private-coding-agent/internal/agent"
+	"github.com/yourorg/private-coding-agent/internal/audit"
 	"github.com/yourorg/private-coding-agent/internal/modelgw"
 )
 
@@ -23,16 +25,43 @@ type Service struct {
 	sessions *SessionRepo
 	messages *MessageRepo
 	engine   AgentEngine
+	audit    audit.Sink
 }
 
 func NewService(sessions *SessionRepo, messages *MessageRepo, engine AgentEngine) *Service {
 	return &Service{sessions: sessions, messages: messages, engine: engine}
 }
 
+// WithAuditSink wires an audit.Sink so the service records session.create /
+// session.archive entries on successful operations. Returns the receiver for
+// chaining. Setter (rather than constructor arg) keeps NewService callers
+// in tests untouched.
+func (s *Service) WithAuditSink(sink audit.Sink) *Service {
+	s.audit = sink
+	return s
+}
+
+func (s *Service) auditSessionEvent(start time.Time, tenantID, userID, sid uuid.UUID, action string, meta map[string]any) {
+	if s.audit == nil {
+		return
+	}
+	tid := tenantID
+	uid := userID
+	audit.Detached(s.audit, audit.Entry{
+		OccurredAt: start,
+		TenantID:   &tid, UserID: &uid,
+		Action:     action,
+		Target:     sid.String(),
+		DurationMS: int(time.Since(start).Milliseconds()),
+		Metadata:   meta,
+	}, nil)
+}
+
 // CreateSession persists a new active session. Model is required; profile
 // defaults to "coding".
 func (s *Service) CreateSession(ctx context.Context, tenantID, userID uuid.UUID,
 	req CreateRequest) (*Session, error) {
+	start := time.Now()
 	if req.Model == "" {
 		return nil, ErrModelRequired
 	}
@@ -53,7 +82,15 @@ func (s *Service) CreateSession(ctx context.Context, tenantID, userID uuid.UUID,
 		return nil, err
 	}
 	// Round-trip read so created_at/updated_at are populated.
-	return s.sessions.Get(ctx, tenantID, userID, sess.ID)
+	out, err := s.sessions.Get(ctx, tenantID, userID, sess.ID)
+	if err != nil {
+		return nil, err
+	}
+	s.auditSessionEvent(start, tenantID, userID, sess.ID, "session.create", map[string]any{
+		"model":   req.Model,
+		"profile": profile,
+	})
+	return out, nil
 }
 
 // ListSessions returns all sessions owned by userID under tenantID.
@@ -69,7 +106,12 @@ func (s *Service) GetSession(ctx context.Context, tenantID, userID, id uuid.UUID
 
 // ArchiveSession sets the session status to "archived".
 func (s *Service) ArchiveSession(ctx context.Context, tenantID, userID, id uuid.UUID) error {
-	return s.sessions.Archive(ctx, tenantID, userID, id)
+	start := time.Now()
+	if err := s.sessions.Archive(ctx, tenantID, userID, id); err != nil {
+		return err
+	}
+	s.auditSessionEvent(start, tenantID, userID, id, "session.archive", nil)
+	return nil
 }
 
 // ListMessages returns all messages of a session in seq order. The session

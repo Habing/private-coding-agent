@@ -1,7 +1,9 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
+import { AdminGuard } from '@/components/AdminGuard'
 import { ProtectedShell } from '@/components/ProtectedShell'
+import { Audit } from '@/pages/Audit'
 import { Chat } from '@/pages/Chat'
 import { Home } from '@/pages/Home'
 import { Login } from '@/pages/Login'
@@ -17,6 +19,14 @@ export function App() {
           <Route element={<ProtectedShell />}>
             <Route path="/" element={<Home />} />
             <Route path="/sessions/:id" element={<Chat />} />
+            <Route
+              path="/audit"
+              element={
+                <AdminGuard>
+                  <Audit />
+                </AdminGuard>
+              }
+            />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

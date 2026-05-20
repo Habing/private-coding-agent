@@ -36,7 +36,7 @@ func TestAuditMiddleware_WritesEntry(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	s := &strictSpy{}
 	r := gin.New()
-	r.Use(audit.Middleware(s, nil))
+	r.Use(audit.Middleware(s, nil, nil))
 	r.GET("/x", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
 
 	w := httptest.NewRecorder()
@@ -60,7 +60,7 @@ func TestAuditMiddleware_SurvivesCanceledRequestCtx(t *testing.T) {
 	}
 
 	r := gin.New()
-	r.Use(audit.Middleware(s, onErr))
+	r.Use(audit.Middleware(s, nil, onErr))
 	r.GET("/x", func(c *gin.Context) {
 		// 模拟客户端断开 / handler 内部 cancel 请求 ctx
 		ctx, cancel := context.WithCancel(c.Request.Context())

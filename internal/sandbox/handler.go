@@ -9,15 +9,26 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/yourorg/private-coding-agent/internal/audit"
 	"github.com/yourorg/private-coding-agent/internal/auth"
 )
 
 // Handler exposes the sandbox Runtime as HTTP endpoints.
 type Handler struct {
-	rt Runtime
+	rt    Runtime
+	audit audit.Sink
 }
 
 func NewHandler(rt Runtime) *Handler { return &Handler{rt: rt} }
+
+// WithAuditSink wires an audit.Sink so the handler records sandbox.create /
+// sandbox.destroy entries on successful operations. Returns the receiver for
+// chaining. Setter (rather than constructor arg) avoids breaking existing
+// NewHandler callers in tests that don't care about audit.
+func (h *Handler) WithAuditSink(s audit.Sink) *Handler {
+	h.audit = s
+	return h
+}
 
 // Register mounts /sandbox/* routes on rg. rg should already have
 // auth.Middleware applied (handler relies on auth.FromCtx for claims).
@@ -132,6 +143,7 @@ func (h *Handler) create(c *gin.Context) {
 		opts.ProjectID = &pid
 	}
 
+	start := time.Now()
 	sb, err := h.rt.Create(c.Request.Context(), opts)
 	if err != nil {
 		if isValidationError(err) {
@@ -141,7 +153,28 @@ func (h *Handler) create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "runtime_error"})
 		return
 	}
+	h.auditSandboxEvent(c, start, sb, "sandbox.create", http.StatusCreated, map[string]any{
+		"image": sb.Image,
+	})
 	c.JSON(http.StatusCreated, toDTO(sb))
+}
+
+func (h *Handler) auditSandboxEvent(c *gin.Context, start time.Time, sb *Sandbox, action string, status int, meta map[string]any) {
+	if h.audit == nil {
+		return
+	}
+	tid := sb.TenantID
+	uid := sb.OwnerUserID
+	audit.Detached(h.audit, audit.Entry{
+		OccurredAt: start,
+		TenantID:   &tid, UserID: &uid,
+		Action: action,
+		Target: sb.ID.String(),
+		Method: c.Request.Method, Path: c.FullPath(),
+		Status:     status,
+		DurationMS: int(time.Since(start).Milliseconds()),
+		Metadata:   meta,
+	}, nil)
 }
 
 func (h *Handler) get(c *gin.Context) {
@@ -174,6 +207,7 @@ func (h *Handler) destroy(c *gin.Context) {
 	if !ok {
 		return
 	}
+	start := time.Now()
 	err := h.rt.Destroy(c.Request.Context(), cl.TenantID, id)
 	if err != nil {
 		if errors.Is(err, ErrSandboxNotFound) {
@@ -183,6 +217,9 @@ func (h *Handler) destroy(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "runtime_error"})
 		return
 	}
+	h.auditSandboxEvent(c, start,
+		&Sandbox{ID: id, TenantID: cl.TenantID, OwnerUserID: cl.UserID},
+		"sandbox.destroy", http.StatusNoContent, nil)
 	c.Status(http.StatusNoContent)
 }
 

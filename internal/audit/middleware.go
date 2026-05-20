@@ -5,8 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/yourorg/private-coding-agent/internal/auth"
+	"github.com/google/uuid"
 )
 
 // Sink accepts audit entries produced by Middleware. Implementations must be
@@ -14,6 +13,12 @@ import (
 type Sink interface {
 	Append(ctx context.Context, e Entry) error
 }
+
+// ClaimsExtractor pulls (tenantID, userID) from a request context, returning
+// nil pointers when the request was unauthenticated. Injected by main.go so
+// the audit package does not depend on the auth package (would create an
+// import cycle with the domain instrumentation calls in auth.Handler).
+type ClaimsExtractor func(c *gin.Context) (tenantID, userID *uuid.UUID)
 
 // auditWriteTimeout caps how long the audit append call may take. Independent
 // of any per-request deadline so that audit records survive client disconnects.
@@ -25,12 +30,14 @@ const auditWriteTimeout = 5 * time.Second
 // The audit append uses a context derived from context.Background() with a
 // 5s timeout (auditWriteTimeout) rather than the request context, so that
 // records are written even if the client disconnects mid-response.
-func Middleware(s Sink, onErr func(error)) gin.HandlerFunc {
+//
+// extract may be nil (entries are recorded without tenant/user IDs), but in
+// production callers should pass a function that decodes auth.Claims from ctx.
+func Middleware(s Sink, extract ClaimsExtractor, onErr func(error)) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		c.Next()
 
-		cl := auth.FromCtx(c.Request.Context())
 		e := Entry{
 			OccurredAt: start,
 			Method:     c.Request.Method,
@@ -39,9 +46,9 @@ func Middleware(s Sink, onErr func(error)) gin.HandlerFunc {
 			DurationMS: int(time.Since(start).Milliseconds()),
 			Action:     "http_request",
 		}
-		if cl != nil {
-			t, u := cl.TenantID, cl.UserID
-			e.TenantID, e.UserID = &t, &u
+		if extract != nil {
+			tid, uid := extract(c)
+			e.TenantID, e.UserID = tid, uid
 		}
 
 		appendCtx, cancel := context.WithTimeout(context.Background(), auditWriteTimeout)

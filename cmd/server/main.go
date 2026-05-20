@@ -17,6 +17,7 @@ import (
 
 	"github.com/docker/docker/client"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/yourorg/private-coding-agent/internal/agent"
@@ -98,6 +99,7 @@ func run() error {
 		return fmt.Errorf("sandbox driver: %w", err)
 	}
 	sandboxHandler := sandbox.NewHandler(sandboxDriver)
+	// Will set sandboxHandler.WithAuditSink after auditRepo is constructed.
 
 	// Model Gateway
 	providerRepo := modelgw.NewProviderRepo(pool)
@@ -187,16 +189,35 @@ func run() error {
 	}
 	jwtSvc := auth.NewJWT(jwtCfg)
 	auditRepo := audit.NewRepo(pool)
+	sandboxHandler.WithAuditSink(auditRepo)
+	sessionService.WithAuditSink(auditRepo)
+	sessionWSHandler.WithAuditSink(auditRepo)
+	toolBus.WithAuditSink(auditRepo)
+	auditSvc := audit.NewService(auditRepo)
+	auditHandler := audit.NewHandler(auditSvc, func(c *gin.Context) (uuid.UUID, bool) {
+		cl := auth.FromCtx(c.Request.Context())
+		if cl == nil {
+			return uuid.Nil, false
+		}
+		return cl.TenantID, true
+	})
 
 	var ready atomic.Bool
 	ready.Store(true)
 
 	authHandler := auth.NewHandler(auth.HandlerDeps{
-		Tenants: tenantLookup, Auth: userSvc, JWT: jwtSvc,
+		Tenants: tenantLookup, Auth: userSvc, JWT: jwtSvc, Audit: auditRepo,
 	})
 
 	register := func(r *gin.Engine) {
-		r.Use(audit.Middleware(auditRepo, func(err error) {
+		r.Use(audit.Middleware(auditRepo, func(c *gin.Context) (*uuid.UUID, *uuid.UUID) {
+			cl := auth.FromCtx(c.Request.Context())
+			if cl == nil {
+				return nil, nil
+			}
+			tid, uid := cl.TenantID, cl.UserID
+			return &tid, &uid
+		}, func(err error) {
 			log.Printf("audit append: %v", err)
 		}))
 		authHandler.Register(r)
@@ -210,6 +231,14 @@ func run() error {
 		agentHandler.Register(protected)
 		sessionHandler.Register(protected)
 		memoryHandler.Register(protected)
+
+		// Admin-only routes: same auth.Middleware to decode Claims, plus
+		// RequireAdmin to enforce role == "admin". Sits on its own group so the
+		// admin gate cannot accidentally leak onto non-admin endpoints.
+		adminGroup := r.Group("/")
+		adminGroup.Use(auth.Middleware(jwtSvc))
+		adminGroup.Use(auth.RequireAdmin())
+		auditHandler.Register(adminGroup)
 
 		// WebSocket group: browsers cannot set Authorization headers on the WS
 		// upgrade, so a narrow query-token shim runs before auth.Middleware on

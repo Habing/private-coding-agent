@@ -13,6 +13,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/yourorg/private-coding-agent/internal/agent"
+	"github.com/yourorg/private-coding-agent/internal/audit"
 	"github.com/yourorg/private-coding-agent/internal/auth"
 )
 
@@ -30,6 +31,14 @@ type WSSendService interface {
 type WSHandler struct {
 	svc      WSSendService
 	upgrader websocket.Upgrader
+	audit    audit.Sink
+}
+
+// WithAuditSink wires an audit.Sink so the handler records session.ws.open /
+// session.ws.close entries. Returns the receiver for chaining.
+func (h *WSHandler) WithAuditSink(s audit.Sink) *WSHandler {
+	h.audit = s
+	return h
 }
 
 // NewWSHandler constructs a WSHandler. allowedOrigins controls the WS handshake
@@ -105,6 +114,13 @@ func (h *WSHandler) serve(c *gin.Context) {
 	}
 	defer conn.Close()
 
+	opened := time.Now()
+	h.auditWSEvent(opened, cl.TenantID, cl.UserID, sid, "session.ws.open", nil)
+	defer func() {
+		h.auditWSEvent(time.Now(), cl.TenantID, cl.UserID, sid, "session.ws.close",
+			map[string]any{"duration_ms": int(time.Since(opened).Milliseconds())})
+	}()
+
 	conn.SetReadLimit(wsMaxMessage)
 	_ = conn.SetReadDeadline(time.Now().Add(wsReadDeadline))
 	conn.SetPongHandler(func(string) error {
@@ -119,6 +135,21 @@ func (h *WSHandler) serve(c *gin.Context) {
 	go c2.pingLoop(ctx)
 
 	c2.readLoop(ctx, cl.TenantID, cl.UserID, sid, h.svc)
+}
+
+func (h *WSHandler) auditWSEvent(start time.Time, tenantID, userID, sid uuid.UUID, action string, meta map[string]any) {
+	if h.audit == nil {
+		return
+	}
+	tid := tenantID
+	uid := userID
+	audit.Detached(h.audit, audit.Entry{
+		OccurredAt: start,
+		TenantID:   &tid, UserID: &uid,
+		Action:   action,
+		Target:   sid.String(),
+		Metadata: meta,
+	}, nil)
 }
 
 // wsConn is a thin wrapper that serializes writes via a mutex (gorilla allows

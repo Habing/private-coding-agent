@@ -13,7 +13,7 @@
 - [x] 切片 6：Session API + WebSocket
 - [x] 切片 7：Memory (basic)
 - [x] 切片 8：Web Frontend
-- [ ] 切片 9：Integration & Audit
+- [x] 切片 9：Audit Deepening
 
 ## 本地开发
 
@@ -78,8 +78,9 @@ pwsh ./test-e2e.ps1
 | GET  | /memories/{id} | Bearer | 查询单条记忆 |
 | PUT  | /memories/{id} | Bearer | 更新 content / tags / type |
 | DELETE | /memories/{id} | Bearer | 删除一条记忆 |
+| GET | /audit | Bearer (admin) | 查询审计日志,支持 action/user_id/from/to/min_status/max_status/limit/offset 过滤 |
 | GET | / | - | SPA 首页（embed 进二进制） |
-| GET | /login, /sessions/{id} | - | SPA 前端路由，由 NoRoute fallback 返回 index.html |
+| GET | /login, /sessions/{id}, /audit | - | SPA 前端路由，由 NoRoute fallback 返回 index.html |
 
 ## 内部 MCP 工具
 
@@ -117,6 +118,29 @@ make build         # = make web + go build -o bin/server ./cmd/server
 ```
 
 docker-compose 路径会自动跑多阶段 build：`node:20-alpine` 先 `npm run build`，再 `COPY --from=web` 进 Go build。
+
+## 审计
+
+两层并存：
+
+1. **HTTP 访问层** — `audit.Middleware` 给每个请求落一行 `action=http_request`，覆盖全量访问日志。
+2. **业务事件层** — 关键 handler/service 显式落领域事件，便于按动作过滤。固定 action 枚举（命名规范：`<domain>.<verb>[.<outcome>]`）：
+
+| Action | Target | Metadata 关键字段 |
+|---|---|---|
+| `auth.login.success` | user email | `user_id`, `tenant_slug`, `role` |
+| `auth.login.failure` | user email | `reason` (`bad_credentials` / `wrong_tenant`) |
+| `sandbox.create` | sandbox_id | `image` |
+| `sandbox.destroy` | sandbox_id | — |
+| `session.create` | session_id | `model`, `profile` |
+| `session.archive` | session_id | — |
+| `session.ws.open` | session_id | — |
+| `session.ws.close` | session_id | `duration_ms` |
+| `tool.invoke.error` | tool_name | `error_class` |
+
+`GET /audit` 仅对 `role=admin` 开放（`auth.RequireAdmin` 中间件 + 独立 router group），且永远按 `cl.TenantID` 过滤——不存在跨租户视图。`audit.Sink` 写盘 detached + 5s 超时，业务路径不会被审计写阻塞。
+
+PII 最小化：metadata 不存 prompt 内容、不存 shell 命令原文、不存文件内容，仅存 ID/计数/错误类目；`auth.login.failure` 的 target 字段记 email 是为支持追失败登录所必须。
 
 ## 配置
 

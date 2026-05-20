@@ -11,6 +11,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/santhosh-tekuri/jsonschema/v6"
+
+	"github.com/yourorg/private-coding-agent/internal/audit"
 )
 
 // Bus orchestrates tool invocation: schema-validate input, hash for audit,
@@ -19,6 +21,16 @@ type Bus struct {
 	reg      *Registry
 	recorder *InvocationRecorder
 	schemas  map[string]*jsonschema.Schema
+	audit    audit.Sink
+}
+
+// WithAuditSink wires an audit.Sink so the Bus records tool.invoke.error
+// entries on failure. Success path is already captured by tool_invocations
+// (status=ok); we only mirror failures to audit_log to support cross-domain
+// admin queries. Returns the receiver for chaining.
+func (b *Bus) WithAuditSink(s audit.Sink) *Bus {
+	b.audit = s
+	return b
 }
 
 // NewBus compiles each registered tool's schema once. Returns an error if any
@@ -84,6 +96,19 @@ func (b *Bus) Invoke(ctx context.Context, tenantID, userID uuid.UUID,
 		event.OutputSHA256 = sha256Hex(output)
 	}
 	b.recorder.Record(event)
+
+	if callErr != nil && b.audit != nil {
+		tid := tenantID
+		uid := userID
+		audit.Detached(b.audit, audit.Entry{
+			OccurredAt: start,
+			TenantID:   &tid, UserID: &uid,
+			Action:     "tool.invoke.error",
+			Target:     toolName,
+			DurationMS: int(dur.Milliseconds()),
+			Metadata:   map[string]any{"error_class": event.ErrorClass},
+		}, nil)
+	}
 
 	return output, callErr
 }

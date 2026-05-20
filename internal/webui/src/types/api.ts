@@ -99,3 +99,23 @@ export interface SessionListResponse {
 export interface MessageListResponse {
   messages: Message[]
 }
+
+export interface AuditEntry {
+  occurred_at: string
+  tenant_id?: string
+  user_id?: string
+  action: string
+  target: string
+  method: string
+  path: string
+  status: number
+  duration_ms: number
+  metadata: Record<string, unknown> | null
+}
+
+export interface AuditListResponse {
+  entries: AuditEntry[]
+  total: number
+  limit: number
+  offset: number
+}
