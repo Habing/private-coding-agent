@@ -187,11 +187,13 @@ echo "$LIST" | jq -e --arg id "$SID" '.sessions[] | select(.id==$id)' >/dev/null
 echo "[21/21] WS round-trip via docker websocat ..."
 WS_IMG=solsson/websocat
 docker pull -q "$WS_IMG" >/dev/null 2>&1 || true
+# Use the compose network and reach the server by service name —
+# `--network host` does not route to localhost:8080 on Docker Desktop.
 WS_OUT=$(printf '%s\n' '{"type":"user_message","content":"hi"}' \
-  | docker run --rm -i --network host "$WS_IMG" \
+  | docker run --rm -i --network compose_default "$WS_IMG" \
     -H="Authorization: Bearer $TOK" \
     -n1 \
-    -t "ws://localhost:8080/sessions/$SID/ws" 2>/dev/null \
+    -t "ws://server:8080/sessions/$SID/ws" 2>/dev/null \
   | head -n 5)
 echo "$WS_OUT" | grep -q '"type":"event"' || { echo "ws missing event frame: $WS_OUT"; exit 1; }
 MSGS=$(curl -fsS "http://localhost:8080/sessions/$SID/messages" -H "Authorization: Bearer $TOK")
