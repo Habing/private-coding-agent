@@ -4,7 +4,13 @@ export interface User {
   id: string
   tenant_id: string
   email: string
-  name: string
+  role: string
+  name?: string
+}
+
+export interface MeResponse {
+  user_id: string
+  tenant_id: string
   role: string
 }
 
@@ -74,7 +80,6 @@ export interface LoginRequest {
 
 export interface LoginResponse {
   token: string
-  user: User
 }
 
 export interface CreateSessionRequest {
