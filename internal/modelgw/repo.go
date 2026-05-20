@@ -70,3 +70,38 @@ FROM providers WHERE name = $1`, name)
 	}
 	return &p, nil
 }
+
+// UsageRepo 写 model_usage。
+type UsageRepo struct {
+	pool *pgxpool.Pool
+}
+
+func NewUsageRepo(pool *pgxpool.Pool) *UsageRepo {
+	return &UsageRepo{pool: pool}
+}
+
+// Insert 追加一行 model_usage。
+func (r *UsageRepo) Insert(ctx context.Context, e CallEvent) error {
+	_, err := r.pool.Exec(ctx, `
+INSERT INTO model_usage
+  (occurred_at, tenant_id, user_id, provider_id, provider_type, model,
+   action, stream, status, error_class, input_tokens, output_tokens, duration_ms)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+		e.OccurredAt, e.TenantID, e.UserID, e.ProviderID, e.ProviderType, e.Model,
+		e.Action, e.Stream, e.Status, e.ErrorClass, e.InputTokens, e.OutputTokens, e.DurationMS)
+	if err != nil {
+		return fmt.Errorf("insert model_usage: %w", err)
+	}
+	return nil
+}
+
+// CountByTenant 测试 / 运维查询。
+func (r *UsageRepo) CountByTenant(ctx context.Context, tenantID uuid.UUID) (int, error) {
+	var n int
+	err := r.pool.QueryRow(ctx,
+		`SELECT count(*) FROM model_usage WHERE tenant_id=$1`, tenantID).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count model_usage: %w", err)
+	}
+	return n, nil
+}

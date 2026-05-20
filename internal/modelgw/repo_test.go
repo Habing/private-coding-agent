@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
@@ -76,4 +77,30 @@ func TestProviderRepo_GetByName_NotFound(t *testing.T) {
 	repo := modelgw.NewProviderRepo(pg)
 	_, err = repo.GetByName(ctx, "nope-"+fmt.Sprint(time.Now().UnixNano()))
 	require.ErrorIs(t, err, modelgw.ErrProviderNotFound)
+}
+
+func TestUsageRepo_InsertAndCount(t *testing.T) {
+	ctx := context.Background()
+	pg, err := pgxpool.New(ctx, testDSN)
+	require.NoError(t, err)
+	t.Cleanup(pg.Close)
+
+	provRepo := modelgw.NewProviderRepo(pg)
+	prov, err := provRepo.GetByName(ctx, "default-mock")
+	require.NoError(t, err)
+
+	tid := uuid.New()
+	uid := uuid.New()
+	repo := modelgw.NewUsageRepo(pg)
+	require.NoError(t, repo.Insert(ctx, modelgw.CallEvent{
+		TenantID: tid, UserID: uid,
+		ProviderID: prov.ID, ProviderType: "openai", Model: "x",
+		Action: "chat", Stream: false, Status: "ok",
+		InputTokens: 10, OutputTokens: 20, DurationMS: 100,
+		OccurredAt: time.Now(),
+	}))
+
+	n, err := repo.CountByTenant(ctx, tid)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
 }
