@@ -9,7 +9,7 @@
 - [x] 切片 2：Sandbox Runtime + DockerDriver
 - [x] 切片 3：Model Gateway
 - [x] 切片 4：Tool Bus + Internal MCP
-- [ ] 切片 5：Agent Engine
+- [x] 切片 5：Agent Engine
 - [ ] 切片 6：Session API + WebSocket
 - [ ] 切片 7：Memory (basic)
 - [ ] 切片 8：Web Frontend
@@ -66,6 +66,7 @@ pwsh ./test-e2e.ps1
 | POST | /v1/embeddings | Bearer | OpenAI 兼容 |
 | GET | /tools | Bearer | 列出 8 个 internal tools |
 | POST | /tools/invoke | Bearer | 调用 tool |
+| POST | /agent/run | Bearer | ReAct 循环,返回 events 数组 (非流式) |
 
 ## 配置
 
