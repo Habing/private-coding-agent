@@ -25,6 +25,7 @@ import (
 	"github.com/yourorg/private-coding-agent/internal/config"
 	"github.com/yourorg/private-coding-agent/internal/db"
 	"github.com/yourorg/private-coding-agent/internal/httpx"
+	"github.com/yourorg/private-coding-agent/internal/memory"
 	"github.com/yourorg/private-coding-agent/internal/modelgw"
 	"github.com/yourorg/private-coding-agent/internal/sandbox"
 	"github.com/yourorg/private-coding-agent/internal/session"
@@ -132,6 +133,15 @@ func run() error {
 	_ = toolRegistry.Register(tools.NewLLMChat(modelGateway))
 	_ = toolRegistry.Register(tools.NewLLMEmbed(modelGateway))
 
+	// Memory subsystem (slice 7) — declared before toolbus so the 4 memory
+	// tools can register against the bus.
+	memoryService := memory.NewService(memory.NewRepo(pool))
+	memoryHandler := memory.NewHandler(memoryService)
+	_ = toolRegistry.Register(tools.NewMemorySave(memoryService))
+	_ = toolRegistry.Register(tools.NewMemorySearch(memoryService))
+	_ = toolRegistry.Register(tools.NewMemoryList(memoryService))
+	_ = toolRegistry.Register(tools.NewMemoryDelete(memoryService))
+
 	toolInvocationRecorder := toolbus.NewInvocationRecorder(
 		toolbus.NewInvocationRepo(pool),
 		func(err error) { log.Printf("tool invocation record: %v", err) })
@@ -199,6 +209,7 @@ func run() error {
 		agentHandler.Register(protected)
 		sessionHandler.Register(protected)
 		sessionWSHandler.Register(protected)
+		memoryHandler.Register(protected)
 	}
 
 	engine := httpx.NewEngine(httpx.Deps{
