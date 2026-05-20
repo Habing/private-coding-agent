@@ -2,55 +2,11 @@ import { useQuery } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
 
 import { Composer } from '@/components/Composer'
+import { MessageList } from '@/components/MessageList'
+import { useChatSocket } from '@/hooks/useChatSocket'
 import { api } from '@/lib/api'
-import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth'
-import type { Message, MessageListResponse } from '@/types/api'
-
-function Bubble({ msg }: { msg: Message }) {
-  if (msg.role === 'user') {
-    return (
-      <div className="flex justify-end">
-        <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl bg-primary px-3 py-2 text-sm text-primary-foreground">
-          {msg.content}
-        </div>
-      </div>
-    )
-  }
-  if (msg.role === 'tool') {
-    return (
-      <div className="flex pl-6">
-        <div className="max-w-[80%] rounded-md border bg-muted px-3 py-2 text-xs font-mono text-muted-foreground">
-          <div className="mb-1 text-[10px] uppercase tracking-wide opacity-70">
-            tool result {msg.tool_call_id && `· ${msg.tool_call_id}`}
-          </div>
-          <pre className="whitespace-pre-wrap break-words">{msg.content}</pre>
-        </div>
-      </div>
-    )
-  }
-  if (msg.role === 'system') {
-    return (
-      <div className="flex justify-center">
-        <div className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
-          {msg.content}
-        </div>
-      </div>
-    )
-  }
-  // assistant
-  return (
-    <div className="flex justify-start">
-      <div
-        className={cn(
-          'max-w-[80%] whitespace-pre-wrap rounded-2xl border bg-card px-3 py-2 text-sm',
-        )}
-      >
-        {msg.content}
-      </div>
-    </div>
-  )
-}
+import type { MessageListResponse } from '@/types/api'
 
 export function Chat() {
   const { id } = useParams<{ id: string }>()
@@ -63,23 +19,38 @@ export function Chat() {
     enabled: !!id && !!token,
   })
 
-  function onSend(content: string) {
-    // WS wiring lands in Task 7.
-    console.warn('chat send (no WS yet):', content)
-  }
+  const { status, events, errorMessage, sendUserMessage } = useChatSocket(id)
+
+  const history = data?.messages ?? []
+  const composerDisabled = status !== 'open'
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
-        {isLoading && <div className="text-xs text-muted-foreground">加载中…</div>}
-        {data?.messages.map((m) => <Bubble key={m.id} msg={m} />)}
-        {data && data.messages.length === 0 && !isLoading && (
-          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-            还没有消息，发一条试试
-          </div>
-        )}
+      <div className="border-b px-4 py-1.5 text-[11px] text-muted-foreground">
+        <StatusLabel status={status} errorMessage={errorMessage} />
       </div>
-      <Composer onSend={onSend} disabled={false} />
+      {isLoading ? (
+        <div className="flex-1 px-4 py-3 text-xs text-muted-foreground">加载中…</div>
+      ) : (
+        <MessageList history={history} events={events} />
+      )}
+      <Composer
+        onSend={(content) => sendUserMessage(content)}
+        disabled={composerDisabled}
+      />
     </div>
   )
+}
+
+function StatusLabel({
+  status,
+  errorMessage,
+}: {
+  status: ReturnType<typeof useChatSocket>['status']
+  errorMessage: string | null
+}) {
+  if (status === 'open') return <span className="text-emerald-600">已连接</span>
+  if (status === 'connecting') return <span>连接中…</span>
+  if (status === 'closed') return <span>已关闭</span>
+  return <span className="text-destructive">连接错误{errorMessage ? `：${errorMessage}` : ''}</span>
 }

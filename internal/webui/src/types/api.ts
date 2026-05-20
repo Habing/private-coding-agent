@@ -44,7 +44,11 @@ export interface Message {
   created_at: string
 }
 
+// Backend AgentEventKind plus a frontend-only 'user' marker the WS hook
+// pushes locally for optimistic echo of just-sent user messages. The server
+// never emits 'user'.
 export type AgentEventKind =
+  | 'user'
   | 'assistant_message'
   | 'tool_call'
   | 'tool_result'
@@ -64,8 +68,8 @@ export interface AgentEvent {
 
 export type ServerFrame =
   | { type: 'event'; event: AgentEvent }
-  | { type: 'done'; seq: number }
-  | { type: 'error'; message: string }
+  | { type: 'done'; seq?: number }
+  | { type: 'error'; message: string; code?: string }
   | { type: 'pong' }
 
 export type ClientFrame =

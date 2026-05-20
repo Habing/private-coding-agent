@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
+import { WebSocket as MockWS } from 'mock-socket'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '@/stores/auth'
 import { server } from '@/test/mswServer'
@@ -54,14 +55,20 @@ const history: Message[] = [
 
 describe('<Chat />', () => {
   beforeEach(() => {
+    vi.stubGlobal('WebSocket', MockWS)
     useAuthStore.getState().setAuth('jwt.demo', {
       id: 'u1',
       tenant_id: 't1',
       email: 'demo@example.com',
       role: 'member',
     })
+    Object.defineProperty(window, 'location', {
+      value: new URL('http://localhost:3000/sessions/s1') as unknown as Location,
+      writable: true,
+    })
   })
   afterEach(() => {
+    vi.unstubAllGlobals()
     useAuthStore.getState().clear()
   })
 
@@ -77,7 +84,7 @@ describe('<Chat />', () => {
     expect(screen.getByText(/ok/)).toBeInTheDocument()
   })
 
-  it('renders the Composer disabled until WS hook is wired (Task 7)', async () => {
+  it('renders the Composer', async () => {
     server.use(
       http.get(`/sessions/${sessionID}/messages`, () =>
         HttpResponse.json({ messages: [] }),
