@@ -24,6 +24,7 @@ import (
 	"github.com/yourorg/private-coding-agent/internal/config"
 	"github.com/yourorg/private-coding-agent/internal/db"
 	"github.com/yourorg/private-coding-agent/internal/httpx"
+	"github.com/yourorg/private-coding-agent/internal/modelgw"
 	"github.com/yourorg/private-coding-agent/internal/sandbox"
 	"github.com/yourorg/private-coding-agent/internal/telemetry"
 	"github.com/yourorg/private-coding-agent/internal/tenant"
@@ -92,6 +93,30 @@ func run() error {
 	}
 	sandboxHandler := sandbox.NewHandler(sandboxDriver)
 
+	// Model Gateway
+	providerRepo := modelgw.NewProviderRepo(pool)
+	usageRecorder := modelgw.NewUsageRecorder(modelgw.NewUsageRepo(pool), func(err error) {
+		log.Printf("model usage record: %v", err)
+	})
+	factories := map[string]modelgw.ProviderFactory{
+		"openai": func(cfg modelgw.ProviderConfig) (modelgw.Provider, error) {
+			return modelgw.NewOpenAIProvider(cfg)
+		},
+		"ollama": func(cfg modelgw.ProviderConfig) (modelgw.Provider, error) {
+			return modelgw.NewOllamaProvider(cfg)
+		},
+		"claude": func(cfg modelgw.ProviderConfig) (modelgw.Provider, error) {
+			return modelgw.NewClaudeProvider(cfg)
+		},
+	}
+	modelRegistry := modelgw.NewProviderRegistry(providerRepo, factories, 60*time.Second)
+	if err := modelRegistry.Start(ctx); err != nil {
+		return fmt.Errorf("model registry: %w", err)
+	}
+	go modelRegistry.Run(ctx)
+	modelGateway := modelgw.NewGateway(modelRegistry, usageRecorder)
+	modelHandler := modelgw.NewHandler(modelGateway)
+
 	// Reconciler (Task 16)
 	if err := sandbox.RunReconciler(ctx, sandboxRepo, dockerCli); err != nil {
 		return fmt.Errorf("reconciler: %w", err)
@@ -124,6 +149,7 @@ func run() error {
 		protected.Use(auth.Middleware(jwtSvc))
 		httpx.RegisterMe(protected)
 		sandboxHandler.Register(protected)
+		modelHandler.Register(protected)
 	}
 
 	engine := httpx.NewEngine(httpx.Deps{

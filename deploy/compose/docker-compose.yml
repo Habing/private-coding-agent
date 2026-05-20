@@ -34,6 +34,15 @@ services:
       - ../../sandbox/image:/sandbox-context:ro
     profiles: ["build-only"]
 
+  mock-provider:
+    build:
+      context: ../..
+      dockerfile: internal/modelgw/mockserver/Dockerfile
+    healthcheck:
+      disable: true
+    ports:
+      - "8081:8081"
+
   server:
     build:
       context: ../..
