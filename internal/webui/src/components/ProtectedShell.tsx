@@ -1,5 +1,7 @@
 import { Navigate, Outlet } from 'react-router-dom'
 
+import { SessionList } from '@/components/SessionList'
+import { TopBar } from '@/components/TopBar'
 import { useAuthStore } from '@/stores/auth'
 
 export function ProtectedShell() {
@@ -7,14 +9,11 @@ export function ProtectedShell() {
   if (!token) return <Navigate to="/login" replace />
 
   return (
-    <div className="flex h-screen w-screen flex-col">
-      <header className="flex h-12 items-center border-b px-4 text-sm font-semibold">
-        Private Coding Agent
-      </header>
+    <div className="flex h-screen w-screen flex-col bg-background text-foreground">
+      <TopBar />
       <div className="flex flex-1 overflow-hidden">
-        <aside className="w-64 border-r p-2 text-sm text-muted-foreground">
-          {/* SessionList — Task 5 */}
-          <div>会话列表（待 Task 5 接入）</div>
+        <aside className="w-64 shrink-0 border-r">
+          <SessionList />
         </aside>
         <main className="flex-1 overflow-hidden">
           <Outlet />

@@ -1,0 +1,27 @@
+import { useNavigate } from 'react-router-dom'
+
+import { Button } from '@/components/ui/button'
+import { useAuthStore } from '@/stores/auth'
+
+export function TopBar() {
+  const navigate = useNavigate()
+  const user = useAuthStore((s) => s.user)
+  const clear = useAuthStore((s) => s.clear)
+
+  function onLogout() {
+    clear()
+    navigate('/login', { replace: true })
+  }
+
+  return (
+    <header className="flex h-12 shrink-0 items-center justify-between border-b px-4">
+      <div className="text-sm font-semibold">Private Coding Agent</div>
+      <div className="flex items-center gap-3 text-sm">
+        {user && <span className="text-muted-foreground">{user.email}</span>}
+        <Button variant="ghost" size="sm" onClick={onLogout}>
+          退出
+        </Button>
+      </div>
+    </header>
+  )
+}
