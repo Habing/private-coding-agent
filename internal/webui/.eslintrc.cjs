@@ -13,4 +13,12 @@ module.exports = {
     'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
   },
+  overrides: [
+    {
+      // shadcn/ui copy-paste components intentionally export both the
+      // component and its cva variant builder from the same file.
+      files: ['src/components/ui/**/*.tsx'],
+      rules: { 'react-refresh/only-export-components': 'off' },
+    },
+  ],
 }

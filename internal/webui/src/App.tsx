@@ -1,0 +1,26 @@
+import { QueryClientProvider } from '@tanstack/react-query'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
+
+import { ProtectedShell } from '@/components/ProtectedShell'
+import { Chat } from '@/pages/Chat'
+import { Home } from '@/pages/Home'
+import { Login } from '@/pages/Login'
+import { NotFound } from '@/pages/NotFound'
+import { queryClient } from '@/queryClient'
+
+export function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route element={<ProtectedShell />}>
+            <Route path="/" element={<Home />} />
+            <Route path="/sessions/:id" element={<Chat />} />
+          </Route>
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </BrowserRouter>
+    </QueryClientProvider>
+  )
+}
