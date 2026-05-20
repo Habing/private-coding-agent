@@ -251,7 +251,11 @@ HTML2=$(curl -fsS http://localhost:8080/login)
 echo "$HTML2" | grep -q 'id="root"' || { echo "spa fallback failed for /login"; exit 1; }
 
 echo "[28/28] API not shadowed by SPA fallback: GET /sessions returns JSON ..."
-CT=$(curl -sI -H "Authorization: Bearer $TOK" http://localhost:8080/sessions | tr -d '\r' | awk '/^[Cc]ontent-[Tt]ype:/{print $2}')
+# Use GET (not HEAD) — gin doesn't auto-register HEAD for GET routes, so HEAD
+# falls through to NoRoute and would serve the SPA shell. The contract under
+# test is "GET /sessions returns JSON", which is what real clients do.
+CT=$(curl -s -D - -o /dev/null -H "Authorization: Bearer $TOK" http://localhost:8080/sessions \
+  | tr -d '\r' | awk '/^[Cc]ontent-[Tt]ype:/{print $2}')
 [[ "$CT" == application/json* ]] || { echo "API content-type: $CT"; exit 1; }
 
 echo
