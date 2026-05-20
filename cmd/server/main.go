@@ -28,6 +28,8 @@ import (
 	"github.com/yourorg/private-coding-agent/internal/sandbox"
 	"github.com/yourorg/private-coding-agent/internal/telemetry"
 	"github.com/yourorg/private-coding-agent/internal/tenant"
+	"github.com/yourorg/private-coding-agent/internal/toolbus"
+	"github.com/yourorg/private-coding-agent/internal/toolbus/tools"
 	"github.com/yourorg/private-coding-agent/internal/user"
 )
 
@@ -117,6 +119,27 @@ func run() error {
 	modelGateway := modelgw.NewGateway(modelRegistry, usageRecorder)
 	modelHandler := modelgw.NewHandler(modelGateway)
 
+	// Tool Bus
+	toolRegistry := toolbus.NewRegistry()
+	_ = toolRegistry.Register(tools.NewFSRead(sandboxDriver))
+	_ = toolRegistry.Register(tools.NewFSWrite(sandboxDriver))
+	_ = toolRegistry.Register(tools.NewFSList(sandboxDriver))
+	_ = toolRegistry.Register(tools.NewFSGlob(sandboxDriver))
+	_ = toolRegistry.Register(tools.NewGrep(sandboxDriver))
+	_ = toolRegistry.Register(tools.NewShellExec(sandboxDriver))
+	_ = toolRegistry.Register(tools.NewLLMChat(modelGateway))
+	_ = toolRegistry.Register(tools.NewLLMEmbed(modelGateway))
+
+	toolInvocationRecorder := toolbus.NewInvocationRecorder(
+		toolbus.NewInvocationRepo(pool),
+		func(err error) { log.Printf("tool invocation record: %v", err) })
+
+	toolBus, err := toolbus.NewBus(toolRegistry, toolInvocationRecorder)
+	if err != nil {
+		return fmt.Errorf("toolbus: %w", err)
+	}
+	toolHandler := toolbus.NewHandler(toolBus)
+
 	// Reconciler (Task 16)
 	if err := sandbox.RunReconciler(ctx, sandboxRepo, dockerCli); err != nil {
 		return fmt.Errorf("reconciler: %w", err)
@@ -150,6 +173,7 @@ func run() error {
 		httpx.RegisterMe(protected)
 		sandboxHandler.Register(protected)
 		modelHandler.Register(protected)
+		toolHandler.Register(protected)
 	}
 
 	engine := httpx.NewEngine(httpx.Deps{
