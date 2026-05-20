@@ -1,0 +1,22 @@
+node_modules/
+dist/*
+!dist/.gitkeep
+
+# TypeScript / Vite build cache (regenerated on every build)
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+# dist/index.html is intentionally NOT in the exception list: vite build
+# rewrites it on every run with hashed asset references. RegisterSPAFallback
+# handles the missing-file case gracefully (logs and skips), and production
+# builds always populate dist/ via the Docker multi-stage step.
+
+# editor
+.vscode/
+.idea/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log

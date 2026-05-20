@@ -22,3 +22,7 @@ coverage.txt
 # OS
 .DS_Store
 Thumbs.db
+
+# web frontend (internal/webui/) — see internal/webui/.gitignore for the
+# fine-grained rules; this is a backstop in case the subdir gitignore is missing.
+internal/webui/node_modules/
