@@ -7,10 +7,16 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/yourorg/private-coding-agent/internal/modelgw"
 	"github.com/yourorg/private-coding-agent/internal/toolbus"
 )
+
+var tracer trace.Tracer = otel.Tracer("internal/agent")
 
 // Gateway is the subset of *modelgw.Gateway the Engine depends on.
 type Gateway interface {
@@ -47,7 +53,7 @@ func NewEngine(gw Gateway, bus Bus, profiles map[string]Profile) *Engine {
 // Run drives the ReAct loop. Each event is emitted via yield(); if yield returns
 // an error the loop aborts and returns that error. The final return value is nil
 // on a clean stop, or a sentinel error on max steps / LLM failure.
-func (e *Engine) Run(ctx context.Context, in RunInput, yield func(Event) error) error {
+func (e *Engine) Run(ctx context.Context, in RunInput, yield func(Event) error) (runErr error) {
 	if len(in.Messages) == 0 {
 		return ErrEmptyMessages
 	}
@@ -66,6 +72,20 @@ func (e *Engine) Run(ctx context.Context, in RunInput, yield func(Event) error) 
 	if maxSteps <= 0 {
 		maxSteps = 16
 	}
+
+	ctx, runSpan := tracer.Start(ctx, "agent.run",
+		trace.WithAttributes(
+			attribute.String("agent.model", in.Model),
+			attribute.String("agent.profile", profileName),
+			attribute.Int("agent.max_steps", maxSteps),
+		))
+	defer func() {
+		if runErr != nil {
+			runSpan.RecordError(runErr)
+			runSpan.SetStatus(codes.Error, runErr.Error())
+		}
+		runSpan.End()
+	}()
 
 	// Build conversation: system prompt first, then caller-provided messages.
 	messages := make([]modelgw.ChatMessage, 0, len(in.Messages)+1)
@@ -86,22 +106,31 @@ func (e *Engine) Run(ctx context.Context, in RunInput, yield func(Event) error) 
 	}
 
 	for step := 1; step <= maxSteps; step++ {
+		stepCtx, stepSpan := tracer.Start(ctx, "agent.step",
+			trace.WithAttributes(attribute.Int("agent.step_index", step)))
+
 		req := modelgw.ChatRequest{
 			Model:    in.Model,
 			Messages: messages,
 			Tools:    modelTools,
 		}
-		resp, err := e.gw.ChatCompletion(ctx, in.TenantID, in.UserID, req)
+		resp, err := e.gw.ChatCompletion(stepCtx, in.TenantID, in.UserID, req)
 		if err != nil {
 			_ = yield(Event{Kind: EventError, Step: step, Text: err.Error(), FinishReason: "llm_error"})
+			stepSpan.RecordError(err)
+			stepSpan.SetStatus(codes.Error, err.Error())
+			stepSpan.End()
 			return fmt.Errorf("%w: %v", ErrLLMFailed, err)
 		}
 		if len(resp.Choices) == 0 {
 			_ = yield(Event{Kind: EventError, Step: step, Text: "empty choices", FinishReason: "llm_error"})
+			stepSpan.SetStatus(codes.Error, "empty choices")
+			stepSpan.End()
 			return ErrLLMFailed
 		}
 		choice := resp.Choices[0]
 		assistant := choice.Message
+		stepSpan.SetAttributes(attribute.String("agent.finish_reason", choice.FinishReason))
 		if err := yield(Event{
 			Kind:         EventAssistantMessage,
 			Step:         step,
@@ -109,14 +138,16 @@ func (e *Engine) Run(ctx context.Context, in RunInput, yield func(Event) error) 
 			ToolCalls:    assistant.ToolCalls,
 			FinishReason: choice.FinishReason,
 		}); err != nil {
+			stepSpan.End()
 			return err
 		}
 
 		if choice.FinishReason == "tool_calls" && len(assistant.ToolCalls) > 0 {
 			messages = append(messages, assistant)
 			for _, call := range assistant.ToolCalls {
-				messages = append(messages, e.runToolCall(ctx, in, step, call, allowed, yield))
+				messages = append(messages, e.runToolCall(stepCtx, in, step, call, allowed, yield))
 			}
+			stepSpan.End()
 			continue
 		}
 
@@ -126,8 +157,10 @@ func (e *Engine) Run(ctx context.Context, in RunInput, yield func(Event) error) 
 			Text:         assistant.Content,
 			FinishReason: choice.FinishReason,
 		}); err != nil {
+			stepSpan.End()
 			return err
 		}
+		stepSpan.End()
 		return nil
 	}
 

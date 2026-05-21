@@ -24,6 +24,13 @@ type ClaimsExtractor func(c *gin.Context) (tenantID, userID *uuid.UUID)
 // of any per-request deadline so that audit records survive client disconnects.
 const auditWriteTimeout = 5 * time.Second
 
+// auditSkipPaths are paths that bypass http_request audit logging — they are
+// high-frequency, low-signal, and would dominate the table otherwise. Liveness
+// and readiness fire from k8s / load balancers; /metrics from Prometheus.
+var auditSkipPaths = map[string]struct{}{
+	"/metrics": {}, "/healthz": {}, "/readyz": {},
+}
+
 // Middleware writes an audit entry per request. Failure to write is logged via
 // the optional onErr callback but does not block the request.
 //
@@ -35,6 +42,10 @@ const auditWriteTimeout = 5 * time.Second
 // production callers should pass a function that decodes auth.Claims from ctx.
 func Middleware(s Sink, extract ClaimsExtractor, onErr func(error)) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if _, skip := auditSkipPaths[c.Request.URL.Path]; skip {
+			c.Next()
+			return
+		}
 		start := time.Now()
 		c.Next()
 

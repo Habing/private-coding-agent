@@ -11,9 +11,17 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/yourorg/private-coding-agent/internal/audit"
+	pcametrics "github.com/yourorg/private-coding-agent/internal/metrics"
 )
+
+var tracer trace.Tracer = otel.Tracer("internal/toolbus")
 
 // Bus orchestrates tool invocation: schema-validate input, hash for audit,
 // invoke the tool, persist InvocationEvent. Stateless and concurrent-safe.
@@ -66,12 +74,19 @@ func (b *Bus) ListTools(_ context.Context, _ uuid.UUID) []ToolDef {
 func (b *Bus) Invoke(ctx context.Context, tenantID, userID uuid.UUID,
 	toolName string, input json.RawMessage) (json.RawMessage, error) {
 
+	ctx, span := tracer.Start(ctx, "tool.invoke",
+		trace.WithAttributes(attribute.String("tool.name", toolName)))
+	defer span.End()
+
 	tool, ok := b.reg.Get(toolName)
 	if !ok {
+		span.SetStatus(codes.Error, "tool not found")
 		return nil, ErrToolNotFound
 	}
 	schema := b.schemas[toolName]
 	if err := Validate(schema, input); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "schema validation failed")
 		return nil, err
 	}
 
@@ -79,6 +94,7 @@ func (b *Bus) Invoke(ctx context.Context, tenantID, userID uuid.UUID,
 	start := time.Now()
 	output, callErr := tool.Invoke(ctx, tenantID, userID, input)
 	dur := time.Since(start)
+	span.SetAttributes(attribute.Int64("tool.duration_ms", dur.Milliseconds()))
 
 	event := InvocationEvent{
 		TenantID:    tenantID,
@@ -91,11 +107,31 @@ func (b *Bus) Invoke(ctx context.Context, tenantID, userID uuid.UUID,
 	if callErr != nil {
 		event.Status = "error"
 		event.ErrorClass = classifyError(callErr)
+		span.SetAttributes(attribute.String("tool.outcome", "error"),
+			attribute.String("tool.error_class", event.ErrorClass))
+		span.RecordError(callErr)
+		span.SetStatus(codes.Error, callErr.Error())
 	} else {
 		event.Status = "ok"
 		event.OutputSHA256 = sha256Hex(output)
+		span.SetAttributes(attribute.String("tool.outcome", "ok"))
 	}
 	b.recorder.Record(event)
+
+	if pcametrics.ToolInvocationsTotal != nil {
+		outcome := "ok"
+		if callErr != nil {
+			outcome = "error"
+		}
+		pcametrics.ToolInvocationsTotal.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("tool", toolName),
+			attribute.String("outcome", outcome),
+		))
+	}
+	if pcametrics.ToolInvocationDuration != nil {
+		pcametrics.ToolInvocationDuration.Record(ctx, dur.Seconds(),
+			metric.WithAttributes(attribute.String("tool", toolName)))
+	}
 
 	if callErr != nil && b.audit != nil {
 		tid := tenantID

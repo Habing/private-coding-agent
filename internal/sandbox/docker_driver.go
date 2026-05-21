@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -16,7 +15,16 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/yourorg/private-coding-agent/internal/logx"
+	pcametrics "github.com/yourorg/private-coding-agent/internal/metrics"
 )
+
+var tracer trace.Tracer = otel.Tracer("internal/sandbox")
 
 // DockerDriverConfig configures a DockerDriver.
 type DockerDriverConfig struct {
@@ -79,7 +87,19 @@ func (d *DockerDriver) ensureInternalNetwork(ctx context.Context) error {
 }
 
 // Create starts a new container per opts and persists metadata.
-func (d *DockerDriver) Create(ctx context.Context, opts CreateOpts) (*Sandbox, error) {
+func (d *DockerDriver) Create(ctx context.Context, opts CreateOpts) (sandboxOut *Sandbox, createErr error) {
+	ctx, span := tracer.Start(ctx, "sandbox.create",
+		trace.WithAttributes(attribute.String("sandbox.image", opts.Image)))
+	defer func() {
+		if createErr != nil {
+			span.RecordError(createErr)
+			span.SetStatus(codes.Error, createErr.Error())
+		} else if sandboxOut != nil {
+			span.SetAttributes(attribute.String("sandbox.id", sandboxOut.ID.String()))
+		}
+		span.End()
+	}()
+
 	opts, err := NormalizeCreateOpts(opts)
 	if err != nil {
 		return nil, err
@@ -113,6 +133,9 @@ func (d *DockerDriver) Create(ctx context.Context, opts CreateOpts) (*Sandbox, e
 		return nil, fmt.Errorf("set container id: %w", err)
 	}
 	sb.Status = StatusRunning
+	if pcametrics.SandboxActive != nil {
+		pcametrics.SandboxActive.Add(ctx, 1)
+	}
 	return sb, nil
 }
 
@@ -206,7 +229,17 @@ end
 return 0`
 
 // Destroy stops and removes the sandbox. Idempotent.
-func (d *DockerDriver) Destroy(ctx context.Context, tenantID, id uuid.UUID) error {
+func (d *DockerDriver) Destroy(ctx context.Context, tenantID, id uuid.UUID) (destroyErr error) {
+	ctx, span := tracer.Start(ctx, "sandbox.destroy",
+		trace.WithAttributes(attribute.String("sandbox.id", id.String())))
+	defer func() {
+		if destroyErr != nil {
+			span.RecordError(destroyErr)
+			span.SetStatus(codes.Error, destroyErr.Error())
+		}
+		span.End()
+	}()
+
 	lockKey := "pca:sandbox:destroy:" + id.String()
 	lockVal := uuid.NewString()
 
@@ -234,7 +267,8 @@ func (d *DockerDriver) Destroy(ctx context.Context, tenantID, id uuid.UUID) erro
 		_, err := d.redis.Eval(context.Background(), destroyLockReleaseScript,
 			[]string{lockKey}, lockVal).Result()
 		if err != nil && err != redis.Nil {
-			log.Printf("sandbox destroy: release lock %s: %v", lockKey, err)
+			logx.FromCtx(ctx).Error("sandbox destroy: release lock",
+				"lock_key", lockKey, "err", err.Error())
 		}
 	}()
 
@@ -255,7 +289,8 @@ func (d *DockerDriver) Destroy(ctx context.Context, tenantID, id uuid.UUID) erro
 
 	cid, err := d.repo.GetContainerID(ctx, sb.TenantID, sb.ID)
 	if err != nil {
-		log.Printf("sandbox destroy: get container_id for %s: %v", sb.ID, err)
+		logx.FromCtx(ctx).Error("sandbox destroy: get container_id",
+			"sandbox_id", sb.ID.String(), "err", err.Error())
 	}
 	if cid != "" {
 		// 容器层清理用 detached ctx + 短超时:即使调用方取消 ctx,
@@ -264,14 +299,22 @@ func (d *DockerDriver) Destroy(ctx context.Context, tenantID, id uuid.UUID) erro
 		defer cancel()
 		stopTimeout := destroyStopGracePeriod
 		if err := d.cli.ContainerStop(cleanupCtx, cid, container.StopOptions{Timeout: &stopTimeout}); err != nil {
-			log.Printf("sandbox destroy: ContainerStop %s: %v", cid, err)
+			logx.FromCtx(ctx).Error("sandbox destroy: ContainerStop",
+				"container_id", cid, "err", err.Error())
 		}
 		if err := d.cli.ContainerRemove(cleanupCtx, cid, container.RemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
-			log.Printf("sandbox destroy: ContainerRemove %s: %v", cid, err)
+			logx.FromCtx(ctx).Error("sandbox destroy: ContainerRemove",
+				"container_id", cid, "err", err.Error())
 		}
 	}
 
-	return d.repo.UpdateStatus(ctx, sb.ID, StatusDestroyed)
+	if err := d.repo.UpdateStatus(ctx, sb.ID, StatusDestroyed); err != nil {
+		return err
+	}
+	if pcametrics.SandboxActive != nil {
+		pcametrics.SandboxActive.Add(ctx, -1)
+	}
+	return nil
 }
 
 // Snapshot is reserved for future MinIO-backed workspace persistence.

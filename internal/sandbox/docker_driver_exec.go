@@ -6,16 +6,39 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/yourorg/private-coding-agent/internal/logx"
 )
 
 // Exec runs cmd inside the sandbox synchronously.
-func (d *DockerDriver) Exec(ctx context.Context, tenantID, id uuid.UUID, opts ExecOpts) (*ExecResult, error) {
+func (d *DockerDriver) Exec(ctx context.Context, tenantID, id uuid.UUID, opts ExecOpts) (execOut *ExecResult, execErr error) {
+	ctx, span := tracer.Start(ctx, "sandbox.exec",
+		trace.WithAttributes(
+			attribute.String("sandbox.id", id.String()),
+			attribute.Int("sandbox.exec.cmd_len", len(opts.Cmd)),
+		))
+	defer func() {
+		if execErr != nil {
+			span.RecordError(execErr)
+			span.SetStatus(codes.Error, execErr.Error())
+		} else if execOut != nil {
+			span.SetAttributes(
+				attribute.Int("sandbox.exec.exit_code", execOut.ExitCode),
+				attribute.Bool("sandbox.exec.timed_out", execOut.TimedOut),
+				attribute.Int64("sandbox.exec.duration_ms", execOut.DurationMS),
+			)
+		}
+		span.End()
+	}()
+
 	opts, err := NormalizeExecOpts(opts)
 	if err != nil {
 		return nil, err
@@ -100,7 +123,8 @@ func (d *DockerDriver) Exec(ctx context.Context, tenantID, id uuid.UUID, opts Ex
 	insp, err := d.cli.ContainerExecInspect(inspectCtx, created.ID)
 	exitCode := -1
 	if err != nil {
-		log.Printf("sandbox exec: inspect %s: %v", created.ID, err)
+		logx.FromCtx(ctx).Error("sandbox exec: inspect",
+			"exec_id", created.ID, "err", err.Error())
 	} else {
 		exitCode = insp.ExitCode
 	}

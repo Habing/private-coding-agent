@@ -7,9 +7,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/yourorg/private-coding-agent/internal/agent"
 	"github.com/yourorg/private-coding-agent/internal/audit"
+	pcametrics "github.com/yourorg/private-coding-agent/internal/metrics"
 	"github.com/yourorg/private-coding-agent/internal/modelgw"
 )
 
@@ -90,6 +93,10 @@ func (s *Service) CreateSession(ctx context.Context, tenantID, userID uuid.UUID,
 		"model":   req.Model,
 		"profile": profile,
 	})
+	if pcametrics.SessionsCreatedTotal != nil {
+		pcametrics.SessionsCreatedTotal.Add(ctx, 1,
+			metric.WithAttributes(attribute.String("profile", profile)))
+	}
 	return out, nil
 }
 

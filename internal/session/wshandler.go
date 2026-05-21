@@ -15,6 +15,7 @@ import (
 	"github.com/yourorg/private-coding-agent/internal/agent"
 	"github.com/yourorg/private-coding-agent/internal/audit"
 	"github.com/yourorg/private-coding-agent/internal/auth"
+	pcametrics "github.com/yourorg/private-coding-agent/internal/metrics"
 )
 
 // WSSendService is the subset of *Service consumed by the WebSocket handler.
@@ -113,6 +114,11 @@ func (h *WSHandler) serve(c *gin.Context) {
 		return // Upgrader already wrote an HTTP error.
 	}
 	defer conn.Close()
+
+	if pcametrics.WSConnectionsActive != nil {
+		pcametrics.WSConnectionsActive.Add(c.Request.Context(), 1)
+		defer pcametrics.WSConnectionsActive.Add(context.Background(), -1)
+	}
 
 	opened := time.Now()
 	h.auditWSEvent(opened, cl.TenantID, cl.UserID, sid, "session.ws.open", nil)

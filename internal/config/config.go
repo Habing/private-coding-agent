@@ -11,11 +11,12 @@ import (
 )
 
 type Config struct {
-	Server    ServerConfig    `mapstructure:"server"`
-	DB        DBConfig        `mapstructure:"db"`
-	Redis     RedisConfig     `mapstructure:"redis"`
-	Auth      AuthConfig      `mapstructure:"auth"`
-	Telemetry TelemetryConfig `mapstructure:"telemetry"`
+	Server        ServerConfig        `mapstructure:"server"`
+	DB            DBConfig            `mapstructure:"db"`
+	Redis         RedisConfig         `mapstructure:"redis"`
+	Auth          AuthConfig          `mapstructure:"auth"`
+	Telemetry     TelemetryConfig     `mapstructure:"telemetry"`
+	Observability ObservabilityConfig `mapstructure:"observability"`
 }
 
 type ServerConfig struct {
@@ -40,6 +41,15 @@ type AuthConfig struct {
 type TelemetryConfig struct {
 	ServiceName  string `mapstructure:"service_name"`
 	OTLPEndpoint string `mapstructure:"otlp_endpoint"`
+}
+
+// ObservabilityConfig controls structured-logging output and the
+// Prometheus-scraper static token. Tracing endpoint and service name remain
+// in TelemetryConfig (they configure the OTel SDK, not application behavior).
+type ObservabilityConfig struct {
+	LogFormat    string `mapstructure:"log_format"`    // "json" (default) or "text"
+	LogLevel     string `mapstructure:"log_level"`     // "debug" | "info" (default) | "warn" | "error"
+	MetricsToken string `mapstructure:"metrics_token"` // Prom scraper static bearer; empty disables the static channel
 }
 
 func Load(path string) (*Config, error) {

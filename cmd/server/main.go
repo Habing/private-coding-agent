@@ -6,7 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,6 +18,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/yourorg/private-coding-agent/internal/agent"
@@ -26,7 +27,9 @@ import (
 	"github.com/yourorg/private-coding-agent/internal/config"
 	"github.com/yourorg/private-coding-agent/internal/db"
 	"github.com/yourorg/private-coding-agent/internal/httpx"
+	"github.com/yourorg/private-coding-agent/internal/logx"
 	"github.com/yourorg/private-coding-agent/internal/memory"
+	"github.com/yourorg/private-coding-agent/internal/metrics"
 	"github.com/yourorg/private-coding-agent/internal/modelgw"
 	"github.com/yourorg/private-coding-agent/internal/sandbox"
 	"github.com/yourorg/private-coding-agent/internal/session"
@@ -40,7 +43,8 @@ import (
 
 func main() {
 	if err := run(); err != nil {
-		log.Fatalf("server: %v", err)
+		slog.Error("server fatal", "err", err.Error())
+		os.Exit(1)
 	}
 }
 
@@ -53,15 +57,25 @@ func run() error {
 		return fmt.Errorf("config: %w", err)
 	}
 
+	logx.Install(logx.New(logx.Config{
+		Format: cfg.Observability.LogFormat,
+		Level:  cfg.Observability.LogLevel,
+	}))
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	promReg := prometheus.NewRegistry()
 	shutdownTel, err := telemetry.Setup(ctx, telemetry.Config{
 		ServiceName:  cfg.Telemetry.ServiceName,
 		OTLPEndpoint: cfg.Telemetry.OTLPEndpoint,
+		PromRegistry: promReg,
 	})
 	if err != nil {
 		return fmt.Errorf("otel: %w", err)
+	}
+	if err := metrics.Init(); err != nil {
+		return fmt.Errorf("metrics init: %w", err)
 	}
 	defer func() {
 		sctx, c := context.WithTimeout(context.Background(), 5*time.Second)
@@ -104,7 +118,7 @@ func run() error {
 	// Model Gateway
 	providerRepo := modelgw.NewProviderRepo(pool)
 	usageRecorder := modelgw.NewUsageRecorder(modelgw.NewUsageRepo(pool), func(err error) {
-		log.Printf("model usage record: %v", err)
+		slog.Error("model usage record", "err", err.Error())
 	})
 	factories := map[string]modelgw.ProviderFactory{
 		"openai": func(cfg modelgw.ProviderConfig) (modelgw.Provider, error) {
@@ -147,7 +161,7 @@ func run() error {
 
 	toolInvocationRecorder := toolbus.NewInvocationRecorder(
 		toolbus.NewInvocationRepo(pool),
-		func(err error) { log.Printf("tool invocation record: %v", err) })
+		func(err error) { slog.Error("tool invocation record", "err", err.Error()) })
 
 	toolBus, err := toolbus.NewBus(toolRegistry, toolInvocationRecorder)
 	if err != nil {
@@ -218,7 +232,7 @@ func run() error {
 			tid, uid := cl.TenantID, cl.UserID
 			return &tid, &uid
 		}, func(err error) {
-			log.Printf("audit append: %v", err)
+			slog.Error("audit append", "err", err.Error())
 		}))
 		authHandler.Register(r)
 
@@ -240,6 +254,18 @@ func run() error {
 		adminGroup.Use(auth.RequireAdmin())
 		auditHandler.Register(adminGroup)
 
+		// /metrics — Prometheus exposition. Authenticated via the dual-channel
+		// metrics.Auth middleware: static token bypass (for Prom scrape jobs)
+		// or admin JWT. Mounted standalone (not under protected/admin groups)
+		// so its custom auth chain isn't shadowed by the standard one.
+		r.GET("/metrics",
+			metrics.Auth(metrics.AuthConfig{
+				JWT:         jwtSvc,
+				StaticToken: cfg.Observability.MetricsToken,
+			}),
+			metrics.Handler(promReg),
+		)
+
 		// WebSocket group: browsers cannot set Authorization headers on the WS
 		// upgrade, so a narrow query-token shim runs before auth.Middleware on
 		// this group only. Keep this off the REST group to avoid token leakage
@@ -253,10 +279,10 @@ func run() error {
 		// unmatched GETs serve index.html so client-side routing works.
 		if fsys, err := webui.FS(); err == nil {
 			if err := httpx.RegisterSPAFallback(r, fsys); err != nil {
-				log.Printf("spa fallback disabled: %v", err)
+				slog.Warn("spa fallback disabled", "err", err.Error())
 			}
 		} else {
-			log.Printf("spa fallback disabled: webui.FS: %v", err)
+			slog.Warn("spa fallback disabled: webui.FS", "err", err.Error())
 		}
 	}
 
@@ -277,7 +303,7 @@ func run() error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("server listening on :%d", cfg.Server.Port)
+		slog.Info("server listening", "port", cfg.Server.Port)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
@@ -285,7 +311,7 @@ func run() error {
 
 	select {
 	case <-stop:
-		log.Println("shutting down...")
+		slog.Info("shutting down")
 	case err := <-errCh:
 		return fmt.Errorf("listen: %w", err)
 	}

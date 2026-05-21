@@ -12,3 +12,10 @@ auth:
 telemetry:
   service_name: "private-coding-agent"
   otlp_endpoint: ""
+observability:
+  log_format: "json"        # "json" | "text"
+  log_level: "info"         # "debug" | "info" | "warn" | "error"
+  # Static bearer token for Prometheus scraping /metrics. Leave empty to
+  # require admin JWT for every scrape. Override per env via
+  # PCA_OBSERVABILITY_METRICS_TOKEN.
+  metrics_token: ""
