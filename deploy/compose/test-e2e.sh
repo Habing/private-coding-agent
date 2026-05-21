@@ -40,6 +40,11 @@ INSERT INTO users (tenant_id, email, password_hash, name, role)
 VALUES ((SELECT id FROM tenants WHERE slug='default'),
         'demo@example.com', '$HASH', 'Demo', 'admin')
 ON CONFLICT (tenant_id, email) DO NOTHING;
+
+-- Reset app-level state so the script is idempotent across reruns
+-- (compose_pgdata persists by default). Memories/sessions accumulate
+-- otherwise and would dedup against prior-run rows (step 39).
+TRUNCATE memories, messages, sessions, sandbox_sessions, audit_log RESTART IDENTITY CASCADE;
 SQL
 
 echo "[3/42] login ..."
