@@ -33,6 +33,7 @@ import (
 	"github.com/yourorg/private-coding-agent/internal/modelgw"
 	"github.com/yourorg/private-coding-agent/internal/sandbox"
 	"github.com/yourorg/private-coding-agent/internal/session"
+	"github.com/yourorg/private-coding-agent/internal/skills"
 	"github.com/yourorg/private-coding-agent/internal/telemetry"
 	"github.com/yourorg/private-coding-agent/internal/tenant"
 	"github.com/yourorg/private-coding-agent/internal/toolbus"
@@ -179,11 +180,25 @@ func run() error {
 	}
 	toolHandler := toolbus.NewHandler(toolBus)
 
-	// Agent Engine (slice 5)
+	// Agent Engine (slice 5) + Skills subsystem (slice 12)
 	agentProfiles := map[string]agent.Profile{
 		"coding": agent.DefaultCodingProfile(),
 	}
-	agentEngine := agent.NewEngine(modelGateway, toolBus, agentProfiles)
+	var skillRegistry *skills.Registry
+	var composer agent.ContextComposer = agent.NoopComposer{}
+	skillsCfg := cfg.Skills
+	if skillsCfg.Enabled {
+		skillRegistry = skills.NewRegistry()
+		if len(skillsCfg.Dirs) > 0 {
+			n, errs := skillRegistry.LoadFromDirs(skillsCfg.Dirs)
+			for _, e := range errs {
+				slog.Warn("skills.load", "err", e.Error())
+			}
+			slog.Info("skills.loaded", "count", n, "dirs", skillsCfg.Dirs)
+		}
+		composer = agent.NewSkillComposer(skills.NewResolver(skillRegistry, skillsCfg), skillsCfg)
+	}
+	agentEngine := agent.NewEngine(modelGateway, toolBus, agentProfiles, composer)
 	agentHandler := agent.NewHandler(agentEngine)
 
 	// Session Orchestrator (slice 6)
@@ -255,6 +270,7 @@ func run() error {
 		agentHandler.Register(protected)
 		sessionHandler.Register(protected)
 		memoryHandler.Register(protected)
+		skills.NewHandler(skillRegistry).Register(protected)
 
 		// Admin-only routes: same auth.Middleware to decode Claims, plus
 		// RequireAdmin to enforce role == "admin". Sits on its own group so the

@@ -26,6 +26,7 @@ RUN apk add --no-cache ca-certificates \
 WORKDIR /app
 COPY --from=build /out/server /app/server
 COPY config/config.example.yaml /app/config/config.yaml
+COPY skills/ /app/skills/
 USER nonroot:nonroot
 EXPOSE 8080
 ENTRYPOINT ["/app/server", "--config", "/app/config/config.yaml"]

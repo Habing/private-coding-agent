@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
+
+	"github.com/yourorg/private-coding-agent/internal/skills"
 )
 
 type Config struct {
@@ -18,6 +20,7 @@ type Config struct {
 	Telemetry     TelemetryConfig     `mapstructure:"telemetry"`
 	Observability ObservabilityConfig `mapstructure:"observability"`
 	Memory        MemoryConfig        `mapstructure:"memory"`
+	Skills        skills.Config       `mapstructure:"skills"`
 }
 
 // MemoryConfig drives the vector-memory pipeline. EmbedOnWrite=false is the
@@ -76,5 +79,15 @@ func Load(path string) (*Config, error) {
 	if err := v.Unmarshal(&c); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
+	applySkillsDefaults(&c.Skills)
 	return &c, nil
+}
+
+func applySkillsDefaults(s *skills.Config) {
+	if s.MaxInjectedChars <= 0 {
+		s.MaxInjectedChars = 24000
+	}
+	if s.MaxSkillsPerRun <= 0 {
+		s.MaxSkillsPerRun = 5
+	}
 }

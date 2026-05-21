@@ -19,6 +19,21 @@ observability:
   # require admin JWT for every scrape. Override per env via
   # PCA_OBSERVABILITY_METRICS_TOKEN.
   metrics_token: ""
+skills:
+  # Toggle the Agent Skills subsystem. When false the engine builds the
+  # system prompt from the profile alone (pre-slice-12 byte-equal behaviour).
+  enabled: true
+  # Directories scanned recursively for SKILL.md files. Relative paths are
+  # resolved against the server's working directory.
+  dirs: ["skills"]
+  # IDs auto-injected when neither the run nor the session nor the profile
+  # picks one. Leave empty for "off by default".
+  default_skill_ids: []
+  # Per-run hard caps. Defaults applied in code: 24000 chars, 5 skills.
+  max_injected_chars: 24000
+  max_skills_per_run: 5
+  # Reserved for a future fs-watch-based hot reload. No-op today.
+  hot_reload: false
 memory:
   # provider:model passed through to the model gateway for memory embeddings.
   # default-mock:text is the dev / compose default; prod must override.

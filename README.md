@@ -16,6 +16,7 @@
 - [x] 切片 9：Audit Deepening
 - [x] 切片 10：Observability (OTel spans + Prometheus + structured logs)
 - [x] 切片 11：Vector Memory (pgvector cosine search + 0.92 dedup)
+- [x] 切片 12：Agent Skills (SKILL.md registry + Profile/Session/Run 路由 + 系统消息注入)
 
 ## 本地开发
 
@@ -46,8 +47,11 @@ curl http://localhost:8080/healthz
 
 ```powershell
 cd deploy\compose
-pwsh ./test-e2e.ps1
+./test-e2e.sh    # Git Bash / WSL，推荐（42 步全量）
+# pwsh ./test-e2e.ps1   # 仅覆盖早期切片，完整验收请用 .sh
 ```
+
+每切片完成后的增量步号与 L1/L2 命令见 [`docs/SLICE-VERIFICATION.md`](docs/SLICE-VERIFICATION.md)。
 
 ## 关键端点
 
@@ -127,6 +131,26 @@ memory:
 ```
 
 dev / compose 默认走 mock provider 的 deterministic 1536-d 向量（sha256 → L2-normalize），同 input 必出同向量。切到真实模型后老向量与新向量不可比，需重建。
+
+## Agent Skills
+
+Cursor 风格的"程序化知识"子系统：每个 Skill 是一个 `SKILL.md` 文件（YAML frontmatter + Markdown body），启动期由 `internal/skills.Registry` 递归扫描 `skills.dirs` 加载，Engine 在每次 Run 之前把当次选中的 Skill body 合并成一条系统消息注入。
+
+注入来源的优先级（高 → 低）：
+
+1. Run 级 — `POST /agent/run` body 里的 `skill_ids`
+2. Session 级 — `sessions.skill_ids` 列（POST /sessions 时设置）
+3. Profile 级 — `Profile.SkillIDs`（如 `coding` 默认带 `platform-coding-standards`）
+4. Config 默认 — `skills.default_skill_ids`
+
+高优先级非空即覆盖低优先级（不合并）。每次注入受 `max_skills_per_run`（默认 5）与 `max_injected_chars`（默认 24000）双重约束，超出按顺序截断并在 metrics + audit 里标 `truncated=true`。
+
+只读端点：
+
+- `GET /skills` — 列出已加载的 Skill 元信息（不含 body）
+- `GET /skills/:id?include=body` — 显式拿单条 body
+
+Skills 不是工具，不走 Tool Bus；Agent 模型直接在系统消息里读到。生产部署时通过 `skills.dirs` 挂载内部知识库。`skills.enabled=false` 退化为切片 12 之前的纯 Profile 行为。
 
 ## Web Frontend
 
