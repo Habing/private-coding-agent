@@ -150,7 +150,7 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 | 14 Session↔Sandbox | ✅ | 45 | `plans/2026-05-21-slice-14-session-sandbox-binding.md` |
 | 15 SSO (OIDC) | ✅ | 46 | `plans/2026-05-21-slice-15-sso-oidc.md` |
 | 16 Enterprise Web | ✅ | 47–48 | `plans/2026-05-21-slice-16-enterprise-web.md` |
-| 17 Skills 12b | ⬜ | 49 | `plans/2026-05-21-slice-17-skills-12b.md` |
+| 17 Skills 12b | ✅ | 49 | `plans/2026-05-21-slice-17-skills-12b.md` |
 
 **MVP 完成后**：E2E **55** 步；可对外「企业试点」。
 
@@ -184,7 +184,7 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 
 ### 4.1 阻塞性问题
 
-- **Slice 16** 已交付（Memory Loader 注入、Memories 页、沙箱文件侧栏、Chat 设置、E2E 47–48）；下一步 **Slice 17**（Skills 12b）。
+- **Slice 17** 已交付（租户 Skill `skills`/`tenant_profile_skills` 表 + `DBRepo` + `/admin/skills` CRUD + `/admin/profiles/:name/skills` 绑定 + Resolver 合并 FS/DB + `/admin/skills` Web UI + E2E 49）。MVP-P1 完成。
 - WebUI 仍无独立沙箱入口；聊天经会话绑定沙箱，工具可继续显式传 `sandbox_id` 覆盖。
 - **ivfflat 召回兜底**：`internal/db.Connect` 每条连接 `SET ivfflat.probes = 100`（默认 1 在 E2E 小数据集上漏召 → 步骤 47 `memory.inject` 偶发失败）。生产 lists 调大时需同步上调 probes。
 
@@ -212,7 +212,7 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 - 首次跑 dockertest 启 PG ~10-20s（pgvector 镜像比 postgres:16-alpine 大 ~130MB，首次 pull 慢一些）
 - 全包测试（不带 docker_integration tag）~25-60s
 - 全包测试 + docker_integration ~3-5 分钟
-- E2E（48 步含切片 13–16；55 步 MVP-P1）~3-8 分钟（首次 build 镜像更久）
+- E2E（49 步含切片 13–17；MVP-P1 完成版）~3-8 分钟（首次 build 镜像更久）
 
 ---
 

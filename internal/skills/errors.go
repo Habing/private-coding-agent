@@ -12,4 +12,5 @@ var (
 	ErrInvalidFrontmatter = errors.New("skills: invalid frontmatter")
 	ErrPathEscape         = errors.New("skills: path outside skills root")
 	ErrSkillNotFound      = errors.New("skills: skill not found")
+	ErrSkillKeyConflict   = errors.New("skills: skill key already exists for tenant")
 )

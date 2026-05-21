@@ -9,6 +9,7 @@ import { Memories } from '@/pages/Memories'
 import { Home } from '@/pages/Home'
 import { Login } from '@/pages/Login'
 import { NotFound } from '@/pages/NotFound'
+import { SkillsAdmin } from '@/pages/SkillsAdmin'
 import { queryClient } from '@/queryClient'
 
 export function App() {
@@ -26,6 +27,14 @@ export function App() {
               element={
                 <AdminGuard>
                   <Audit />
+                </AdminGuard>
+              }
+            />
+            <Route
+              path="/admin/skills"
+              element={
+                <AdminGuard>
+                  <SkillsAdmin />
                 </AdminGuard>
               }
             />

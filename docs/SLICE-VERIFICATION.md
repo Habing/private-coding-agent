@@ -177,9 +177,12 @@ cd deploy/compose
 
 | 项 | 验证 |
 |----|------|
-| L1 | `go test ./internal/skills/... -count=1` |
-| L3 增量 | E2E **[49]**：tenant skill → `skill.inject` |
-| L3 全量 MVP | **[1–55]** E2E PASS |
+| L1 | `go test ./internal/skills/... -count=1`（含 `TestDBRepo_*`、`TestAdminHandler_*`、`TestResolver_DB*`） |
+| L2 | `cd internal/webui && npm run build` 触达 `/admin/skills` 页 |
+| L3 增量 | E2E **[49]**：`POST /admin/skills` 写租户 Skill → `agent.run skill_ids=[...]` 回 `tenant-skill-marker-ok`；profile binding round-trip OK |
+| 隔离 | 跨租户 GET `/admin/skills/:key` 返回 404；列表为空 |
+| 审计 | `skill.admin.{create,update,delete,profile_bind}` 进 `audit_log` |
+| L3 全量 MVP | **[1–49]** E2E PASS |
 
 **MVP-P1 完成：** README 勾选 13～17；HANDOFF 标 MVP 完成日期。
 

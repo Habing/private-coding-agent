@@ -53,12 +53,13 @@ func NewSkillComposer(resolver *skills.Resolver, cfg skills.Config) *SkillCompos
 	return &SkillComposer{resolver: resolver, cfg: cfg}
 }
 
-func (c *SkillComposer) ComposeSystem(_ context.Context, in ComposeInput) ([]modelgw.ChatMessage, ComposeMeta, error) {
-	resolved := c.resolver.Resolve(skills.ResolveInput{
-		RunSkillIDs:     in.RunSkillIDs,
-		SessionSkillIDs: in.SessionSkillIDs,
-		ProfileSkillIDs: in.Profile.SkillIDs,
-	})
+func (c *SkillComposer) ComposeSystem(ctx context.Context, in ComposeInput) ([]modelgw.ChatMessage, ComposeMeta, error) {
+	resolved := c.resolver.ResolveForTenant(ctx, in.TenantID, in.Profile.Name,
+		skills.ResolveInput{
+			RunSkillIDs:     in.RunSkillIDs,
+			SessionSkillIDs: in.SessionSkillIDs,
+			ProfileSkillIDs: in.Profile.SkillIDs,
+		})
 	res := skills.BuildSystemMessages(in.Profile.SystemPrompt, resolved, c.cfg.MaxInjectedChars)
 	return res.Messages, ComposeMeta{
 		SkillIDs:  res.SkillIDs,

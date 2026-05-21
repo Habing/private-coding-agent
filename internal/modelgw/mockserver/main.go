@@ -63,9 +63,13 @@ func chat(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	// Skills E2E hook: if any system message body contains the marker, reply
-	// with the canonical ack string. Lets the integration test confirm that
-	// SkillComposer actually injected the SKILL.md body into the run.
+	// Skills E2E hooks: a literal marker in any system message proves the
+	// SkillComposer injected the body into the run. The tenant marker is
+	// distinct so the e2e suite can tell DB skills apart from FS skills.
+	if hasTenantSkillMarker(req.Messages) {
+		writeFinal(w, req.Model, "tenant-skill-marker-ok")
+		return
+	}
 	if hasSkillMarker(req.Messages) {
 		writeFinal(w, req.Model, "skill-marker-ok")
 		return
@@ -131,9 +135,23 @@ func writeToolCall(w http.ResponseWriter, model, callID, name, argsJSON string) 
 // → composer → modelgw → mockserver to surface the marker end-to-end.
 const skillMarker = "E2E_SKILL_MARKER_V1"
 
+// tenantSkillMarker is the literal token DB-backed Skills inject in e2e.
+// Distinct from skillMarker so the test can prove the resolver picked up the
+// DB row (and not just a stale FS skill).
+const tenantSkillMarker = "E2E_TENANT_SKILL_V1"
+
 func hasSkillMarker(msgs []mockMessage) bool {
 	for _, m := range msgs {
 		if m.Role == "system" && strings.Contains(m.Content, skillMarker) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasTenantSkillMarker(msgs []mockMessage) bool {
+	for _, m := range msgs {
+		if m.Role == "system" && strings.Contains(m.Content, tenantSkillMarker) {
 			return true
 		}
 	}
@@ -199,7 +217,7 @@ func streamTextDeltas(send func(map[string]any), model, text string) {
 			})
 		}
 		return
-	case "skill-marker-ok", "done":
+	case "skill-marker-ok", "tenant-skill-marker-ok", "done":
 		send(map[string]any{
 			"id": "mock-1", "object": "chat.completion.chunk", "model": model,
 			"choices": []map[string]any{{"index": 0,
@@ -242,6 +260,8 @@ func streamChat(w http.ResponseWriter, model string, msgs []mockMessage) {
 	var toolName, toolArgs, toolID string
 
 	switch {
+	case hasTenantSkillMarker(msgs):
+		text, finish = "tenant-skill-marker-ok", "stop"
 	case hasSkillMarker(msgs):
 		text, finish = "skill-marker-ok", "stop"
 	case last.Role == "tool":

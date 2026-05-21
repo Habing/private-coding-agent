@@ -27,12 +27,20 @@ export function TopBar() {
           记忆
         </Link>
         {isAdmin(user) && (
-          <Link
-            to="/audit"
-            className="text-muted-foreground hover:text-foreground"
-          >
-            审计
-          </Link>
+          <>
+            <Link
+              to="/audit"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              审计
+            </Link>
+            <Link
+              to="/admin/skills"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              Skills
+            </Link>
+          </>
         )}
       </div>
       <div className="flex items-center gap-3 text-sm">

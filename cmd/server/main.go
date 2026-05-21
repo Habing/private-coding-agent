@@ -195,6 +195,7 @@ func run() error {
 		"coding": agent.DefaultCodingProfile(),
 	}
 	var skillRegistry *skills.Registry
+	var skillDBRepo *skills.DBRepo
 	var composer agent.ContextComposer = agent.NoopComposer{}
 	skillsCfg := cfg.Skills
 	if skillsCfg.Enabled {
@@ -206,7 +207,9 @@ func run() error {
 			}
 			slog.Info("skills.loaded", "count", n, "dirs", skillsCfg.Dirs)
 		}
-		composer = agent.NewSkillComposer(skills.NewResolver(skillRegistry, skillsCfg), skillsCfg)
+		skillDBRepo = skills.NewDBRepo(pool)
+		resolver := skills.NewResolver(skillRegistry, skillsCfg).WithDBLookup(skillDBRepo)
+		composer = agent.NewSkillComposer(resolver, skillsCfg)
 	}
 	composer = agent.WrapMemoryComposer(composer)
 	memLoader := memory.NewLoader(memoryService, memory.LoaderConfig{
@@ -318,7 +321,7 @@ func run() error {
 		agentHandler.Register(protected)
 		sessionHandler.Register(protected)
 		memoryHandler.Register(protected)
-		skills.NewHandler(skillRegistry).Register(protected)
+		skills.NewHandler(skillRegistry).WithDBLookup(skillDBRepo).Register(protected)
 
 		// Admin-only routes: same auth.Middleware to decode Claims, plus
 		// RequireAdmin to enforce role == "admin". Sits on its own group so the
@@ -327,6 +330,9 @@ func run() error {
 		adminGroup.Use(auth.Middleware(jwtSvc, auth.WithRevoker(jwtRevoker)))
 		adminGroup.Use(auth.RequireAdmin())
 		auditHandler.Register(adminGroup)
+		if skillDBRepo != nil {
+			skills.NewAdminHandler(skillDBRepo).WithAuditSink(auditRepo).Register(adminGroup)
+		}
 
 		// /metrics — Prometheus exposition. Authenticated via the dual-channel
 		// metrics.Auth middleware: static token bypass (for Prom scrape jobs)

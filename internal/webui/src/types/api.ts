@@ -166,3 +166,37 @@ export interface SandboxFileReadResponse {
   content_base64: string
   size: number
 }
+
+export interface TenantSkill {
+  id: string
+  tenant_id: string
+  skill_key: string
+  description: string
+  body: string
+  content_hash: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface TenantSkillListResponse {
+  skills: TenantSkill[]
+}
+
+export interface CreateTenantSkillRequest {
+  skill_key: string
+  description?: string
+  body: string
+  enabled?: boolean
+}
+
+export interface UpdateTenantSkillRequest {
+  description?: string
+  body?: string
+  enabled?: boolean
+}
+
+export interface ProfileSkillBinding {
+  profile: string
+  skill_keys: string[]
+}
