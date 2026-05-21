@@ -5,7 +5,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -22,9 +22,10 @@ func main() {
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
-	log.Printf("mock-provider listening on %s", addr)
+	slog.Info("mock-provider listening", "addr", addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {
-		log.Fatal(err)
+		slog.Error("mock-provider exited", "err", err.Error())
+		os.Exit(1)
 	}
 }
 

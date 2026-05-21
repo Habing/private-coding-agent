@@ -16,6 +16,14 @@ func FromCtx(ctx context.Context) *Claims {
 	return c
 }
 
+// WithClaims returns a child ctx carrying cl. Exported so packages without
+// a real HTTP request (background goroutines, tests, internal callers that
+// stand in for an authenticated user) can populate the same slot Middleware
+// uses.
+func WithClaims(ctx context.Context, cl *Claims) context.Context {
+	return context.WithValue(ctx, ctxKey{}, cl)
+}
+
 // Middleware returns a Gin handler that requires an "Authorization: Bearer <token>"
 // header, parses the JWT via j, and injects the resulting Claims into the request
 // context for downstream handlers to retrieve with FromCtx. Missing or invalid

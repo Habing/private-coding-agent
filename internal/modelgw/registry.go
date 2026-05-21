@@ -3,10 +3,11 @@ package modelgw
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/yourorg/private-coding-agent/internal/logx"
 )
 
 // ProviderRegistry 维护活跃 provider 实例缓存。
@@ -45,7 +46,7 @@ func (r *ProviderRegistry) Run(ctx context.Context) {
 			return
 		case <-t.C:
 			if err := r.reload(ctx); err != nil {
-				log.Printf("provider registry refresh: %v", err)
+				logx.FromCtx(ctx).Error("provider registry refresh", "err", err.Error())
 			}
 		}
 	}
@@ -70,12 +71,14 @@ func (r *ProviderRegistry) reload(ctx context.Context) error {
 		}
 		factory, ok := r.factories[cfg.Type]
 		if !ok {
-			log.Printf("provider registry: no factory for type %q (provider %q)", cfg.Type, cfg.Name)
+			logx.FromCtx(ctx).Warn("provider registry: no factory for type",
+				"provider_type", cfg.Type, "provider_name", cfg.Name)
 			continue
 		}
 		p, err := factory(cfg)
 		if err != nil {
-			log.Printf("provider registry: factory %q failed: %v", cfg.Name, err)
+			logx.FromCtx(ctx).Error("provider registry: factory failed",
+				"provider_name", cfg.Name, "err", err.Error())
 			continue
 		}
 		next[cfg.Name] = p

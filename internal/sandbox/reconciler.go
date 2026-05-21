@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/errdefs"
+
+	"github.com/yourorg/private-coding-agent/internal/logx"
 )
 
 // RunReconciler scans active sandboxes against docker, marking dead containers
@@ -24,12 +25,13 @@ func RunReconciler(ctx context.Context, repo *SessionRepo, cli *client.Client) e
 		return nil
 	}
 
-	log.Printf("reconciler: %d active sandbox(es) to verify", len(active))
+	logx.FromCtx(ctx).Info("reconciler: verifying active sandboxes", "count", len(active))
 
 	for _, sb := range active {
 		cid, err := repo.GetContainerID(ctx, sb.TenantID, sb.ID)
 		if err != nil {
-			log.Printf("reconciler: get container_id %s: %v", sb.ID, err)
+			logx.FromCtx(ctx).Error("reconciler: get container_id",
+				"sandbox_id", sb.ID.String(), "err", err.Error())
 			continue
 		}
 		if cid == "" {
@@ -43,7 +45,8 @@ func RunReconciler(ctx context.Context, repo *SessionRepo, cli *client.Client) e
 				_ = repo.UpdateStatus(ctx, sb.ID, StatusDestroyed)
 				continue
 			}
-			log.Printf("reconciler: inspect %s: %v", cid, err)
+			logx.FromCtx(ctx).Error("reconciler: inspect",
+				"container_id", cid, "err", err.Error())
 			continue
 		}
 		// container exists: keep status
