@@ -19,14 +19,14 @@ import (
 
 // mockHandlerSvc replays scripted responses for handler-layer tests.
 type mockHandlerSvc struct {
-	create func(context.Context, uuid.UUID, uuid.UUID, memory.CreateRequest) (*memory.Memory, error)
+	create func(context.Context, uuid.UUID, uuid.UUID, memory.CreateRequest) (*memory.CreateResult, error)
 	get    func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (*memory.Memory, error)
 	list   func(context.Context, uuid.UUID, uuid.UUID, memory.ListFilter) ([]memory.Memory, error)
 	update func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, memory.UpdateRequest) (*memory.Memory, error)
 	del    func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error
 }
 
-func (m *mockHandlerSvc) Create(ctx context.Context, t, u uuid.UUID, r memory.CreateRequest) (*memory.Memory, error) {
+func (m *mockHandlerSvc) Create(ctx context.Context, t, u uuid.UUID, r memory.CreateRequest) (*memory.CreateResult, error) {
 	return m.create(ctx, t, u, r)
 }
 func (m *mockHandlerSvc) Get(ctx context.Context, t, u, id uuid.UUID) (*memory.Memory, error) {
@@ -57,13 +57,13 @@ func newHandlerRouter(t *testing.T, svc memory.HandlerService) (*gin.Engine, str
 
 func TestHandler_Create_OK(t *testing.T) {
 	svc := &mockHandlerSvc{
-		create: func(_ context.Context, tid, uid uuid.UUID, req memory.CreateRequest) (*memory.Memory, error) {
+		create: func(_ context.Context, tid, uid uuid.UUID, req memory.CreateRequest) (*memory.CreateResult, error) {
 			require.Equal(t, memory.TypePreference, req.Type)
-			return &memory.Memory{
+			return &memory.CreateResult{Memory: &memory.Memory{
 				ID: uuid.New(), TenantID: tid, OwnerUserID: uid,
 				Type: req.Type, Content: req.Content, Tags: req.Tags,
 				Source: memory.SourceUser, LastUsedAt: time.Now(),
-			}, nil
+			}, Created: true}, nil
 		},
 	}
 	r, tok := newHandlerRouter(t, svc)
@@ -90,7 +90,7 @@ func TestHandler_Create_Validation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := &mockHandlerSvc{
-				create: func(context.Context, uuid.UUID, uuid.UUID, memory.CreateRequest) (*memory.Memory, error) {
+				create: func(context.Context, uuid.UUID, uuid.UUID, memory.CreateRequest) (*memory.CreateResult, error) {
 					return nil, tc.err
 				},
 			}

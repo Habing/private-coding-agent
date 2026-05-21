@@ -15,8 +15,8 @@ import (
 // MemoryService is the subset of *memory.Service used by the memory.* tools.
 // Declared locally so tests can supply a mock without standing up a DB.
 type MemoryService interface {
-	Create(ctx context.Context, tenantID, userID uuid.UUID, req memory.CreateRequest) (*memory.Memory, error)
-	Search(ctx context.Context, tenantID, userID uuid.UUID, req memory.SearchRequest) ([]memory.Memory, error)
+	Create(ctx context.Context, tenantID, userID uuid.UUID, req memory.CreateRequest) (*memory.CreateResult, error)
+	Search(ctx context.Context, tenantID, userID uuid.UUID, req memory.SearchRequest) ([]memory.SearchResult, error)
 	List(ctx context.Context, tenantID, userID uuid.UUID, f memory.ListFilter) ([]memory.Memory, error)
 	Delete(ctx context.Context, tenantID, userID, id uuid.UUID) error
 }
@@ -26,7 +26,8 @@ type MemoryService interface {
 func wrapMemoryErr(err error) error {
 	if errors.Is(err, memory.ErrEmptyContent) ||
 		errors.Is(err, memory.ErrInvalidType) ||
-		errors.Is(err, memory.ErrEmptySearch) {
+		errors.Is(err, memory.ErrEmptySearch) ||
+		errors.Is(err, memory.ErrInvalidSearchMode) {
 		return fmt.Errorf("%w: %v", toolbus.ErrInvalidArguments, err)
 	}
 	return err
@@ -74,7 +75,7 @@ func (t *memorySave) Invoke(ctx context.Context, tenantID, userID uuid.UUID, inp
 	if src == "" {
 		src = memory.SourceAgent
 	}
-	m, err := t.svc.Create(ctx, tenantID, userID, memory.CreateRequest{
+	res, err := t.svc.Create(ctx, tenantID, userID, memory.CreateRequest{
 		Type: in.Type, Content: in.Content, Tags: in.Tags,
 		Source: src, SourceMsgID: in.SourceMsgID,
 	})
@@ -82,8 +83,9 @@ func (t *memorySave) Invoke(ctx context.Context, tenantID, userID uuid.UUID, inp
 		return nil, wrapMemoryErr(err)
 	}
 	return json.Marshal(struct {
-		ID uuid.UUID `json:"id"`
-	}{ID: m.ID})
+		ID      uuid.UUID `json:"id"`
+		Created bool      `json:"created"`
+	}{ID: res.Memory.ID, Created: res.Created})
 }
 
 // ---------- memory.search ----------
@@ -94,7 +96,7 @@ func NewMemorySearch(svc MemoryService) toolbus.Tool { return &memorySearch{svc:
 
 func (t *memorySearch) Name() string { return "memory.search" }
 func (t *memorySearch) Description() string {
-	return "Search the current user's memories by keyword (ILIKE), type, and/or tag overlap. At least one filter is required."
+	return "Search the current user's memories. Default mode runs cosine similarity over content embeddings; pass mode='keyword' for ILIKE fallback. At least one of query/type/tags is required."
 }
 func (t *memorySearch) Schema() json.RawMessage {
 	return json.RawMessage(`{
@@ -103,7 +105,8 @@ func (t *memorySearch) Schema() json.RawMessage {
             "query":{"type":"string"},
             "type":{"type":"string","enum":["profile","preference","knowledge","lesson"]},
             "tags":{"type":"array","items":{"type":"string"}},
-            "limit":{"type":"integer","minimum":1,"maximum":50}
+            "limit":{"type":"integer","minimum":1,"maximum":50},
+            "mode":{"type":"string","enum":["vector","keyword"]}
         },
         "additionalProperties":false
     }`)
@@ -115,6 +118,7 @@ type memoryItem struct {
 	Content    string    `json:"content"`
 	Tags       []string  `json:"tags"`
 	LastUsedAt string    `json:"last_used_at"`
+	Score      float64   `json:"score,omitempty"`
 }
 
 type memorySearchIn struct {
@@ -122,6 +126,7 @@ type memorySearchIn struct {
 	Type  string   `json:"type,omitempty"`
 	Tags  []string `json:"tags,omitempty"`
 	Limit int      `json:"limit,omitempty"`
+	Mode  string   `json:"mode,omitempty"`
 }
 
 func (t *memorySearch) Invoke(ctx context.Context, tenantID, userID uuid.UUID, input json.RawMessage) (json.RawMessage, error) {
@@ -130,7 +135,7 @@ func (t *memorySearch) Invoke(ctx context.Context, tenantID, userID uuid.UUID, i
 		return nil, fmt.Errorf("%w: %v", toolbus.ErrInvalidArguments, err)
 	}
 	hits, err := t.svc.Search(ctx, tenantID, userID, memory.SearchRequest{
-		Query: in.Query, Type: in.Type, Tags: in.Tags, Limit: in.Limit,
+		Query: in.Query, Type: in.Type, Tags: in.Tags, Limit: in.Limit, Mode: in.Mode,
 	})
 	if err != nil {
 		return nil, wrapMemoryErr(err)
@@ -140,6 +145,7 @@ func (t *memorySearch) Invoke(ctx context.Context, tenantID, userID uuid.UUID, i
 		items[i] = memoryItem{
 			ID: m.ID, Type: m.Type, Content: m.Content, Tags: m.Tags,
 			LastUsedAt: m.LastUsedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			Score:      m.Score,
 		}
 	}
 	return json.Marshal(struct {

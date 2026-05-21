@@ -15,9 +15,9 @@ import (
 )
 
 type mockMemSvc struct {
-	createRet  *memory.Memory
+	createRet  *memory.CreateResult
 	createErr  error
-	searchRet  []memory.Memory
+	searchRet  []memory.SearchResult
 	searchErr  error
 	listRet    []memory.Memory
 	listErr    error
@@ -28,11 +28,11 @@ type mockMemSvc struct {
 	lastDelID  uuid.UUID
 }
 
-func (m *mockMemSvc) Create(_ context.Context, _, _ uuid.UUID, r memory.CreateRequest) (*memory.Memory, error) {
+func (m *mockMemSvc) Create(_ context.Context, _, _ uuid.UUID, r memory.CreateRequest) (*memory.CreateResult, error) {
 	m.lastCreate = r
 	return m.createRet, m.createErr
 }
-func (m *mockMemSvc) Search(_ context.Context, _, _ uuid.UUID, r memory.SearchRequest) ([]memory.Memory, error) {
+func (m *mockMemSvc) Search(_ context.Context, _, _ uuid.UUID, r memory.SearchRequest) ([]memory.SearchResult, error) {
 	m.lastSearch = r
 	return m.searchRet, m.searchErr
 }
@@ -47,7 +47,7 @@ func (m *mockMemSvc) Delete(_ context.Context, _, _, id uuid.UUID) error {
 
 func TestMemorySave_OK(t *testing.T) {
 	id := uuid.New()
-	svc := &mockMemSvc{createRet: &memory.Memory{ID: id, Type: memory.TypeKnowledge}}
+	svc := &mockMemSvc{createRet: &memory.CreateResult{Memory: &memory.Memory{ID: id, Type: memory.TypeKnowledge}, Created: true}}
 	tool := tools.NewMemorySave(svc)
 	out, err := tool.Invoke(context.Background(), uuid.New(), uuid.New(),
 		json.RawMessage(`{"type":"knowledge","content":"x"}`))
@@ -69,8 +69,8 @@ func TestMemorySave_ValidationWraps(t *testing.T) {
 }
 
 func TestMemorySearch_OK(t *testing.T) {
-	svc := &mockMemSvc{searchRet: []memory.Memory{
-		{ID: uuid.New(), Type: memory.TypeKnowledge, Content: "found", Tags: []string{"a"}},
+	svc := &mockMemSvc{searchRet: []memory.SearchResult{
+		{Memory: memory.Memory{ID: uuid.New(), Type: memory.TypeKnowledge, Content: "found", Tags: []string{"a"}}},
 	}}
 	tool := tools.NewMemorySearch(svc)
 	out, err := tool.Invoke(context.Background(), uuid.New(), uuid.New(),

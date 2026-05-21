@@ -14,17 +14,18 @@ func newService(t *testing.T) (*memory.Service, uuid.UUID, uuid.UUID) {
 	t.Helper()
 	pg := newPool(t)
 	tid, uid := fixtures(t, pg)
-	return memory.NewService(memory.NewRepo(pg)), tid, uid
+	return memory.NewService(memory.NewRepo(pg), nil, memory.MemoryConfig{}), tid, uid
 }
 
 func TestService_Create_Happy(t *testing.T) {
 	svc, tid, uid := newService(t)
-	m, err := svc.Create(context.Background(), tid, uid, memory.CreateRequest{
+	res, err := svc.Create(context.Background(), tid, uid, memory.CreateRequest{
 		Type: memory.TypePreference, Content: "uses tabs", Tags: []string{"style"},
 	})
 	require.NoError(t, err)
-	require.Equal(t, "uses tabs", m.Content)
-	require.Equal(t, memory.SourceUser, m.Source)
+	require.True(t, res.Created)
+	require.Equal(t, "uses tabs", res.Memory.Content)
+	require.Equal(t, memory.SourceUser, res.Memory.Source)
 }
 
 func TestService_Create_Validation(t *testing.T) {
@@ -48,15 +49,15 @@ func TestService_Update_Validation(t *testing.T) {
 	svc, tid, uid := newService(t)
 	ctx := context.Background()
 
-	m, err := svc.Create(ctx, tid, uid, memory.CreateRequest{Type: memory.TypeLesson, Content: "orig"})
+	res, err := svc.Create(ctx, tid, uid, memory.CreateRequest{Type: memory.TypeLesson, Content: "orig"})
 	require.NoError(t, err)
 
 	wrong := "wrong"
-	_, err = svc.Update(ctx, tid, uid, m.ID, memory.UpdateRequest{Type: &wrong})
+	_, err = svc.Update(ctx, tid, uid, res.Memory.ID, memory.UpdateRequest{Type: &wrong})
 	require.ErrorIs(t, err, memory.ErrInvalidType)
 
 	empty := "   "
-	_, err = svc.Update(ctx, tid, uid, m.ID, memory.UpdateRequest{Content: &empty})
+	_, err = svc.Update(ctx, tid, uid, res.Memory.ID, memory.UpdateRequest{Content: &empty})
 	require.ErrorIs(t, err, memory.ErrEmptyContent)
 }
 
@@ -88,15 +89,15 @@ func TestService_Search_HappyRoundTrip(t *testing.T) {
 func TestService_CrossTenant404(t *testing.T) {
 	svc, tid, uid := newService(t)
 	ctx := context.Background()
-	m, err := svc.Create(ctx, tid, uid, memory.CreateRequest{Type: memory.TypeProfile, Content: "x"})
+	res, err := svc.Create(ctx, tid, uid, memory.CreateRequest{Type: memory.TypeProfile, Content: "x"})
 	require.NoError(t, err)
 
-	_, err = svc.Get(ctx, uuid.New(), uid, m.ID)
+	_, err = svc.Get(ctx, uuid.New(), uid, res.Memory.ID)
 	require.ErrorIs(t, err, memory.ErrMemoryNotFound)
 
-	require.ErrorIs(t, svc.Delete(ctx, uuid.New(), uid, m.ID), memory.ErrMemoryNotFound)
+	require.ErrorIs(t, svc.Delete(ctx, uuid.New(), uid, res.Memory.ID), memory.ErrMemoryNotFound)
 
 	newContent := "y"
-	_, err = svc.Update(ctx, uuid.New(), uid, m.ID, memory.UpdateRequest{Content: &newContent})
+	_, err = svc.Update(ctx, uuid.New(), uid, res.Memory.ID, memory.UpdateRequest{Content: &newContent})
 	require.ErrorIs(t, err, memory.ErrMemoryNotFound)
 }

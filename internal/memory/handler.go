@@ -18,7 +18,7 @@ import (
 // Declared locally so handler_test.go can supply a mock without standing up a
 // real Repo.
 type HandlerService interface {
-	Create(ctx context.Context, tenantID, userID uuid.UUID, req CreateRequest) (*Memory, error)
+	Create(ctx context.Context, tenantID, userID uuid.UUID, req CreateRequest) (*CreateResult, error)
 	Get(ctx context.Context, tenantID, userID, id uuid.UUID) (*Memory, error)
 	List(ctx context.Context, tenantID, userID uuid.UUID, f ListFilter) ([]Memory, error)
 	Update(ctx context.Context, tenantID, userID, id uuid.UUID, req UpdateRequest) (*Memory, error)
@@ -70,6 +70,12 @@ func (h *Handler) mapErr(c *gin.Context, err error) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "validation: type"})
 	case errors.Is(err, ErrEmptySearch):
 		c.JSON(http.StatusBadRequest, gin.H{"error": "validation: empty_search"})
+	case errors.Is(err, ErrInvalidSearchMode):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "validation: mode"})
+	case errors.Is(err, ErrVectorDisabled):
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "vector_disabled"})
+	case errors.Is(err, ErrEmbedDimMismatch):
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "embed_dim"})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
 	}
@@ -85,12 +91,18 @@ func (h *Handler) create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "validation: body"})
 		return
 	}
-	m, err := h.svc.Create(c.Request.Context(), cl.TenantID, cl.UserID, req)
+	res, err := h.svc.Create(c.Request.Context(), cl.TenantID, cl.UserID, req)
 	if err != nil {
 		h.mapErr(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, m)
+	status := http.StatusCreated
+	if !res.Created {
+		// Dedup hit: returned the existing row; 200 distinguishes from a
+		// fresh insert without changing the body shape.
+		status = http.StatusOK
+	}
+	c.JSON(status, res.Memory)
 }
 
 type listResp struct {
