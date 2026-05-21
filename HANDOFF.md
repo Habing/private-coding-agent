@@ -6,10 +6,10 @@
 | 项目根 | `F:\project\private-coding-agent` |
 | Git module | `github.com/yourorg/private-coding-agent` |
 | 当前日期 | 2026-05-21 |
-| 当前 HEAD | `aa2c17c` (Slice 12 已 push；含会话标题、WebUI 等) |
+| 当前 HEAD | `bd21e6d` (Gate G1 收口；流式 Agent + DashScope + 会话标题 + E2E 重入幂等 全部 push) |
 | P1 规划 | **已落盘** — [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md) |
-| 工作区状态 | 有未提交改动（DashScope 迁移、流式 Agent、WebUI 等）；**Gate G1 待收口** |
-| 下一阶段 | **Gate** → **MVP-P1 切片 13～17** → **Full P1 切片 18～23** |
+| 工作区状态 | 干净；`main` 与 `origin/main` 同步；**Gate G1–G4 全部清零** |
+| 下一阶段 | **MVP-P1 切片 13～17** → **Full P1 切片 18～23** |
 
 ---
 
@@ -48,37 +48,20 @@
 | `go build ./...` | 干净 |
 | E2E `test-e2e.sh` | 全量 **42 步**（发版 / Gate 前必跑） |
 
-### 1.4 Slice 11 工作区状态（待 commit）
+### 1.4 Gate G1 收口（2026-05-21）
 
-工作树相对于 `b2eb6bb` 的改动：
+P0 至 Slice 12 全部 push 之后，工作区仍堆了一批跨切片的杂活；本次 Gate 收口拆成 6 个 Conventional Commits 顺序 push：
 
-**新增（6 个）**：
-```
-internal/db/migrations/0010_memories_embedding.up.sql
-internal/db/migrations/0010_memories_embedding.down.sql
-internal/memory/embedder.go
-internal/memory/embedder_test.go
-docs/superpowers/specs/2026-05-21-slice-11-vector-memory-design.md
-docs/superpowers/plans/2026-05-21-slice-11-vector-memory.md
-```
+| Commit | 内容 |
+|---|---|
+| `6fadd41` | `feat(agent,modelgw,session)`: 流式 Agent 循环 + WS 断连不杀 in-flight run（`context.WithoutCancel`） |
+| `70e8cdf` | `feat(db,compose)`: DashScope provider 注册（0012/0013 迁移）+ Qwen env 透传 |
+| `7b1dec6` | `feat(webui)`: `assistant_delta` 实时气泡 + 默认模型切到 `dashscope:qwen3.6-plus` |
+| `a014d26` | `docs(p1)`: 路线图 + MVP/Full spec + slice 13–23 plan + HANDOFF 刷新 |
+| `5690ca9` | `chore`: ignore `.claude/` 与 `deploy/compose/*.json` 临时载荷 |
+| `bd21e6d` | `test(e2e)`: 启动期 TRUNCATE 让 vector dedup（步骤 39）跨 run 幂等 |
 
-**修改（30 个）**：
-- 核心：`internal/memory/{types,repo,service,handler,errors}.go` + 各 `_test.go`
-- 工具：`internal/toolbus/tools/memory.go` + `_test.go`
-- 嵌入通道：`internal/modelgw/mockserver/main.go`（deterministic 1536-d）
-- 配置：`internal/config/config.go`、`config/config.example.yaml`、`cmd/server/main.go`
-- DB：`internal/db/db.go`（pgvector pgx codec 注册 `AfterConnect`）
-- 镜像：`deploy/compose/docker-compose.yml`（postgres → pgvector/pgvector:pg16）
-- 9 个 `*_test.go` 的 dockertest 镜像同步替换
-- E2E：`deploy/compose/test-e2e.sh`（35 → 39 步）
-- 文档：`README.md`（切片进度 + 记忆子系统小节）
-- 依赖：`go.mod` / `go.sum`（新增 `github.com/pgvector/pgvector-go` + `pgvector-go/pgx`）
-
-**推荐 commit 切分（4 个 Conventional Commits）**：
-1. `feat(db,memory): migration 0010 + pgvector codec + Embedder interface + Repo`
-2. `feat(memory): Service dedup + Search mode dispatch + handler + tool schema`
-3. `feat(mockserver,compose): deterministic 1536-d embed + pgvector compose image`
-4. `feat(config,e2e,docs): config wiring + e2e 39 steps + README + slice 11 specs`
+**Gate 状态**：G1–G4 全部 ✅，`main` 与 `origin/main` 同步，`test-e2e.sh` 42/42 PASS。
 
 ---
 
@@ -154,9 +137,9 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 
 | ID | 项 | 状态 |
 |----|-----|------|
-| G1 | 工作区未提交改动 commit | 🟡 进行中 |
+| G1 | 工作区未提交改动 commit | ✅ `bd21e6d` 已 push |
 | G2 | 本 HANDOFF 与 HEAD 一致 | ✅ |
-| G3 | E2E **42/42** + `go test ./...` | ✅ |
+| G3 | E2E **42/42** + `go test ./...` | ✅（2026-05-21 验证） |
 | G4 | P0 缺口归属确认（文件浏览→16，自动沙箱→14） | ✅ 已写入 spec |
 
 ### 3.1 MVP-P1（切片 13～17）— 企业试点
@@ -201,8 +184,8 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 
 ### 4.1 阻塞性问题
 
-- **Gate G1/G3** 未完成前不宜开工 Slice 13（避免在脏树 / 未验证 P0 上叠 P1）。
-- WebUI **无沙箱创建入口**；聊天依赖 **Slice 14** 或手动 `POST /sandbox/sessions`。
+- Gate G1–G4 已清零；可直接开工 **Slice 13**。
+- WebUI **无沙箱创建入口**；聊天依赖 **Slice 14** 自动建沙箱或手动 `POST /sandbox/sessions`。
 
 ### 4.2 环境注意事项
 
@@ -234,15 +217,16 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 
 ## 5. 下一步建议
 
-### 5.1 立即（Gate）
+### 5.1 立即（Slice 13 启动前自检）
 
 ```bash
 cd F:/project/private-coding-agent
 go test ./... -count=1
 go vet ./...
 cd deploy/compose && ./test-e2e.sh   # 期望 42/42 E2E PASS
-# 提交工作区未提交改动（G1），再 push
 ```
+
+跑通后按 `docs/superpowers/plans/2026-05-21-slice-13-enterprise-foundation.md` 开工。
 
 ### 5.2 MVP-P1 实施顺序
 

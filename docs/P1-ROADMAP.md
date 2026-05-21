@@ -29,12 +29,14 @@ Gate (G1–G4) ──► Slice 13–17 MVP-P1 ──► Slice 18–23 Full P1
 
 ## Gate — 开工 Slice 13 前
 
-| ID | 项 | 完成标准 |
-|----|-----|----------|
-| G1 | 工作区提交 | 未提交改动（含 DashScope、流式、WebUI）已 commit |
-| G2 | `HANDOFF.md` | HEAD、切片 1–12、本路线图一致 |
-| G3 | L1/L2/L3 | `go test ./...`、`go vet`、`test-e2e.sh` **42/42** |
-| G4 | P0 spec 对齐 | 「Web 文件浏览」归入 Slice 16；session↔sandbox 归入 Slice 14 |
+| ID | 项 | 完成标准 | 状态 |
+|----|-----|----------|------|
+| G1 | 工作区提交 | 未提交改动（含 DashScope、流式、WebUI）已 commit | ✅ `bd21e6d` push |
+| G2 | `HANDOFF.md` | HEAD、切片 1–12、本路线图一致 | ✅ |
+| G3 | L1/L2/L3 | `go test ./...`、`go vet`、`test-e2e.sh` **42/42** | ✅（2026-05-21） |
+| G4 | P0 spec 对齐 | 「Web 文件浏览」归入 Slice 16；session↔sandbox 归入 Slice 14 | ✅ |
+
+**Gate 已全部清零 — 可直接开工 Slice 13。**
 
 ---
 
