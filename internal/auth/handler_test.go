@@ -41,6 +41,7 @@ func TestLoginOK(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tid, uid := uuid.New(), uuid.New()
 	h := auth.NewHandler(auth.HandlerDeps{
+		LocalEnabled: true,
 		Tenants: fakeTenants{id: tid},
 		Auth:    fakeAuth{user: &user.User{ID: uid, TenantID: tid, Role: user.RoleMember}},
 		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "test-secret-thirty-two-chars-ok!", TTL: time.Hour}),
@@ -63,6 +64,7 @@ func TestLoginOK(t *testing.T) {
 func TestLogin_BadCredentials(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := auth.NewHandler(auth.HandlerDeps{
+		LocalEnabled: true,
 		Tenants: fakeTenants{id: uuid.New()},
 		Auth:    fakeAuth{err: user.ErrBadCredentials},
 		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "test-secret-thirty-two-chars-ok!", TTL: time.Hour}),
@@ -82,6 +84,7 @@ func TestLogin_BadCredentials(t *testing.T) {
 func TestLogin_InternalError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := auth.NewHandler(auth.HandlerDeps{
+		LocalEnabled: true,
 		Tenants: fakeTenants{id: uuid.New()},
 		Auth:    fakeAuth{err: errors.New("boom")},
 		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "test-secret-thirty-two-chars-ok!", TTL: time.Hour}),
@@ -100,6 +103,7 @@ func TestLogin_InternalError(t *testing.T) {
 func TestLogin_TenantNotFound(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := auth.NewHandler(auth.HandlerDeps{
+		LocalEnabled: true,
 		Tenants: fakeTenants{err: tenant.ErrNotFound},
 		Auth:    fakeAuth{},
 		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "test-secret-thirty-two-chars-ok!", TTL: time.Hour}),
@@ -119,6 +123,7 @@ func TestLogin_TenantNotFound(t *testing.T) {
 func TestLogin_TenantLookupError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := auth.NewHandler(auth.HandlerDeps{
+		LocalEnabled: true,
 		Tenants: fakeTenants{err: errors.New("db connection refused")},
 		Auth:    fakeAuth{},
 		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "test-secret-thirty-two-chars-ok!", TTL: time.Hour}),
@@ -138,6 +143,7 @@ func TestLogin_TenantLookupError(t *testing.T) {
 func TestLogin_BindFailure(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := auth.NewHandler(auth.HandlerDeps{
+		LocalEnabled: true,
 		Tenants: fakeTenants{id: uuid.New()},
 		Auth:    fakeAuth{},
 		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "test-secret-thirty-two-chars-ok!", TTL: time.Hour}),
@@ -151,4 +157,69 @@ func TestLogin_BindFailure(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/auth/login",
 		bytes.NewReader(body)))
 	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestLogout_Revokes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rev := &fakeRevoker{}
+	j := auth.NewJWT(auth.JWTConfig{Secret: "test-secret-thirty-two-chars-ok!", TTL: time.Hour})
+	h := auth.NewHandler(auth.HandlerDeps{
+		LocalEnabled: true,
+		Tenants: fakeTenants{id: uuid.New()},
+		Auth:    fakeAuth{},
+		JWT:     j,
+		Revoker: rev,
+	})
+	r := gin.New()
+	h.Register(r)
+
+	tok, _ := j.Issue(uuid.New(), uuid.New(), "member")
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	cl, err := j.Parse(tok)
+	require.NoError(t, err)
+	revoked, _ := rev.IsRevoked(context.Background(), cl.JTI)
+	require.True(t, revoked, "logout should mark jti revoked")
+}
+
+func TestLogout_MissingToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rev := &fakeRevoker{}
+	h := auth.NewHandler(auth.HandlerDeps{
+		LocalEnabled: true,
+		Tenants: fakeTenants{id: uuid.New()},
+		Auth:    fakeAuth{},
+		JWT:     auth.NewJWT(auth.JWTConfig{Secret: "test-secret-thirty-two-chars-ok!", TTL: time.Hour}),
+		Revoker: rev,
+	})
+	r := gin.New()
+	h.Register(r)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/auth/logout", nil))
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestLogout_NoRevoker_Returns501(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	j := auth.NewJWT(auth.JWTConfig{Secret: "test-secret-thirty-two-chars-ok!", TTL: time.Hour})
+	h := auth.NewHandler(auth.HandlerDeps{
+		LocalEnabled: true,
+		Tenants: fakeTenants{id: uuid.New()},
+		Auth:    fakeAuth{},
+		JWT:     j,
+		// Revoker omitted
+	})
+	r := gin.New()
+	h.Register(r)
+
+	tok, _ := j.Issue(uuid.New(), uuid.New(), "member")
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusNotImplemented, w.Code)
 }

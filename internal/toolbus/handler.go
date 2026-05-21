@@ -11,6 +11,7 @@ import (
 
 	"github.com/yourorg/private-coding-agent/internal/auth"
 	"github.com/yourorg/private-coding-agent/internal/modelgw"
+	"github.com/yourorg/private-coding-agent/internal/quota"
 	"github.com/yourorg/private-coding-agent/internal/sandbox"
 )
 
@@ -90,6 +91,8 @@ func (h *Handler) invoke(c *gin.Context) {
 
 func mapErrorToAPI(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, quota.ErrQuotaExceeded):
+		writeAPIError(c, http.StatusTooManyRequests, err.Error(), "rate_limit_error", "quota_exceeded")
 	case errors.Is(err, ErrToolNotFound):
 		writeAPIError(c, http.StatusNotFound, err.Error(), "invalid_request_error", "tool_not_found")
 	case errors.Is(err, ErrInvalidArguments):

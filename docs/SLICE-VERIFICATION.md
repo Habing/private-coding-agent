@@ -143,29 +143,34 @@ cd deploy/compose
 
 | 项 | 验证 |
 |----|------|
-| L1 | `go test ./internal/auth/... ./internal/modelgw/...` + 新 `quota` 包 |
-| L3 增量 | E2E **[43–44]**：quota 超限 429；logout 后旧 JWT 401 |
+| L1 | `go test ./internal/auth/... ./internal/modelgw/... ./internal/quota/... -count=1` |
+| L3 增量 | E2E **[43–44]**：43 沙箱配额 429 + `quota_exceeded`；44 `POST /auth/logout` 后旧 JWT 401 |
+| compose | `PCA_QUOTA_SANDBOX_MAX_ACTIVE=1`（默认）供步骤 43；见 `deploy/compose/docker-compose.yml` |
 
 ### 切片 14 — Session ↔ Sandbox
 
 | 项 | 验证 |
 |----|------|
-| L1 | `go test ./internal/session/... ./internal/sandbox/... -count=1` |
-| L3 增量 | E2E **[45]**：POST session 含 `sandbox_id`；WS + `fs.list` 成功 |
+| L1 | `go test ./internal/session/... ./internal/agent/... -count=1` |
+| L3 增量 | E2E **[45]**：POST/GET session 含 `sandbox_id`；WS「list files in workspace」→ `fs.list` + tool 持久化 |
+| 注意 | 步骤 21 后 `DELETE /sessions/:id` 释放沙箱，避免与步骤 43 配额冲突 |
 
 ### 切片 15 — SSO (OIDC)
 
 | 项 | 验证 |
 |----|------|
-| L1 | `go test ./internal/auth/... -run OIDC -count=1` |
-| L3 增量 | E2E **[46]**：mock OIDC → JWT → `/me` 200 |
+| L1 | `go test ./internal/auth/... -count=1`（含 `TestOIDC_*`） |
+| L3 增量 | E2E **[46]**：`curl -L /auth/oidc/login` → JWT → `GET /me` 200 |
+| compose | `mock-oidc` :8082；见 [`deploy/compose/OIDC.md`](../deploy/compose/OIDC.md) |
 
 ### 切片 16 — Enterprise Web
 
 | 项 | 验证 |
 |----|------|
+| L1 | `go test ./internal/memory/... ./internal/session/... ./internal/sandbox/... -count=1` |
 | L2 | `cd internal/webui && npm run build` |
-| L3 增量 | E2E **[47–48]**：memory 注入 audit；sandbox files list |
+| L3 增量 | E2E **[47–48]**：47 首条 user 触发 `memory.inject` audit（含 memory_ids）；48 session sandbox 写文件后 `?list=1` 返回根目录 entries |
+| 注意 | pgvector `ivfflat.probes` 在 `internal/db.Connect` 设为 100；E2E 小数据集下默认 1 会漏召 |
 | 手工 | `/memories` 页 CRUD；Chat 侧栏文件树 |
 
 ### 切片 17 — Skills 12b

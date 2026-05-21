@@ -20,6 +20,12 @@ export function TopBar() {
         <Link to="/" className="font-semibold">
           Private Coding Agent
         </Link>
+        <Link
+          to="/memories"
+          className="text-muted-foreground hover:text-foreground"
+        >
+          记忆
+        </Link>
         {isAdmin(user) && (
           <Link
             to="/audit"

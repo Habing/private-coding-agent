@@ -2,6 +2,13 @@ server:
   port: 8080
   mode: debug
   ws_allowed_origins: ["*"]
+  # Slow-loris / payload-drag protection. ReadHeaderTimeout is hard-coded
+  # at 10s in main; these are application-level guards.
+  read_timeout: "30s"
+  # WriteTimeout intentionally omitted: setting it kills SSE / WebSocket
+  # streams. Set explicitly only if you want a global write deadline.
+  # write_timeout: "0s"
+  idle_timeout: "120s"
 db:
   dsn: "postgres://app:app@localhost:5432/app?sslmode=disable"
 redis:
@@ -9,6 +16,16 @@ redis:
 auth:
   jwt_secret: "change-me-in-production"
   jwt_ttl: "24h"
+  # Local email/password login. Set false in production when using OIDC only.
+  local_enabled: true
+  oidc:
+    enabled: false
+    issuer: ""
+    client_id: ""
+    # Name of env var holding the OIDC client secret (not the secret itself).
+    client_secret_env: "OIDC_CLIENT_SECRET"
+    redirect_url: "http://localhost:8080/auth/oidc/callback"
+    tenant_slug: "default"
 telemetry:
   service_name: "private-coding-agent"
   otlp_endpoint: ""
@@ -34,6 +51,28 @@ skills:
   max_skills_per_run: 5
   # Reserved for a future fs-watch-based hot reload. No-op today.
   hot_reload: false
+providers:
+  # When a tenant has no enabled row for the requested provider name,
+  # the registry falls back to the platform-global row (tenant_id IS NULL).
+  # Set true to refuse the fallback — requires explicit per-tenant rows
+  # and is the hardening posture for multi-tenant production.
+  disallow_global_fallback: false
+
+quota:
+  # Per (tenant, user) caps. 0 disables the check entirely.
+  # LLM tokens are summed across chat + embeddings, reset at UTC midnight.
+  llm_tokens_per_day: 200000
+  # Active sandboxes per tenant (pending / running / destroying). DB-counted
+  # at the create handler — independent of the Redis counters above.
+  sandbox_max_active: 5
+  # HTTP-level tool.invoke per (tenant, user) per minute.
+  tool_invoke_per_minute: 120
+
+rate_limit:
+  # Global HTTP requests per (tenant, user) per minute applied to the
+  # /protected group (skips /auth/*, /metrics). 0 disables.
+  per_minute: 600
+
 memory:
   # provider:model for memory embeddings (1536-d via dimensions param).
   # Compose with DASHSCOPE_API_KEY: dashscope:text-embedding-v4
@@ -45,3 +84,6 @@ memory:
   # Operational kill switch: false makes Create skip embedding entirely
   # and Search always falls back to keyword (slice-7 behaviour).
   embed_on_write: true
+  # Slice 16: auto-inject on first user message in a session.
+  inject_top_k: 5
+  inject_max_chars: 4000

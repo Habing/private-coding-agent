@@ -15,9 +15,11 @@ type JWTConfig struct {
 }
 
 type Claims struct {
-	UserID   uuid.UUID
-	TenantID uuid.UUID
-	Role     string
+	UserID    uuid.UUID
+	TenantID  uuid.UUID
+	Role      string
+	JTI       string    // unique token ID for revocation lookup
+	ExpiresAt time.Time // surfaced so logout can compute revocation TTL
 }
 
 type JWT struct {
@@ -44,7 +46,8 @@ type jwtClaims struct {
 }
 
 // Issue signs an HS256 JWT carrying the user/tenant IDs and role, with
-// IssuedAt set to now and ExpiresAt to now + configured TTL.
+// IssuedAt set to now, ExpiresAt to now + configured TTL, and a freshly
+// generated jti so individual tokens can be revoked via logout.
 func (s *JWT) Issue(userID, tenantID uuid.UUID, role string) (string, error) {
 	now := time.Now()
 	c := jwtClaims{
@@ -52,6 +55,7 @@ func (s *JWT) Issue(userID, tenantID uuid.UUID, role string) (string, error) {
 		TenantID: tenantID.String(),
 		Role:     role,
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        uuid.NewString(),
 			ExpiresAt: jwt.NewNumericDate(now.Add(s.cfg.TTL)),
 			IssuedAt:  jwt.NewNumericDate(now),
 		},
@@ -84,5 +88,13 @@ func (s *JWT) Parse(token string) (*Claims, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tid: %w", err)
 	}
-	return &Claims{UserID: uid, TenantID: tid, Role: jc.Role}, nil
+	var exp time.Time
+	if jc.ExpiresAt != nil {
+		exp = jc.ExpiresAt.Time
+	}
+	return &Claims{
+		UserID: uid, TenantID: tid, Role: jc.Role,
+		JTI:       jc.ID,
+		ExpiresAt: exp,
+	}, nil
 }

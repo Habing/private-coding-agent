@@ -31,6 +31,7 @@ import (
 	"github.com/yourorg/private-coding-agent/internal/memory"
 	"github.com/yourorg/private-coding-agent/internal/metrics"
 	"github.com/yourorg/private-coding-agent/internal/modelgw"
+	"github.com/yourorg/private-coding-agent/internal/quota"
 	"github.com/yourorg/private-coding-agent/internal/sandbox"
 	"github.com/yourorg/private-coding-agent/internal/session"
 	"github.com/yourorg/private-coding-agent/internal/skills"
@@ -107,13 +108,20 @@ func run() error {
 	}
 	defer rdb.Close()
 
+	// Quota service (slice 13). Backed by Redis fixed-window counters.
+	quotaSvc := quota.NewService(rdb, quota.Limits{
+		LLMTokensPerDay:     cfg.Quota.LLMTokensPerDay,
+		SandboxMaxActive:    cfg.Quota.SandboxMaxActive,
+		ToolInvokePerMinute: cfg.Quota.ToolInvokePerMinute,
+	})
+
 	// Sandbox driver
 	sandboxRepo := sandbox.NewSessionRepo(pool)
 	sandboxDriver, err := sandbox.NewDockerDriver(ctx, dockerCli, sandboxRepo, rdb, sandbox.DockerDriverConfig{})
 	if err != nil {
 		return fmt.Errorf("sandbox driver: %w", err)
 	}
-	sandboxHandler := sandbox.NewHandler(sandboxDriver)
+	sandboxHandler := sandbox.NewHandler(sandboxDriver).WithQuota(quotaSvc, sandboxRepo)
 	// Will set sandboxHandler.WithAuditSink after auditRepo is constructed.
 
 	// Model Gateway
@@ -132,12 +140,13 @@ func run() error {
 			return modelgw.NewClaudeProvider(cfg)
 		},
 	}
-	modelRegistry := modelgw.NewProviderRegistry(providerRepo, factories, 60*time.Second)
+	modelRegistry := modelgw.NewProviderRegistry(providerRepo, factories,
+		60*time.Second, !cfg.Providers.DisallowGlobalFallback)
 	if err := modelRegistry.Start(ctx); err != nil {
 		return fmt.Errorf("model registry: %w", err)
 	}
 	go modelRegistry.Run(ctx)
-	modelGateway := modelgw.NewGateway(modelRegistry, usageRecorder)
+	modelGateway := modelgw.NewGateway(modelRegistry, usageRecorder).WithQuota(quotaSvc)
 	modelHandler := modelgw.NewHandler(modelGateway)
 
 	// Tool Bus
@@ -178,6 +187,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("toolbus: %w", err)
 	}
+	toolBus.WithQuota(quotaSvc)
 	toolHandler := toolbus.NewHandler(toolBus)
 
 	// Agent Engine (slice 5) + Skills subsystem (slice 12)
@@ -198,6 +208,11 @@ func run() error {
 		}
 		composer = agent.NewSkillComposer(skills.NewResolver(skillRegistry, skillsCfg), skillsCfg)
 	}
+	composer = agent.WrapMemoryComposer(composer)
+	memLoader := memory.NewLoader(memoryService, memory.LoaderConfig{
+		TopK:     cfg.Memory.InjectTopK,
+		MaxChars: cfg.Memory.InjectMaxChars,
+	})
 	agentEngine := agent.NewEngine(modelGateway, toolBus, agentProfiles, composer)
 	agentHandler := agent.NewHandler(agentEngine)
 
@@ -206,7 +221,7 @@ func run() error {
 		session.NewSessionRepo(pool),
 		session.NewMessageRepo(pool),
 		agentEngine,
-	)
+	).WithSandbox(sandboxDriver).WithQuota(quotaSvc, sandboxRepo).WithMemoryLoader(memLoader)
 	sessionHandler := session.NewHandler(sessionService)
 	wsAllowed := cfg.Server.WSAllowedOrigins
 	if len(wsAllowed) == 0 {
@@ -227,6 +242,7 @@ func run() error {
 		return fmt.Errorf("auth config: %w", err)
 	}
 	jwtSvc := auth.NewJWT(jwtCfg)
+	jwtRevoker := auth.NewRedisRevoker(rdb)
 	auditRepo := audit.NewRepo(pool)
 	sandboxHandler.WithAuditSink(auditRepo)
 	sessionService.WithAuditSink(auditRepo)
@@ -245,8 +261,36 @@ func run() error {
 	var ready atomic.Bool
 	ready.Store(true)
 
+	oidcCfg := auth.OIDCConfig{
+		Enabled:         cfg.Auth.OIDC.Enabled,
+		Issuer:          cfg.Auth.OIDC.Issuer,
+		ClientID:        cfg.Auth.OIDC.ClientID,
+		ClientSecretEnv: cfg.Auth.OIDC.ClientSecretEnv,
+		RedirectURL:     cfg.Auth.OIDC.RedirectURL,
+		TenantSlug:      cfg.Auth.OIDC.TenantSlug,
+	}
+	var oidcRT *auth.OIDCRuntime
+	if oidcCfg.Enabled {
+		if err := oidcCfg.Valid(); err != nil {
+			return fmt.Errorf("oidc config: %w", err)
+		}
+		oidcClient, err := auth.NewOIDCClient(ctx, oidcCfg)
+		if err != nil {
+			return fmt.Errorf("oidc client: %w", err)
+		}
+		oidcRT = &auth.OIDCRuntime{
+			Config: oidcCfg, Client: oidcClient, CookieSecret: cfg.Auth.JWTSecret,
+		}
+		slog.Info("auth.oidc enabled", "issuer", oidcCfg.Issuer, "tenant", oidcCfg.TenantSlug)
+	}
+	if !cfg.Auth.LocalEnabled && !oidcCfg.Enabled {
+		return fmt.Errorf("auth: enable local_enabled or oidc.enabled")
+	}
+
 	authHandler := auth.NewHandler(auth.HandlerDeps{
-		Tenants: tenantLookup, Auth: userSvc, JWT: jwtSvc, Audit: auditRepo,
+		Tenants: tenantLookup, Auth: userSvc, OIDCUsers: userSvc, JWT: jwtSvc,
+		Audit: auditRepo, Revoker: jwtRevoker,
+		LocalEnabled: cfg.Auth.LocalEnabled, OIDC: oidcRT,
 	})
 
 	register := func(r *gin.Engine) {
@@ -263,7 +307,10 @@ func run() error {
 		authHandler.Register(r)
 
 		protected := r.Group("/")
-		protected.Use(auth.Middleware(jwtSvc))
+		protected.Use(auth.Middleware(jwtSvc, auth.WithRevoker(jwtRevoker)))
+		protected.Use(httpx.RateLimitMiddleware(rdb, httpx.RateLimitConfig{
+			PerMinute: cfg.RateLimit.PerMinute,
+		}))
 		httpx.RegisterMe(protected)
 		sandboxHandler.Register(protected)
 		modelHandler.Register(protected)
@@ -277,7 +324,7 @@ func run() error {
 		// RequireAdmin to enforce role == "admin". Sits on its own group so the
 		// admin gate cannot accidentally leak onto non-admin endpoints.
 		adminGroup := r.Group("/")
-		adminGroup.Use(auth.Middleware(jwtSvc))
+		adminGroup.Use(auth.Middleware(jwtSvc, auth.WithRevoker(jwtRevoker)))
 		adminGroup.Use(auth.RequireAdmin())
 		auditHandler.Register(adminGroup)
 
@@ -299,7 +346,7 @@ func run() error {
 		// in proxy access logs for the API surface.
 		wsGroup := r.Group("/")
 		wsGroup.Use(auth.WSTokenFromQuery())
-		wsGroup.Use(auth.Middleware(jwtSvc))
+		wsGroup.Use(auth.Middleware(jwtSvc, auth.WithRevoker(jwtRevoker)))
 		sessionWSHandler.Register(wsGroup)
 
 		// SPA fallback last: API routes already on the tree take precedence;
@@ -323,6 +370,9 @@ func run() error {
 		Addr:              ":" + strconv.Itoa(cfg.Server.Port),
 		Handler:           engine,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       cfg.Server.ReadTimeout,
+		WriteTimeout:      cfg.Server.WriteTimeout,
+		IdleTimeout:       cfg.Server.IdleTimeout,
 	}
 
 	stop := make(chan os.Signal, 1)

@@ -45,6 +45,7 @@ func newLoginRouter(t *testing.T, tenants auth.TenantLookup, authSvc auth.AuthSe
 	gin.SetMode(gin.TestMode)
 	j := auth.NewJWT(auth.JWTConfig{Secret: "test-secret-thirty-two-chars-ok!", TTL: time.Hour})
 	h := auth.NewHandler(auth.HandlerDeps{
+		LocalEnabled: true,
 		Tenants: tenants, Auth: authSvc, JWT: j, Audit: sink,
 	})
 	r := gin.New()

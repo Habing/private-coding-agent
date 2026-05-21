@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/yourorg/private-coding-agent/internal/auth"
+	"github.com/yourorg/private-coding-agent/internal/quota"
 )
 
 // Handler 暴露 /v1/chat/completions 和 /v1/embeddings。
@@ -74,7 +75,7 @@ func (h *Handler) chatStream(c *gin.Context, cl *auth.Claims, req ChatRequest) {
 		writeAPIError(c, http.StatusBadRequest, err.Error(), "invalid_request_error", "validation")
 		return
 	}
-	if _, _, err := h.gw.Registry().Resolve(req.Model); err != nil {
+	if _, _, err := h.gw.Registry().Resolve(cl.TenantID, req.Model); err != nil {
 		mapErrorToAPI(c, err)
 		return
 	}
@@ -114,6 +115,8 @@ func (h *Handler) embeddings(c *gin.Context) {
 
 func mapErrorToAPI(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, quota.ErrQuotaExceeded):
+		writeAPIError(c, http.StatusTooManyRequests, err.Error(), "rate_limit_error", "quota_exceeded")
 	case errors.Is(err, ErrModelInvalid):
 		writeAPIError(c, http.StatusBadRequest, err.Error(), "invalid_request_error", "model_invalid")
 	case errors.Is(err, ErrProviderNotFound):
@@ -149,6 +152,8 @@ func mapErrorToAPI(c *gin.Context, err error) {
 
 func errorTypeFor(err error) string {
 	switch {
+	case errors.Is(err, quota.ErrQuotaExceeded):
+		return "rate_limit_error"
 	case errors.Is(err, ErrProviderUnreachable), errors.Is(err, ErrProviderError):
 		return "provider_error"
 	}
@@ -157,6 +162,8 @@ func errorTypeFor(err error) string {
 
 func errorCodeFor(err error) string {
 	switch {
+	case errors.Is(err, quota.ErrQuotaExceeded):
+		return "quota_exceeded"
 	case errors.Is(err, ErrProviderUnreachable):
 		return "unreachable"
 	case errors.Is(err, ErrProviderError):

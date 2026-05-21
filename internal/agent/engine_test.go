@@ -165,6 +165,26 @@ func newRunInput(msg string) agent.RunInput {
 	}
 }
 
+func TestEngine_SandboxIDSystemPrefix(t *testing.T) {
+	sbID := uuid.MustParse("aaaaaaaa-bbbb-4ccc-dddd-eeeeeeeeeeee")
+	gw := &mockGateway{responses: []*modelgw.ChatResponse{chatStop("ok")}}
+	bus := &mockBus{}
+	in := newRunInput("hi")
+	in.SandboxID = sbID
+	_, err := runEngine(t, gw, bus, in)
+	require.NoError(t, err)
+	require.NotEmpty(t, gw.calls)
+	found := false
+	for _, m := range gw.calls[0].Messages {
+		if m.Role == modelgw.RoleSystem && strings.Contains(m.Content, "Current sandbox_id:") &&
+			strings.Contains(m.Content, sbID.String()) {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "expected sandbox_id system inject in model messages")
+}
+
 func TestEngine_DirectFinal(t *testing.T) {
 	gw := &mockGateway{responses: []*modelgw.ChatResponse{chatStop("hi back")}}
 	bus := &mockBus{}

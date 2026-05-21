@@ -1,9 +1,11 @@
 package sandbox
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -11,12 +13,21 @@ import (
 
 	"github.com/yourorg/private-coding-agent/internal/audit"
 	"github.com/yourorg/private-coding-agent/internal/auth"
+	"github.com/yourorg/private-coding-agent/internal/quota"
 )
+
+// ActiveSandboxCounter abstracts the per-tenant count used by quota gating
+// so the handler doesn't take a hard repo dep (test seam).
+type ActiveSandboxCounter interface {
+	CountActiveByTenant(ctx context.Context, tenantID uuid.UUID) (int, error)
+}
 
 // Handler exposes the sandbox Runtime as HTTP endpoints.
 type Handler struct {
-	rt    Runtime
-	audit audit.Sink
+	rt           Runtime
+	audit        audit.Sink
+	quota        *quota.Service
+	activeCount  ActiveSandboxCounter
 }
 
 func NewHandler(rt Runtime) *Handler { return &Handler{rt: rt} }
@@ -30,6 +41,15 @@ func (h *Handler) WithAuditSink(s audit.Sink) *Handler {
 	return h
 }
 
+// WithQuota wires a per-tenant active-sandbox cap. The handler will reject
+// create requests with HTTP 429 when the count of non-terminal sandboxes
+// for the tenant reaches the cap. nil quota or zero cap disables.
+func (h *Handler) WithQuota(q *quota.Service, counter ActiveSandboxCounter) *Handler {
+	h.quota = q
+	h.activeCount = counter
+	return h
+}
+
 // Register mounts /sandbox/* routes on rg. rg should already have
 // auth.Middleware applied (handler relies on auth.FromCtx for claims).
 func (h *Handler) Register(rg *gin.RouterGroup) {
@@ -38,7 +58,7 @@ func (h *Handler) Register(rg *gin.RouterGroup) {
 	g.GET("/:id", h.get)
 	g.DELETE("/:id", h.destroy)
 	g.POST("/:id/exec", h.exec)
-	g.GET("/:id/files", h.readFile)
+	g.GET("/:id/files", h.files)
 	g.PUT("/:id/files", h.writeFile)
 	g.POST("/:id/snapshot", h.snapshot)
 }
@@ -115,6 +135,20 @@ func (h *Handler) create(c *gin.Context) {
 	cl, ok := h.claims(c)
 	if !ok {
 		return
+	}
+	if h.quota != nil && h.activeCount != nil {
+		cap := h.quota.SandboxCap()
+		if cap > 0 {
+			n, err := h.activeCount.CountActiveByTenant(c.Request.Context(), cl.TenantID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "quota_check_failed"})
+				return
+			}
+			if n >= cap {
+				c.JSON(http.StatusTooManyRequests, gin.H{"error": "quota_exceeded", "kind": "sandbox.active", "used": n, "cap": cap})
+				return
+			}
+		}
 	}
 	var req createReq
 	_ = c.ShouldBindJSON(&req) // 全字段 optional,body 可为空
@@ -329,6 +363,46 @@ func (h *Handler) writeFile(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+const filePreviewMaxBytes = 256 * 1024
+
+func (h *Handler) files(c *gin.Context) {
+	if c.Query("list") == "1" || strings.EqualFold(c.Query("list"), "true") {
+		h.listFiles(c)
+		return
+	}
+	h.readFile(c)
+}
+
+func (h *Handler) listFiles(c *gin.Context) {
+	cl, ok := h.claims(c)
+	if !ok {
+		return
+	}
+	id, ok := h.parseID(c)
+	if !ok {
+		return
+	}
+	rel := c.Query("path")
+	if rel == "" {
+		rel = "."
+	}
+	entries, err := ListDir(c.Request.Context(), h.rt, cl.TenantID, id, rel)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrSandboxNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+		case errors.Is(err, ErrSandboxNotReady):
+			c.JSON(http.StatusConflict, gin.H{"error": "not_ready"})
+		case isValidationError(err):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "runtime_error"})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"entries": entries})
+}
+
 func (h *Handler) readFile(c *gin.Context) {
 	cl, ok := h.claims(c)
 	if !ok {
@@ -346,6 +420,10 @@ func (h *Handler) readFile(c *gin.Context) {
 	data, err := h.rt.ReadFile(c.Request.Context(), cl.TenantID, id, rel)
 	if err != nil {
 		fileErrToHTTP(c, err)
+		return
+	}
+	if len(data) > filePreviewMaxBytes {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "file_too_large"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{

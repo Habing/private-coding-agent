@@ -20,6 +20,8 @@ type User struct {
 	PasswordHash string
 	Name         string
 	Role         Role
+	OIDCIss      string
+	OIDCSub      string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }

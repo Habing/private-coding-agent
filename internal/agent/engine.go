@@ -111,14 +111,21 @@ func (e *Engine) Run(ctx context.Context, in RunInput, yield func(Event) error) 
 
 	// Build conversation: composer-built system prefix, then caller messages.
 	sysMsgs, meta, err := e.composer.ComposeSystem(ctx, ComposeInput{
-		TenantID:        in.TenantID,
-		UserID:          in.UserID,
-		Profile:         profile,
-		RunSkillIDs:     in.SkillIDs,
-		SessionSkillIDs: in.SessionSkillIDs,
+		TenantID:          in.TenantID,
+		UserID:            in.UserID,
+		Profile:           profile,
+		RunSkillIDs:       in.SkillIDs,
+		SessionSkillIDs:   in.SessionSkillIDs,
+		MemorySection:     in.MemorySection,
+		MemoryIDs:         in.MemoryIDs,
+		MemoryCharCount:   in.MemoryCharCount,
+		MemoryTruncated:   in.MemoryTruncated,
 	})
 	if err != nil {
 		return fmt.Errorf("compose system: %w", err)
+	}
+	if len(meta.MemoryIDs) > 0 {
+		e.recordMemoryInject(ctx, in, meta)
 	}
 	if len(meta.SkillIDs) > 0 {
 		runSpan.SetAttributes(
@@ -128,7 +135,13 @@ func (e *Engine) Run(ctx context.Context, in RunInput, yield func(Event) error) 
 		)
 		e.recordSkillInject(ctx, in, meta)
 	}
-	messages := make([]modelgw.ChatMessage, 0, len(sysMsgs)+len(in.Messages))
+	messages := make([]modelgw.ChatMessage, 0, len(sysMsgs)+len(in.Messages)+1)
+	if in.SandboxID != uuid.Nil {
+		messages = append(messages, modelgw.ChatMessage{
+			Role:    modelgw.RoleSystem,
+			Content: fmt.Sprintf("Current sandbox_id: %s", in.SandboxID),
+		})
+	}
 	messages = append(messages, sysMsgs...)
 	messages = append(messages, in.Messages...)
 
@@ -311,6 +324,24 @@ func (e *Engine) recordSkillInject(ctx context.Context, in RunInput, meta Compos
 			"skill_ids": meta.SkillIDs,
 			"chars":     meta.CharCount,
 			"truncated": meta.Truncated,
+		},
+	}, nil)
+}
+
+func (e *Engine) recordMemoryInject(ctx context.Context, in RunInput, meta ComposeMeta) {
+	if e.auditSink == nil {
+		return
+	}
+	tid := in.TenantID
+	uid := in.UserID
+	audit.Detached(e.auditSink, audit.Entry{
+		OccurredAt: time.Now(),
+		TenantID:   &tid, UserID: &uid,
+		Action: "memory.inject",
+		Metadata: map[string]any{
+			"memory_ids": meta.MemoryIDs,
+			"chars":      meta.MemoryCharCount,
+			"truncated":  meta.MemoryTruncated,
 		},
 	}, nil)
 }

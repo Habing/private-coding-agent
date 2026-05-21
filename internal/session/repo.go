@@ -27,9 +27,9 @@ func (r *SessionRepo) Create(ctx context.Context, s *Session) error {
 		skillIDs = []string{}
 	}
 	_, err := r.pool.Exec(ctx, `
-INSERT INTO sessions (id, tenant_id, owner_user_id, title, model, profile, status, skill_ids)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-		s.ID, s.TenantID, s.OwnerUserID, s.Title, s.Model, s.Profile, s.Status, skillIDs)
+INSERT INTO sessions (id, tenant_id, owner_user_id, title, model, profile, status, skill_ids, sandbox_id)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		s.ID, s.TenantID, s.OwnerUserID, s.Title, s.Model, s.Profile, s.Status, skillIDs, s.SandboxID)
 	if err != nil {
 		return fmt.Errorf("insert session: %w", err)
 	}
@@ -40,12 +40,12 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
 // cross-owner reads return ErrSessionNotFound (no existence leak).
 func (r *SessionRepo) Get(ctx context.Context, tenantID, ownerUserID, id uuid.UUID) (*Session, error) {
 	row := r.pool.QueryRow(ctx, `
-SELECT id, tenant_id, owner_user_id, title, model, profile, status, skill_ids, created_at, updated_at
+SELECT id, tenant_id, owner_user_id, title, model, profile, status, skill_ids, sandbox_id, created_at, updated_at
 FROM sessions
 WHERE id=$1 AND tenant_id=$2 AND owner_user_id=$3`, id, tenantID, ownerUserID)
 	var s Session
 	if err := row.Scan(&s.ID, &s.TenantID, &s.OwnerUserID, &s.Title, &s.Model, &s.Profile,
-		&s.Status, &s.SkillIDs, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		&s.Status, &s.SkillIDs, &s.SandboxID, &s.CreatedAt, &s.UpdatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrSessionNotFound
 		}
@@ -57,7 +57,7 @@ WHERE id=$1 AND tenant_id=$2 AND owner_user_id=$3`, id, tenantID, ownerUserID)
 // List returns sessions owned by ownerUserID under tenantID, newest first.
 func (r *SessionRepo) List(ctx context.Context, tenantID, ownerUserID uuid.UUID) ([]Session, error) {
 	rows, err := r.pool.Query(ctx, `
-SELECT id, tenant_id, owner_user_id, title, model, profile, status, skill_ids, created_at, updated_at
+SELECT id, tenant_id, owner_user_id, title, model, profile, status, skill_ids, sandbox_id, created_at, updated_at
 FROM sessions
 WHERE tenant_id=$1 AND owner_user_id=$2
 ORDER BY created_at DESC`, tenantID, ownerUserID)
@@ -69,7 +69,7 @@ ORDER BY created_at DESC`, tenantID, ownerUserID)
 	for rows.Next() {
 		var s Session
 		if err := rows.Scan(&s.ID, &s.TenantID, &s.OwnerUserID, &s.Title, &s.Model,
-			&s.Profile, &s.Status, &s.SkillIDs, &s.CreatedAt, &s.UpdatedAt); err != nil {
+			&s.Profile, &s.Status, &s.SkillIDs, &s.SandboxID, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
 		out = append(out, s)

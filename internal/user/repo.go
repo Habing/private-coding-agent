@@ -28,6 +28,37 @@ type CreateInput struct {
 	Role         Role
 }
 
+type CreateOIDCInput struct {
+	TenantID     uuid.UUID
+	Email        string
+	PasswordHash string
+	Name         string
+	Role         Role
+	OIDCIss      string
+	OIDCSub      string
+}
+
+const userSelectCols = `id, tenant_id, email, password_hash, name, role, oidc_iss, oidc_sub, created_at, updated_at`
+
+func scanUser(row pgx.Row) (*User, error) {
+	var u User
+	var oidcIss, oidcSub *string
+	if err := row.Scan(&u.ID, &u.TenantID, &u.Email, &u.PasswordHash,
+		&u.Name, &u.Role, &oidcIss, &oidcSub, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("scan: %w", err)
+	}
+	if oidcIss != nil {
+		u.OIDCIss = *oidcIss
+	}
+	if oidcSub != nil {
+		u.OIDCSub = *oidcSub
+	}
+	return &u, nil
+}
+
 func (r *Repo) Create(ctx context.Context, in CreateInput) (*User, error) {
 	if in.Role == "" {
 		in.Role = RoleMember
@@ -35,45 +66,40 @@ func (r *Repo) Create(ctx context.Context, in CreateInput) (*User, error) {
 	row := r.pool.QueryRow(ctx, `
 INSERT INTO users (tenant_id, email, password_hash, name, role)
 VALUES ($1,$2,$3,$4,$5)
-RETURNING id, tenant_id, email, password_hash, name, role, created_at, updated_at`,
+RETURNING `+userSelectCols,
 		in.TenantID, in.Email, in.PasswordHash, in.Name, string(in.Role))
-
-	var u User
-	if err := row.Scan(&u.ID, &u.TenantID, &u.Email, &u.PasswordHash,
-		&u.Name, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
-		return nil, fmt.Errorf("insert: %w", err)
-	}
-	return &u, nil
+	return scanUser(row)
 }
 
 func (r *Repo) GetByEmail(ctx context.Context, tenantID uuid.UUID, email string) (*User, error) {
 	row := r.pool.QueryRow(ctx, `
-SELECT id, tenant_id, email, password_hash, name, role, created_at, updated_at
+SELECT `+userSelectCols+`
 FROM users WHERE tenant_id=$1 AND email=$2`, tenantID, email)
+	return scanUser(row)
+}
 
-	var u User
-	if err := row.Scan(&u.ID, &u.TenantID, &u.Email, &u.PasswordHash,
-		&u.Name, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("scan: %w", err)
+func (r *Repo) GetByOIDC(ctx context.Context, tenantID uuid.UUID, iss, sub string) (*User, error) {
+	row := r.pool.QueryRow(ctx, `
+SELECT `+userSelectCols+`
+FROM users WHERE tenant_id=$1 AND oidc_iss=$2 AND oidc_sub=$3`, tenantID, iss, sub)
+	return scanUser(row)
+}
+
+func (r *Repo) CreateOIDC(ctx context.Context, in CreateOIDCInput) (*User, error) {
+	if in.Role == "" {
+		in.Role = RoleMember
 	}
-	return &u, nil
+	row := r.pool.QueryRow(ctx, `
+INSERT INTO users (tenant_id, email, password_hash, name, role, oidc_iss, oidc_sub)
+VALUES ($1,$2,$3,$4,$5,$6,$7)
+RETURNING `+userSelectCols,
+		in.TenantID, in.Email, in.PasswordHash, in.Name, string(in.Role), in.OIDCIss, in.OIDCSub)
+	return scanUser(row)
 }
 
 func (r *Repo) GetByID(ctx context.Context, id uuid.UUID) (*User, error) {
 	row := r.pool.QueryRow(ctx, `
-SELECT id, tenant_id, email, password_hash, name, role, created_at, updated_at
+SELECT `+userSelectCols+`
 FROM users WHERE id=$1`, id)
-
-	var u User
-	if err := row.Scan(&u.ID, &u.TenantID, &u.Email, &u.PasswordHash,
-		&u.Name, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("scan: %w", err)
-	}
-	return &u, nil
+	return scanUser(row)
 }

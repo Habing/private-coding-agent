@@ -34,6 +34,19 @@ services:
       - ../../sandbox/image:/sandbox-context:ro
     profiles: ["build-only"]
 
+  mock-oidc:
+    build:
+      context: ../..
+      dockerfile: internal/auth/mockoidc/Dockerfile
+    environment:
+      MOCK_OIDC_ISSUER: http://mock-oidc:8082
+      MOCK_OIDC_PUBLIC_URL: http://localhost:8082
+      MOCK_OIDC_CLIENT_ID: pca-e2e
+      MOCK_OIDC_CLIENT_SECRET: e2e-oidc-secret-change-me
+      MOCK_OIDC_PORT: "8082"
+    ports:
+      - "8082:8082"
+
   mock-provider:
     build:
       context: ../..
@@ -75,6 +88,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mock-oidc:
+        condition: service_started
     environment:
       PCA_DB_DSN: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
       PCA_REDIS_ADDR: "redis:6379"
@@ -89,6 +104,16 @@ services:
       PCA_OBSERVABILITY_LOG_LEVEL: ${PCA_OBSERVABILITY_LOG_LEVEL}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       PCA_MEMORY_EMBEDDING_MODEL: ${PCA_MEMORY_EMBEDDING_MODEL:-dashscope:text-embedding-v4}
+      # E2E step 43: cap active sandboxes at 1 so a second create returns 429.
+      PCA_QUOTA_SANDBOX_MAX_ACTIVE: ${PCA_QUOTA_SANDBOX_MAX_ACTIVE:-1}
+      PCA_AUTH_LOCAL_ENABLED: ${PCA_AUTH_LOCAL_ENABLED:-true}
+      PCA_AUTH_OIDC_ENABLED: ${PCA_AUTH_OIDC_ENABLED:-true}
+      PCA_AUTH_OIDC_ISSUER: ${PCA_AUTH_OIDC_ISSUER:-http://mock-oidc:8082}
+      PCA_AUTH_OIDC_CLIENT_ID: ${PCA_AUTH_OIDC_CLIENT_ID:-pca-e2e}
+      PCA_AUTH_OIDC_CLIENT_SECRET_ENV: OIDC_CLIENT_SECRET
+      PCA_AUTH_OIDC_REDIRECT_URL: ${PCA_AUTH_OIDC_REDIRECT_URL:-http://localhost:8080/auth/oidc/callback}
+      PCA_AUTH_OIDC_TENANT_SLUG: ${PCA_AUTH_OIDC_TENANT_SLUG:-default}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-e2e-oidc-secret-change-me}
       DOCKER_HOST: "unix:///var/run/docker.sock"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

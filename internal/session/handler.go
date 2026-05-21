@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/yourorg/private-coding-agent/internal/auth"
+	"github.com/yourorg/private-coding-agent/internal/quota"
 )
 
 // HandlerService is the subset of *Service consumed by the REST handler.
@@ -71,6 +72,10 @@ func (h *Handler) create(c *gin.Context) {
 		switch {
 		case errors.Is(err, ErrModelRequired):
 			c.JSON(http.StatusBadRequest, gin.H{"error": "model_required"})
+		case errors.Is(err, quota.ErrQuotaExceeded):
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "quota_exceeded", "kind": "sandbox.active"})
+		case errors.Is(err, ErrSandboxNotConfigured), errors.Is(err, ErrSandboxCreateFailed):
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "sandbox_unavailable"})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
 		}

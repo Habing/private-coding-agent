@@ -18,6 +18,11 @@ type ComposeInput struct {
 	Profile         Profile
 	RunSkillIDs     []string
 	SessionSkillIDs []string
+	// Memory injection (slice 16); populated by session service on first user turn.
+	MemorySection     string
+	MemoryIDs         []string
+	MemoryCharCount   int
+	MemoryTruncated   bool
 }
 
 // ComposeMeta is per-Run telemetry/audit metadata produced by the composer.
@@ -25,6 +30,9 @@ type ComposeMeta struct {
 	SkillIDs  []string
 	CharCount int
 	Truncated bool
+	MemoryIDs         []string
+	MemoryCharCount   int
+	MemoryTruncated   bool
 }
 
 // ContextComposer builds the system-layer prefix for an agent Run. 12a

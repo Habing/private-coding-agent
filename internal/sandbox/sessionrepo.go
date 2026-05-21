@@ -129,6 +129,22 @@ func (r *SessionRepo) GetContainerID(ctx context.Context, tenantID, id uuid.UUID
 	return *cid, nil
 }
 
+// CountActiveByTenant returns the number of sandboxes for tenantID that are
+// not in a terminal state (pending / running / destroying count; destroyed /
+// failed do not). Used by the create handler to enforce per-tenant active
+// caps before allocating Docker resources.
+func (r *SessionRepo) CountActiveByTenant(ctx context.Context, tenantID uuid.UUID) (int, error) {
+	var n int
+	err := r.pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM sandbox_sessions
+WHERE tenant_id=$1 AND status IN ('pending','running','destroying')`,
+		tenantID).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count active sandboxes: %w", err)
+	}
+	return n, nil
+}
+
 // ListActive returns sandboxes not in terminal status. Used by Reconciler.
 func (r *SessionRepo) ListActive(ctx context.Context) ([]*Sandbox, error) {
 	rows, err := r.pool.Query(ctx, `

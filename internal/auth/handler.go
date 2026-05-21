@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -31,10 +32,20 @@ type TenantLookup interface {
 type HandlerDeps struct {
 	Tenants TenantLookup
 	Auth    AuthService
-	JWT     *JWT
+	// OIDCUsers resolves IdP identities (JIT). Required when OIDC is enabled.
+	OIDCUsers OIDCUserService
+	JWT       *JWT
+	// LocalEnabled gates POST /auth/login (default true).
+	LocalEnabled bool
+	// OIDC is optional; when nil or Config.Enabled=false the OIDC routes are off.
+	OIDC *OIDCRuntime
 	// Audit is optional; when non-nil the handler appends auth.login.success /
 	// auth.login.failure entries for every login attempt. nil = no audit.
 	Audit audit.Sink
+	// Revoker is optional; when non-nil, POST /auth/logout records the
+	// caller's jti so subsequent requests with the same token are rejected.
+	// nil disables /auth/logout (it returns 501 Not Implemented).
+	Revoker Revoker
 }
 
 // Handler exposes the /auth/* HTTP endpoints.
@@ -55,11 +66,22 @@ type loginResp struct {
 
 // Register mounts the auth routes on the given engine.
 func (h *Handler) Register(r *gin.Engine) {
-	r.POST("/auth/login", h.login)
+	if h.d.LocalEnabled {
+		r.POST("/auth/login", h.login)
+	}
+	r.POST("/auth/logout", h.logout)
+	if h.oidcEnabled() {
+		r.GET("/auth/oidc/login", h.oidcLogin)
+		r.GET("/auth/oidc/callback", h.oidcCallback)
+	}
 }
 
 func (h *Handler) login(c *gin.Context) {
 	start := time.Now()
+	if !h.d.LocalEnabled {
+		c.JSON(http.StatusForbidden, gin.H{"error": "local_login_disabled"})
+		return
+	}
 	var req loginReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad_request"})
@@ -92,6 +114,50 @@ func (h *Handler) login(c *gin.Context) {
 	}
 	h.auditLoginSuccess(c, start, u, req)
 	c.JSON(http.StatusOK, loginResp{Token: tok})
+}
+
+// logout revokes the bearer token in the Authorization header. We parse the
+// token ourselves (rather than running behind auth.Middleware) so this
+// endpoint can be mounted on the public router group — convenient for
+// clients that want to log out even when their cached token is on the
+// verge of expiry. We still require the token to be syntactically valid;
+// expired tokens get a 200 (idempotent) since revocation is moot.
+func (h *Handler) logout(c *gin.Context) {
+	if h.d.Revoker == nil {
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "revocation_disabled"})
+		return
+	}
+	hdr := c.GetHeader("Authorization")
+	if !strings.HasPrefix(hdr, "Bearer ") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_token"})
+		return
+	}
+	tok := strings.TrimPrefix(hdr, "Bearer ")
+	cl, err := h.d.JWT.Parse(tok)
+	if err != nil {
+		// Treat expired/invalid as a successful idempotent logout: the token
+		// is already useless, so the user-visible state is "logged out."
+		c.JSON(http.StatusOK, gin.H{"status": "logged_out"})
+		return
+	}
+	ttl := time.Until(cl.ExpiresAt)
+	if err := h.d.Revoker.Revoke(c.Request.Context(), cl.JTI, ttl); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "revocation_failed"})
+		return
+	}
+	if h.d.Audit != nil {
+		tid := cl.TenantID
+		uid := cl.UserID
+		audit.Detached(h.d.Audit, audit.Entry{
+			OccurredAt: time.Now(),
+			TenantID:   &tid, UserID: &uid,
+			Action: "auth.logout",
+			Target: cl.JTI,
+			Method: c.Request.Method, Path: c.FullPath(),
+			Status: http.StatusOK,
+		}, nil)
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "logged_out"})
 }
 
 func (h *Handler) auditLoginSuccess(c *gin.Context, start time.Time, u *user.User, req loginReq) {

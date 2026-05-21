@@ -40,7 +40,7 @@ func TestLLMChat_Integration(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(pg.Close)
 
-	reg := modelgw.NewProviderRegistry(nil, nil, 0)
+	reg := modelgw.NewProviderRegistry(nil, nil, 0, true)
 	reg.SeedForTest(map[string]modelgw.Provider{"it-mock": p})
 	rec := modelgw.NewUsageRecorder(modelgw.NewUsageRepo(pg), func(_ error) {})
 	gw := modelgw.NewGateway(reg, rec)

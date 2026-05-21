@@ -36,9 +36,10 @@ type Session struct {
 	Title       string    `json:"title"`
 	Model       string    `json:"model"`
 	Profile     string    `json:"profile"`
-	Status      string    `json:"status"`
-	SkillIDs    []string  `json:"skill_ids"`
-	CreatedAt   time.Time `json:"created_at"`
+	Status      string     `json:"status"`
+	SandboxID   *uuid.UUID `json:"sandbox_id,omitempty"`
+	SkillIDs    []string   `json:"skill_ids"`
+	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 

@@ -34,6 +34,15 @@ func Connect(ctx context.Context, dsn string) (*Pool, error) {
 			// queries will surface the error themselves.
 			return nil
 		}
+		// ivfflat default probes=1 yields low recall on small datasets
+		// (E2E typically has 1-2 rows in the memories table). Setting probes
+		// to the list count = full scan guarantees recall regardless of the
+		// query vector's cluster assignment. Cost is bounded because the
+		// memories table stays small per (tenant, user); the index keeps
+		// helping when the row count grows.
+		if _, err := conn.Exec(ctx, "SET ivfflat.probes = 100"); err != nil {
+			return nil
+		}
 		return nil
 	}
 

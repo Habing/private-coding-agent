@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	pcametrics "github.com/yourorg/private-coding-agent/internal/metrics"
+	"github.com/yourorg/private-coding-agent/internal/quota"
 )
 
 var tracer trace.Tracer = otel.Tracer("internal/modelgw")
@@ -21,10 +22,19 @@ var tracer trace.Tracer = otel.Tracer("internal/modelgw")
 type Gateway struct {
 	reg      *ProviderRegistry
 	recorder *UsageRecorder
+	quota    *quota.Service // optional; nil disables LLM token caps
 }
 
 func NewGateway(reg *ProviderRegistry, recorder *UsageRecorder) *Gateway {
 	return &Gateway{reg: reg, recorder: recorder}
+}
+
+// WithQuota wires a quota.Service so chat/embeddings pre-check the
+// per-tenant+user LLM-token cap and reconcile estimate-vs-actual after the
+// call. nil keeps quota off. Returns the receiver for chaining.
+func (g *Gateway) WithQuota(q *quota.Service) *Gateway {
+	g.quota = q
+	return g
 }
 
 func (g *Gateway) ChatCompletion(ctx context.Context, tenantID, userID uuid.UUID,
@@ -37,17 +47,27 @@ func (g *Gateway) ChatCompletion(ctx context.Context, tenantID, userID uuid.UUID
 		recordSpanErr(span, err)
 		return nil, err
 	}
-	provider, model, err := g.reg.Resolve(req.Model)
+	provider, model, err := g.reg.Resolve(tenantID, req.Model)
 	if err != nil {
 		recordSpanErr(span, err)
 		return nil, err
 	}
 
+	estimate := estimateChatTokens(req)
+	if g.quota != nil {
+		if err := g.quota.CheckAndIncr(ctx, quota.KindLLMTokens, tenantID, userID, estimate); err != nil {
+			recordSpanErr(span, err)
+			return nil, err
+		}
+	}
+
 	start := time.Now()
 	resp, callErr := provider.ChatCompletion(ctx, req, model)
+	usage := safeUsage(resp)
+	g.reconcileLLMQuota(ctx, tenantID, userID, estimate, usage, callErr)
 	g.record(tenantID, userID, provider, model, "chat", false, callErr,
-		safeUsage(resp), time.Since(start))
-	annotateModelSpan(span, safeUsage(resp), callErr)
+		usage, time.Since(start))
+	annotateModelSpan(span, usage, callErr)
 	if callErr != nil {
 		return nil, callErr
 	}
@@ -65,10 +85,18 @@ func (g *Gateway) ChatCompletionStream(ctx context.Context, tenantID, userID uui
 		recordSpanErr(span, err)
 		return err
 	}
-	provider, model, err := g.reg.Resolve(req.Model)
+	provider, model, err := g.reg.Resolve(tenantID, req.Model)
 	if err != nil {
 		recordSpanErr(span, err)
 		return err
+	}
+
+	estimate := estimateChatTokens(req)
+	if g.quota != nil {
+		if err := g.quota.CheckAndIncr(ctx, quota.KindLLMTokens, tenantID, userID, estimate); err != nil {
+			recordSpanErr(span, err)
+			return err
+		}
 	}
 
 	start := time.Now()
@@ -81,9 +109,11 @@ func (g *Gateway) ChatCompletionStream(ctx context.Context, tenantID, userID uui
 		return yield(c)
 	}
 	callErr := provider.ChatCompletionStream(ctx, req, model, wrapYield)
+	usage := usagePtrOrZero(lastUsage)
+	g.reconcileLLMQuota(ctx, tenantID, userID, estimate, usage, callErr)
 	g.record(tenantID, userID, provider, model, "chat", true, callErr,
-		usagePtrOrZero(lastUsage), time.Since(start))
-	annotateModelSpan(span, usagePtrOrZero(lastUsage), callErr)
+		usage, time.Since(start))
+	annotateModelSpan(span, usage, callErr)
 	return callErr
 }
 
@@ -100,22 +130,79 @@ func (g *Gateway) Embeddings(ctx context.Context, tenantID, userID uuid.UUID,
 		recordSpanErr(span, err)
 		return nil, err
 	}
-	provider, model, err := g.reg.Resolve(req.Model)
+	provider, model, err := g.reg.Resolve(tenantID, req.Model)
 	if err != nil {
 		recordSpanErr(span, err)
 		return nil, err
 	}
 
+	estimate := estimateEmbedTokens(req)
+	if g.quota != nil {
+		if err := g.quota.CheckAndIncr(ctx, quota.KindLLMTokens, tenantID, userID, estimate); err != nil {
+			recordSpanErr(span, err)
+			return nil, err
+		}
+	}
+
 	start := time.Now()
 	resp, callErr := provider.Embeddings(ctx, req, model)
+	usage := safeEmbedUsage(resp)
+	g.reconcileLLMQuota(ctx, tenantID, userID, estimate, usage, callErr)
 	g.record(tenantID, userID, provider, model, "embed", false, callErr,
-		safeEmbedUsage(resp), time.Since(start))
-	annotateModelSpan(span, safeEmbedUsage(resp), callErr)
+		usage, time.Since(start))
+	annotateModelSpan(span, usage, callErr)
 	if callErr != nil {
 		return nil, callErr
 	}
 	resp.Model = req.Model
 	return resp, nil
+}
+
+// estimateChatTokens returns a worst-case token reservation for a chat
+// request: 512 prompt budget plus MaxTokens (or 1024 default if unset).
+// Reconciled by reconcileLLMQuota after the call when actual usage arrives.
+func estimateChatTokens(req ChatRequest) int {
+	completion := 1024
+	if req.MaxTokens != nil && *req.MaxTokens > 0 {
+		completion = *req.MaxTokens
+	}
+	return 512 + completion
+}
+
+// estimateEmbedTokens approximates the input token count from raw char length
+// (≈4 chars per token), floored at 64. Returns 0 reservation for empty input
+// (validation rejects it earlier; defensive here).
+func estimateEmbedTokens(req EmbeddingsRequest) int {
+	total := 0
+	for _, s := range req.Input {
+		total += len(s)
+	}
+	est := total / 4
+	if est < 64 {
+		est = 64
+	}
+	return est
+}
+
+// reconcileLLMQuota applies a delta after the provider call to bring the
+// Redis counter in line with actual usage. On success: delta = actual − est
+// (may be negative). On failure: refund the entire estimate. Best-effort —
+// errors are swallowed because the counter window will expire.
+func (g *Gateway) reconcileLLMQuota(ctx context.Context, tenantID, userID uuid.UUID,
+	estimate int, usage Usage, callErr error) {
+	if g.quota == nil || estimate <= 0 {
+		return
+	}
+	var delta int
+	if callErr != nil {
+		delta = -estimate
+	} else if usage.TotalTokens > 0 {
+		delta = usage.TotalTokens - estimate
+	}
+	if delta == 0 {
+		return
+	}
+	_ = g.quota.Adjust(ctx, quota.KindLLMTokens, tenantID, userID, delta)
 }
 
 func annotateModelSpan(span trace.Span, u Usage, err error) {

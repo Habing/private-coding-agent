@@ -39,8 +39,8 @@
 
 ## Task 6 — E2E + docs
 
-- [ ] `test-e2e.sh` 步骤 43–44
-- [ ] `config.example.yaml` + README quota 小节
-- [ ] 更新 `SLICE-VERIFICATION.md` 切片 13
+- [x] `test-e2e.sh` 步骤 43–44
+- [x] `config.example.yaml` + README quota 小节
+- [x] 更新 `SLICE-VERIFICATION.md` 切片 13
 
 **非目标：** OIDC（15）、session-sandbox（14）、audit hash chain（22）

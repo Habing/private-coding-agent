@@ -22,6 +22,7 @@ export interface Session {
   model: string
   profile: string
   status: 'active' | 'archived'
+  sandbox_id?: string
   skill_ids?: string[]
   created_at: string
   updated_at: string
@@ -120,4 +121,48 @@ export interface AuditListResponse {
   total: number
   limit: number
   offset: number
+}
+
+export type MemoryType = 'profile' | 'preference' | 'knowledge' | 'lesson'
+
+export interface Memory {
+  id: string
+  tenant_id: string
+  user_id: string
+  type: MemoryType
+  content: string
+  tags: string[]
+  created_at: string
+  updated_at: string
+  last_used_at?: string
+}
+
+export interface MemoryListResponse {
+  memories: Memory[]
+}
+
+export interface CreateMemoryRequest {
+  type: MemoryType
+  content: string
+  tags?: string[]
+}
+
+export interface UpdateMemoryRequest {
+  content?: string
+  tags?: string[]
+}
+
+export interface SandboxFileEntry {
+  name: string
+  type: 'file' | 'dir'
+  size?: number
+}
+
+export interface SandboxFileListResponse {
+  entries: SandboxFileEntry[]
+}
+
+export interface SandboxFileReadResponse {
+  content_base64: string
+  size: number
 }

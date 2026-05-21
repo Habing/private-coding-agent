@@ -19,6 +19,7 @@ import (
 
 	"github.com/yourorg/private-coding-agent/internal/audit"
 	pcametrics "github.com/yourorg/private-coding-agent/internal/metrics"
+	"github.com/yourorg/private-coding-agent/internal/quota"
 )
 
 var tracer trace.Tracer = otel.Tracer("internal/toolbus")
@@ -30,6 +31,7 @@ type Bus struct {
 	recorder *InvocationRecorder
 	schemas  map[string]*jsonschema.Schema
 	audit    audit.Sink
+	quota    *quota.Service // optional; nil disables tool-invoke caps
 }
 
 // WithAuditSink wires an audit.Sink so the Bus records tool.invoke.error
@@ -38,6 +40,13 @@ type Bus struct {
 // admin queries. Returns the receiver for chaining.
 func (b *Bus) WithAuditSink(s audit.Sink) *Bus {
 	b.audit = s
+	return b
+}
+
+// WithQuota wires a quota.Service so each Invoke pre-checks the
+// per-tenant+user tool-invoke-per-minute cap. nil keeps quota off.
+func (b *Bus) WithQuota(q *quota.Service) *Bus {
+	b.quota = q
 	return b
 }
 
@@ -88,6 +97,14 @@ func (b *Bus) Invoke(ctx context.Context, tenantID, userID uuid.UUID,
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "schema validation failed")
 		return nil, err
+	}
+
+	if b.quota != nil {
+		if err := b.quota.CheckAndIncr(ctx, quota.KindToolInvoke, tenantID, userID, 1); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return nil, err
+		}
 	}
 
 	inputSHA := sha256Hex(input)

@@ -57,7 +57,7 @@ func gatewayWith(t *testing.T, mp *mockProvider) (*modelgw.Gateway, *sync.Mutex,
 		errs = append(errs, err)
 		mu.Unlock()
 	})
-	reg := modelgw.NewProviderRegistry(nil, nil, 0)
+	reg := modelgw.NewProviderRegistry(nil, nil, 0, true)
 	reg.SeedForTest(map[string]modelgw.Provider{"mock": mp})
 	return modelgw.NewGateway(reg, rec), &mu, &errs
 }

@@ -9,12 +9,51 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/yourorg/private-coding-agent/internal/agent"
 	"github.com/yourorg/private-coding-agent/internal/modelgw"
+	"github.com/yourorg/private-coding-agent/internal/sandbox"
 	"github.com/yourorg/private-coding-agent/internal/session"
 )
+
+// stubSandbox implements sandboxRuntime for service tests without Docker.
+// Inserts minimal sandbox_sessions rows so sessions.sandbox_id FK is satisfied.
+type stubSandbox struct {
+	pool *pgxpool.Pool
+	mu   sync.Mutex
+	created   []uuid.UUID
+	destroyed []uuid.UUID
+}
+
+func (s *stubSandbox) Create(ctx context.Context, opts sandbox.CreateOpts) (*sandbox.Sandbox, error) {
+	id := uuid.New()
+	_, err := s.pool.Exec(ctx, `
+INSERT INTO sandbox_sessions (id, tenant_id, owner_user_id, image, status, network_mode)
+VALUES ($1,$2,$3,$4,'running','internal')`,
+		id, opts.TenantID, opts.OwnerUserID, sandbox.DefaultImage)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	s.created = append(s.created, id)
+	s.mu.Unlock()
+	return &sandbox.Sandbox{ID: id, Status: sandbox.StatusRunning}, nil
+}
+
+func (s *stubSandbox) Destroy(ctx context.Context, tenantID, id uuid.UUID) error {
+	_, err := s.pool.Exec(ctx, `
+UPDATE sandbox_sessions SET status='destroyed', destroyed_at=now()
+WHERE id=$1 AND tenant_id=$2`, id, tenantID)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.destroyed = append(s.destroyed, id)
+	s.mu.Unlock()
+	return nil
+}
 
 // mockEngine implements session.AgentEngine. Each call to Run replays a fixed
 // event sequence and records the last received RunInput.
@@ -40,20 +79,21 @@ func (m *mockEngine) Run(ctx context.Context, in agent.RunInput, yield func(agen
 	return m.runErr
 }
 
-func newService(t *testing.T) (*session.Service, *mockEngine, uuid.UUID, uuid.UUID) {
+func newService(t *testing.T) (*session.Service, *mockEngine, *stubSandbox, uuid.UUID, uuid.UUID) {
 	pg := newPool(t)
 	tid, uid := fixtures(t, pg)
 	eng := &mockEngine{}
+	sb := &stubSandbox{pool: pg}
 	svc := session.NewService(
 		session.NewSessionRepo(pg),
 		session.NewMessageRepo(pg),
 		eng,
-	)
-	return svc, eng, tid, uid
+	).WithSandbox(sb)
+	return svc, eng, sb, tid, uid
 }
 
 func TestService_CreateSession(t *testing.T) {
-	svc, _, tid, uid := newService(t)
+	svc, _, sb, tid, uid := newService(t)
 	ctx := context.Background()
 
 	s, err := svc.CreateSession(ctx, tid, uid, session.CreateRequest{
@@ -64,16 +104,21 @@ func TestService_CreateSession(t *testing.T) {
 	require.Equal(t, "coding", s.Profile)
 	require.Equal(t, session.StatusActive, s.Status)
 	require.False(t, s.CreatedAt.IsZero())
+	require.NotNil(t, s.SandboxID)
+	sb.mu.Lock()
+	require.Len(t, sb.created, 1)
+	require.Equal(t, *s.SandboxID, sb.created[0])
+	sb.mu.Unlock()
 }
 
 func TestService_CreateSession_ModelRequired(t *testing.T) {
-	svc, _, tid, uid := newService(t)
+	svc, _, _, tid, uid := newService(t)
 	_, err := svc.CreateSession(context.Background(), tid, uid, session.CreateRequest{})
 	require.ErrorIs(t, err, session.ErrModelRequired)
 }
 
 func TestService_GetSession_CrossTenant(t *testing.T) {
-	svc, _, tid, uid := newService(t)
+	svc, _, _, tid, uid := newService(t)
 	ctx := context.Background()
 	s, err := svc.CreateSession(ctx, tid, uid, session.CreateRequest{Model: "m"})
 	require.NoError(t, err)
@@ -85,7 +130,7 @@ func TestService_GetSession_CrossTenant(t *testing.T) {
 }
 
 func TestService_ListSessions(t *testing.T) {
-	svc, _, tid, uid := newService(t)
+	svc, _, _, tid, uid := newService(t)
 	ctx := context.Background()
 	for i := 0; i < 3; i++ {
 		_, err := svc.CreateSession(ctx, tid, uid, session.CreateRequest{Model: "m"})
@@ -97,19 +142,23 @@ func TestService_ListSessions(t *testing.T) {
 }
 
 func TestService_ArchiveSession(t *testing.T) {
-	svc, _, tid, uid := newService(t)
+	svc, _, sb, tid, uid := newService(t)
 	ctx := context.Background()
 	s, err := svc.CreateSession(ctx, tid, uid, session.CreateRequest{Model: "m"})
 	require.NoError(t, err)
+	require.NotNil(t, s.SandboxID)
 
 	require.NoError(t, svc.ArchiveSession(ctx, tid, uid, s.ID))
 	got, err := svc.GetSession(ctx, tid, uid, s.ID)
 	require.NoError(t, err)
 	require.Equal(t, session.StatusArchived, got.Status)
+	sb.mu.Lock()
+	require.Contains(t, sb.destroyed, *s.SandboxID)
+	sb.mu.Unlock()
 }
 
 func TestService_SendMessage_HappyPath(t *testing.T) {
-	svc, eng, tid, uid := newService(t)
+	svc, eng, _, tid, uid := newService(t)
 	ctx := context.Background()
 	s, err := svc.CreateSession(ctx, tid, uid, session.CreateRequest{Model: "default-mock:gpt-4o"})
 	require.NoError(t, err)
@@ -130,6 +179,8 @@ func TestService_SendMessage_HappyPath(t *testing.T) {
 	// Engine was invoked with the user message appended to the (empty) history.
 	require.Equal(t, "default-mock:gpt-4o", eng.lastInIn.Model)
 	require.Equal(t, "coding", eng.lastInIn.ProfileName)
+	require.NotNil(t, s.SandboxID)
+	require.Equal(t, *s.SandboxID, eng.lastInIn.SandboxID)
 	require.Len(t, eng.lastInIn.Messages, 1)
 	require.Equal(t, modelgw.RoleUser, eng.lastInIn.Messages[0].Role)
 	require.Equal(t, "hi", eng.lastInIn.Messages[0].Content)
@@ -145,7 +196,7 @@ func TestService_SendMessage_HappyPath(t *testing.T) {
 }
 
 func TestService_SendMessage_ToolChain(t *testing.T) {
-	svc, eng, tid, uid := newService(t)
+	svc, eng, _, tid, uid := newService(t)
 	ctx := context.Background()
 	s, err := svc.CreateSession(ctx, tid, uid, session.CreateRequest{Model: "m"})
 	require.NoError(t, err)
@@ -181,7 +232,7 @@ func TestService_SendMessage_ToolChain(t *testing.T) {
 }
 
 func TestService_SendMessage_EmptyContent(t *testing.T) {
-	svc, _, tid, uid := newService(t)
+	svc, _, _, tid, uid := newService(t)
 	ctx := context.Background()
 	s, err := svc.CreateSession(ctx, tid, uid, session.CreateRequest{Model: "m"})
 	require.NoError(t, err)
@@ -190,7 +241,7 @@ func TestService_SendMessage_EmptyContent(t *testing.T) {
 }
 
 func TestService_SendMessage_Archived(t *testing.T) {
-	svc, _, tid, uid := newService(t)
+	svc, _, _, tid, uid := newService(t)
 	ctx := context.Background()
 	s, err := svc.CreateSession(ctx, tid, uid, session.CreateRequest{Model: "m"})
 	require.NoError(t, err)
@@ -200,7 +251,7 @@ func TestService_SendMessage_Archived(t *testing.T) {
 }
 
 func TestService_SendMessage_NotFound_CrossTenant(t *testing.T) {
-	svc, _, tid, uid := newService(t)
+	svc, _, _, tid, uid := newService(t)
 	ctx := context.Background()
 	s, err := svc.CreateSession(ctx, tid, uid, session.CreateRequest{Model: "m"})
 	require.NoError(t, err)
@@ -209,7 +260,7 @@ func TestService_SendMessage_NotFound_CrossTenant(t *testing.T) {
 }
 
 func TestService_SendMessage_OnEventAbort(t *testing.T) {
-	svc, eng, tid, uid := newService(t)
+	svc, eng, _, tid, uid := newService(t)
 	ctx := context.Background()
 	s, err := svc.CreateSession(ctx, tid, uid, session.CreateRequest{Model: "m"})
 	require.NoError(t, err)
@@ -225,7 +276,7 @@ func TestService_SendMessage_OnEventAbort(t *testing.T) {
 }
 
 func TestService_SendMessage_RehydratesHistory(t *testing.T) {
-	svc, eng, tid, uid := newService(t)
+	svc, eng, _, tid, uid := newService(t)
 	ctx := context.Background()
 	s, err := svc.CreateSession(ctx, tid, uid, session.CreateRequest{Model: "m"})
 	require.NoError(t, err)
@@ -251,7 +302,7 @@ func TestService_SendMessage_RehydratesHistory(t *testing.T) {
 }
 
 func TestService_SendMessage_AutoTitle(t *testing.T) {
-	svc, eng, tid, uid := newService(t)
+	svc, eng, _, tid, uid := newService(t)
 	ctx := context.Background()
 	s, err := svc.CreateSession(ctx, tid, uid, session.CreateRequest{Model: "m"})
 	require.NoError(t, err)
@@ -282,7 +333,7 @@ func TestService_SendMessage_AutoTitle(t *testing.T) {
 }
 
 func TestService_SendMessage_AutoTitle_DoesNotOverwriteSupplied(t *testing.T) {
-	svc, eng, tid, uid := newService(t)
+	svc, eng, _, tid, uid := newService(t)
 	ctx := context.Background()
 	s, err := svc.CreateSession(ctx, tid, uid, session.CreateRequest{
 		Model: "m", Title: "preset title",
@@ -301,7 +352,7 @@ func TestService_SendMessage_AutoTitle_DoesNotOverwriteSupplied(t *testing.T) {
 }
 
 func TestService_SendMessage_AutoTitle_LongMessageTruncates(t *testing.T) {
-	svc, eng, tid, uid := newService(t)
+	svc, eng, _, tid, uid := newService(t)
 	ctx := context.Background()
 	s, err := svc.CreateSession(ctx, tid, uid, session.CreateRequest{Model: "m"})
 	require.NoError(t, err)
@@ -319,7 +370,7 @@ func TestService_SendMessage_AutoTitle_LongMessageTruncates(t *testing.T) {
 }
 
 func TestService_ListMessages_CrossTenantReturns404(t *testing.T) {
-	svc, _, tid, uid := newService(t)
+	svc, _, _, tid, uid := newService(t)
 	ctx := context.Background()
 	s, err := svc.CreateSession(ctx, tid, uid, session.CreateRequest{Model: "m"})
 	require.NoError(t, err)

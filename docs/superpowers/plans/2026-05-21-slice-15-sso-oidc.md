@@ -10,27 +10,27 @@
 
 ## Task 1 — Config
 
-- [ ] `auth.oidc_enabled`、`issuer`、`client_id`、`client_secret_env`、`redirect_url`
-- [ ] `auth.local_enabled`（默认 true）
+- [x] `auth.oidc.enabled`、`issuer`、`client_id`、`client_secret_env`、`redirect_url`
+- [x] `auth.local_enabled`（默认 true，见 config.example.yaml）
 
 ## Task 2 — OIDC client
 
-- [ ] `internal/auth/oidc.go`：discovery、PKCE、token exchange
-- [ ] `GET /auth/oidc/login`（state/nonce cookie）
-- [ ] `GET /auth/oidc/callback` → issue PCA JWT
+- [x] `internal/auth/oidc_client.go`：discovery、PKCE、token exchange
+- [x] `GET /auth/oidc/login`（state/nonce cookie）
+- [x] `GET /auth/oidc/callback` → issue PCA JWT
 
 ## Task 3 — User mapping
 
-- [ ] `sub`+`iss` 唯一；不存在则 `Register` JIT（role=member）
-- [ ] Audit `auth.oidc.login.success` / `failure`
+- [x] `sub`+`iss` 唯一；不存在则 JIT（role=member）
+- [x] Audit `auth.oidc.login.success` / `failure`
 
 ## Task 4 — E2E 46
 
-- [ ] compose 内 `mock-oidc` 或测试 handler 返回固定 id_token
-- [ ] 完整 code flow → `/me` 200
+- [x] compose `mock-oidc` + RS256 id_token
+- [x] 完整 code flow → `/me` 200
 
 ## Task 5 — Docs
 
-- [ ] `deploy/compose/OIDC.md`：Keycloak / Azure AD 示例
+- [x] `deploy/compose/OIDC.md`：Keycloak / Azure AD 示例
 
 **非目标：** LDAP（15b）、多租户自助注册 UI

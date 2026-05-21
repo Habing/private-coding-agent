@@ -75,9 +75,9 @@ func chat(w http.ResponseWriter, r *http.Request) {
 	case last.Role == "tool":
 		// We've already executed a tool — return a final answer.
 		writeFinal(w, req.Model, "done")
-	case last.Role == "user" && containsAny(strings.ToLower(last.Content), "list", "ls"):
-		// User asked to list — issue a fs.list tool_call.
-		path := extractSandbox(last.Content)
+	case last.Role == "user" && containsAny(strings.ToLower(last.Content), "list", "ls", "files", "workspace"):
+		// User asked to list — issue a fs.list tool_call (sandbox from system inject or message).
+		path := sandboxIDFromMessages(req.Messages)
 		writeToolCall(w, req.Model, "call_mock_1", "fs.list",
 			fmt.Sprintf(`{"sandbox_id":%q,"path":"/workspace"}`, path))
 	default:
@@ -147,6 +147,32 @@ func containsAny(s string, subs ...string) bool {
 		}
 	}
 	return false
+}
+
+// sandboxIDFromMessages prefers the slice-14 system inject line, then scans
+// the last user message for a UUID token.
+func sandboxIDFromMessages(msgs []mockMessage) string {
+	for _, m := range msgs {
+		if m.Role != "system" {
+			continue
+		}
+		if id := parseInjectedSandboxID(m.Content); id != "" {
+			return id
+		}
+	}
+	if n := len(msgs); n > 0 && msgs[n-1].Role == "user" {
+		return extractSandbox(msgs[n-1].Content)
+	}
+	return ""
+}
+
+func parseInjectedSandboxID(s string) string {
+	const prefix = "Current sandbox_id:"
+	idx := strings.Index(s, prefix)
+	if idx < 0 {
+		return ""
+	}
+	return extractSandbox(strings.TrimSpace(s[idx+len(prefix):]))
 }
 
 // extractSandbox pulls a UUID-looking sandbox id from a free-form message.
@@ -220,8 +246,8 @@ func streamChat(w http.ResponseWriter, model string, msgs []mockMessage) {
 		text, finish = "skill-marker-ok", "stop"
 	case last.Role == "tool":
 		text, finish = "done", "stop"
-	case last.Role == "user" && containsAny(strings.ToLower(last.Content), "list", "ls"):
-		path := extractSandbox(last.Content)
+	case last.Role == "user" && containsAny(strings.ToLower(last.Content), "list", "ls", "files", "workspace"):
+		path := sandboxIDFromMessages(msgs)
 		toolID, toolName = "call_mock_1", "fs.list"
 		toolArgs = fmt.Sprintf(`{"sandbox_id":%q,"path":"/workspace"}`, path)
 		finish = "tool_calls"

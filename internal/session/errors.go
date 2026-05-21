@@ -8,5 +8,7 @@ var (
 	ErrSessionNotFound = errors.New("session not found")
 	ErrSessionArchived = errors.New("session is archived")
 	ErrEmptyContent    = errors.New("message content is empty")
-	ErrModelRequired   = errors.New("model required")
+	ErrModelRequired        = errors.New("model required")
+	ErrSandboxCreateFailed  = errors.New("sandbox create failed")
+	ErrSandboxNotConfigured = errors.New("sandbox runtime not configured")
 )

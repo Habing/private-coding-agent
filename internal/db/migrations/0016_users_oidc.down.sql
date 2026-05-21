@@ -1,0 +1,3 @@
+DROP INDEX IF EXISTS users_tenant_oidc_idx;
+ALTER TABLE users DROP COLUMN IF EXISTS oidc_sub;
+ALTER TABLE users DROP COLUMN IF EXISTS oidc_iss;

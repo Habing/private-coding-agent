@@ -11,9 +11,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// ProviderConfig 是 providers 表行映射。
+// ProviderConfig 是 providers 表行映射。TenantID == nil 表示全局行。
 type ProviderConfig struct {
 	ID        uuid.UUID
+	TenantID  *uuid.UUID
 	Name      string
 	Type      string
 	BaseURL   string
@@ -32,12 +33,12 @@ func NewProviderRepo(pool *pgxpool.Pool) *ProviderRepo {
 	return &ProviderRepo{pool: pool}
 }
 
-// ListEnabled 返回所有 enabled=true 的 provider。
+// ListEnabled 返回所有 enabled=true 的 provider(含 tenant 与 全局)。
 func (r *ProviderRepo) ListEnabled(ctx context.Context) ([]ProviderConfig, error) {
 	rows, err := r.pool.Query(ctx, `
-SELECT id, name, type, base_url, api_key_env, enabled, created_at, updated_at
+SELECT id, tenant_id, name, type, base_url, api_key_env, enabled, created_at, updated_at
 FROM providers WHERE enabled = TRUE
-ORDER BY name`)
+ORDER BY tenant_id NULLS FIRST, name`)
 	if err != nil {
 		return nil, fmt.Errorf("list providers: %w", err)
 	}
@@ -46,7 +47,7 @@ ORDER BY name`)
 	var out []ProviderConfig
 	for rows.Next() {
 		var p ProviderConfig
-		if err := rows.Scan(&p.ID, &p.Name, &p.Type, &p.BaseURL,
+		if err := rows.Scan(&p.ID, &p.TenantID, &p.Name, &p.Type, &p.BaseURL,
 			&p.APIKeyEnv, &p.Enabled, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan provider: %w", err)
 		}
@@ -55,13 +56,13 @@ ORDER BY name`)
 	return out, rows.Err()
 }
 
-// GetByName 用于测试 / 调试。
+// GetByName 用于测试 / 调试。返回 tenant_id IS NULL 的全局行 (按 name 应只有一条)。
 func (r *ProviderRepo) GetByName(ctx context.Context, name string) (*ProviderConfig, error) {
 	row := r.pool.QueryRow(ctx, `
-SELECT id, name, type, base_url, api_key_env, enabled, created_at, updated_at
-FROM providers WHERE name = $1`, name)
+SELECT id, tenant_id, name, type, base_url, api_key_env, enabled, created_at, updated_at
+FROM providers WHERE name = $1 AND tenant_id IS NULL`, name)
 	var p ProviderConfig
-	if err := row.Scan(&p.ID, &p.Name, &p.Type, &p.BaseURL,
+	if err := row.Scan(&p.ID, &p.TenantID, &p.Name, &p.Type, &p.BaseURL,
 		&p.APIKeyEnv, &p.Enabled, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrProviderNotFound

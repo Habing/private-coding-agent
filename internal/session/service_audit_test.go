@@ -42,7 +42,7 @@ func (s *spySessionSink) findByAction(action string) (audit.Entry, bool) {
 }
 
 func TestService_CreateSession_EmitsAudit(t *testing.T) {
-	svc, _, tid, uid := newService(t)
+	svc, _, _, tid, uid := newService(t)
 	sink := &spySessionSink{}
 	svc.WithAuditSink(sink)
 	ctx := context.Background()
@@ -67,7 +67,7 @@ func TestService_CreateSession_EmitsAudit(t *testing.T) {
 }
 
 func TestService_CreateSession_ModelRequired_NoAudit(t *testing.T) {
-	svc, _, tid, uid := newService(t)
+	svc, _, _, tid, uid := newService(t)
 	sink := &spySessionSink{}
 	svc.WithAuditSink(sink)
 
@@ -78,7 +78,7 @@ func TestService_CreateSession_ModelRequired_NoAudit(t *testing.T) {
 }
 
 func TestService_ArchiveSession_EmitsAudit(t *testing.T) {
-	svc, _, tid, uid := newService(t)
+	svc, _, _, tid, uid := newService(t)
 	sink := &spySessionSink{}
 	svc.WithAuditSink(sink)
 	ctx := context.Background()
@@ -98,7 +98,7 @@ func TestService_ArchiveSession_EmitsAudit(t *testing.T) {
 }
 
 func TestService_NilSink_Safe(t *testing.T) {
-	svc, _, tid, uid := newService(t)
+	svc, _, _, tid, uid := newService(t)
 	// Not setting any sink.
 	s, err := svc.CreateSession(context.Background(), tid, uid, session.CreateRequest{Model: "m"})
 	require.NoError(t, err)

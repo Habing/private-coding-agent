@@ -15,8 +15,10 @@ import (
 
 	"github.com/yourorg/private-coding-agent/internal/agent"
 	"github.com/yourorg/private-coding-agent/internal/audit"
+	"github.com/yourorg/private-coding-agent/internal/memory"
 	pcametrics "github.com/yourorg/private-coding-agent/internal/metrics"
 	"github.com/yourorg/private-coding-agent/internal/modelgw"
+	"github.com/yourorg/private-coding-agent/internal/quota"
 )
 
 // titleMaxRunes caps auto-derived session titles. Picked to fit in narrow UI
@@ -33,14 +35,31 @@ type AgentEngine interface {
 // Service is the application-layer orchestrator over SessionRepo, MessageRepo,
 // and the Agent Engine. Handler / WSHandler call into this layer only.
 type Service struct {
-	sessions *SessionRepo
-	messages *MessageRepo
-	engine   AgentEngine
-	audit    audit.Sink
+	sessions  *SessionRepo
+	messages  *MessageRepo
+	engine    AgentEngine
+	audit     audit.Sink
+	sandbox   sandboxRuntime
+	quota     *quota.Service
+	activeCnt activeSandboxCounter
+	memLoader *memory.Loader
 }
 
 func NewService(sessions *SessionRepo, messages *MessageRepo, engine AgentEngine) *Service {
 	return &Service{sessions: sessions, messages: messages, engine: engine}
+}
+
+// WithSandbox wires sandbox create/destroy for session binding (slice 14).
+func (s *Service) WithSandbox(rt sandboxRuntime) *Service {
+	s.sandbox = rt
+	return s
+}
+
+// WithQuota applies the same per-tenant active-sandbox cap as POST /sandbox/sessions.
+func (s *Service) WithQuota(q *quota.Service, counter activeSandboxCounter) *Service {
+	s.quota = q
+	s.activeCnt = counter
+	return s
 }
 
 // WithAuditSink wires an audit.Sink so the service records session.create /
@@ -49,6 +68,12 @@ func NewService(sessions *SessionRepo, messages *MessageRepo, engine AgentEngine
 // in tests untouched.
 func (s *Service) WithAuditSink(sink audit.Sink) *Service {
 	s.audit = sink
+	return s
+}
+
+// WithMemoryLoader wires auto-injection on the first user turn (slice 16).
+func (s *Service) WithMemoryLoader(l *memory.Loader) *Service {
+	s.memLoader = l
 	return s
 }
 
@@ -80,6 +105,11 @@ func (s *Service) CreateSession(ctx context.Context, tenantID, userID uuid.UUID,
 	if profile == "" {
 		profile = DefaultProfile
 	}
+	sbID, err := s.provisionSandbox(ctx, tenantID, userID)
+	if err != nil {
+		return nil, err
+	}
+
 	sess := &Session{
 		ID:          uuid.New(),
 		TenantID:    tenantID,
@@ -88,9 +118,11 @@ func (s *Service) CreateSession(ctx context.Context, tenantID, userID uuid.UUID,
 		Model:       req.Model,
 		Profile:     profile,
 		Status:      StatusActive,
+		SandboxID:   &sbID,
 		SkillIDs:    req.SkillIDs,
 	}
 	if err := s.sessions.Create(ctx, sess); err != nil {
+		s.releaseSandbox(ctx, tenantID, &sbID)
 		return nil, err
 	}
 	// Round-trip read so created_at/updated_at are populated.
@@ -98,10 +130,14 @@ func (s *Service) CreateSession(ctx context.Context, tenantID, userID uuid.UUID,
 	if err != nil {
 		return nil, err
 	}
-	s.auditSessionEvent(start, tenantID, userID, sess.ID, "session.create", map[string]any{
+	meta := map[string]any{
 		"model":   req.Model,
 		"profile": profile,
-	})
+	}
+	if sess.SandboxID != nil {
+		meta["sandbox_id"] = sess.SandboxID.String()
+	}
+	s.auditSessionEvent(start, tenantID, userID, sess.ID, "session.create", meta)
 	if pcametrics.SessionsCreatedTotal != nil {
 		pcametrics.SessionsCreatedTotal.Add(ctx, 1,
 			metric.WithAttributes(attribute.String("profile", profile)))
@@ -123,10 +159,19 @@ func (s *Service) GetSession(ctx context.Context, tenantID, userID, id uuid.UUID
 // ArchiveSession sets the session status to "archived".
 func (s *Service) ArchiveSession(ctx context.Context, tenantID, userID, id uuid.UUID) error {
 	start := time.Now()
+	sess, err := s.sessions.Get(ctx, tenantID, userID, id)
+	if err != nil {
+		return err
+	}
 	if err := s.sessions.Archive(ctx, tenantID, userID, id); err != nil {
 		return err
 	}
-	s.auditSessionEvent(start, tenantID, userID, id, "session.archive", nil)
+	s.releaseSandbox(ctx, tenantID, sess.SandboxID)
+	meta := map[string]any(nil)
+	if sess.SandboxID != nil {
+		meta = map[string]any{"sandbox_id": sess.SandboxID.String()}
+	}
+	s.auditSessionEvent(start, tenantID, userID, id, "session.archive", meta)
 	return nil
 }
 
@@ -200,6 +245,22 @@ func (s *Service) SendMessage(ctx context.Context, tenantID, userID, sid uuid.UU
 		Messages:        chatMsgs,
 		ProfileName:     sess.Profile,
 		SessionSkillIDs: sess.SkillIDs,
+	}
+	if sess.SandboxID != nil {
+		in.SandboxID = *sess.SandboxID
+	}
+	if s.memLoader != nil && !hasPriorUserMessage(history) {
+		loaded, err := s.memLoader.LoadForSession(ctx, tenantID, userID, content)
+		if err != nil {
+			slog.Warn("memory.load", "session_id", sid, "err", err.Error())
+		} else if loaded.Section != "" {
+			in.MemorySection = loaded.Section
+			in.MemoryCharCount = loaded.CharCount
+			in.MemoryTruncated = loaded.Truncated
+			for _, mid := range loaded.IDs {
+				in.MemoryIDs = append(in.MemoryIDs, mid.String())
+			}
+		}
 	}
 
 	yield := func(evt agent.Event) error {

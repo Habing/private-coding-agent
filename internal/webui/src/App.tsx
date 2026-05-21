@@ -5,6 +5,7 @@ import { AdminGuard } from '@/components/AdminGuard'
 import { ProtectedShell } from '@/components/ProtectedShell'
 import { Audit } from '@/pages/Audit'
 import { Chat } from '@/pages/Chat'
+import { Memories } from '@/pages/Memories'
 import { Home } from '@/pages/Home'
 import { Login } from '@/pages/Login'
 import { NotFound } from '@/pages/NotFound'
@@ -19,6 +20,7 @@ export function App() {
           <Route element={<ProtectedShell />}>
             <Route path="/" element={<Home />} />
             <Route path="/sessions/:id" element={<Chat />} />
+            <Route path="/memories" element={<Memories />} />
             <Route
               path="/audit"
               element={

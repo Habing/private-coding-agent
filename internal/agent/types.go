@@ -33,6 +33,16 @@ type RunInput struct {
 	// SessionSkillIDs is populated by the session service from sessions.skill_ids.
 	// Never bound from JSON; transport-only field.
 	SessionSkillIDs []string `json:"-"`
+
+	// SandboxID is set by the session service from sessions.sandbox_id (slice 14).
+	// Injected into the system prefix as "Current sandbox_id: …" for the LLM.
+	SandboxID uuid.UUID `json:"-"`
+
+	// Memory auto-inject on first user message (slice 16).
+	MemorySection   string   `json:"-"`
+	MemoryIDs       []string `json:"-"`
+	MemoryCharCount int      `json:"-"`
+	MemoryTruncated bool     `json:"-"`
 }
 
 // EventKind enumerates the event types emitted by Engine.Run.

@@ -146,10 +146,10 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 
 | 切片 | 状态 | E2E | Plan |
 |------|------|-----|------|
-| 13 Enterprise Foundation | ⬜ | 43–44 | `plans/2026-05-21-slice-13-enterprise-foundation.md` |
-| 14 Session↔Sandbox | ⬜ | 45 | `plans/2026-05-21-slice-14-session-sandbox-binding.md` |
-| 15 SSO (OIDC) | ⬜ | 46 | `plans/2026-05-21-slice-15-sso-oidc.md` |
-| 16 Enterprise Web | ⬜ | 47–48 | `plans/2026-05-21-slice-16-enterprise-web.md` |
+| 13 Enterprise Foundation | ✅ | 43–44 | `plans/2026-05-21-slice-13-enterprise-foundation.md` |
+| 14 Session↔Sandbox | ✅ | 45 | `plans/2026-05-21-slice-14-session-sandbox-binding.md` |
+| 15 SSO (OIDC) | ✅ | 46 | `plans/2026-05-21-slice-15-sso-oidc.md` |
+| 16 Enterprise Web | ✅ | 47–48 | `plans/2026-05-21-slice-16-enterprise-web.md` |
 | 17 Skills 12b | ⬜ | 49 | `plans/2026-05-21-slice-17-skills-12b.md` |
 
 **MVP 完成后**：E2E **55** 步；可对外「企业试点」。
@@ -184,8 +184,9 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 
 ### 4.1 阻塞性问题
 
-- Gate G1–G4 已清零；可直接开工 **Slice 13**。
-- WebUI **无沙箱创建入口**；聊天依赖 **Slice 14** 自动建沙箱或手动 `POST /sandbox/sessions`。
+- **Slice 16** 已交付（Memory Loader 注入、Memories 页、沙箱文件侧栏、Chat 设置、E2E 47–48）；下一步 **Slice 17**（Skills 12b）。
+- WebUI 仍无独立沙箱入口；聊天经会话绑定沙箱，工具可继续显式传 `sandbox_id` 覆盖。
+- **ivfflat 召回兜底**：`internal/db.Connect` 每条连接 `SET ivfflat.probes = 100`（默认 1 在 E2E 小数据集上漏召 → 步骤 47 `memory.inject` 偶发失败）。生产 lists 调大时需同步上调 probes。
 
 ### 4.2 环境注意事项
 
@@ -211,29 +212,27 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 - 首次跑 dockertest 启 PG ~10-20s（pgvector 镜像比 postgres:16-alpine 大 ~130MB，首次 pull 慢一些）
 - 全包测试（不带 docker_integration tag）~25-60s
 - 全包测试 + docker_integration ~3-5 分钟
-- E2E（42 步 P0；55 步 MVP-P1）~3-8 分钟（首次 build 镜像更久）
+- E2E（48 步含切片 13–16；55 步 MVP-P1）~3-8 分钟（首次 build 镜像更久）
 
 ---
 
 ## 5. 下一步建议
 
-### 5.1 立即（Slice 13 启动前自检）
+### 5.1 立即（Slice 17 启动前自检）
 
 ```bash
 cd F:/project/private-coding-agent
 go test ./... -count=1
 go vet ./...
-cd deploy/compose && ./test-e2e.sh   # 期望 42/42 E2E PASS
+cd deploy/compose && ./test-e2e.sh   # 期望 48/48 E2E PASS
 ```
-
-跑通后按 `docs/superpowers/plans/2026-05-21-slice-13-enterprise-foundation.md` 开工。
 
 ### 5.2 MVP-P1 实施顺序
 
-1. **Slice 13** — Foundation（provider 租户、quota、logout）
-2. **Slice 14** — Session↔Sandbox（**14 阻塞 16 文件浏览**）
-3. **Slice 15** — OIDC（可与 14 尾段并行）
-4. **Slice 16** — Enterprise Web
+1. ~~**Slice 13** — Foundation~~ ✅
+2. ~~**Slice 14** — Session↔Sandbox~~ ✅
+3. ~~**Slice 15** — OIDC~~ ✅
+4. ~~**Slice 16** — Enterprise Web~~ ✅
 5. **Slice 17** — Skills 12b
 
 每切片：读 plan → 实现 → 更新 `SLICE-VERIFICATION.md` + E2E 步号 → README 勾选。

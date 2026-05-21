@@ -178,6 +178,30 @@ func TestHandler_WriteFile_PathOutside(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+func TestHandler_ListFiles_OK(t *testing.T) {
+	sbID := uuid.New()
+	mr := &mockRuntime{
+		execRet: &sandbox.ExecResult{
+			ExitCode: 0,
+			Stdout:   []byte("hello.txt\tf\t5\nsubdir\td\t4096\n"),
+		},
+	}
+	r, tok := newRouterWithMock(t, mr)
+	w := do(r, http.MethodGet, "/sandbox/sessions/"+sbID.String()+"/files?path=.&list=1", tok, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp struct {
+		Entries []struct {
+			Name string `json:"name"`
+			Type string `json:"type"`
+		} `json:"entries"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp.Entries, 2)
+	require.Equal(t, "hello.txt", resp.Entries[0].Name)
+	require.Equal(t, "subdir", resp.Entries[1].Name)
+	require.Contains(t, mr.lastExecOpts.Cmd, "find")
+}
+
 func TestHandler_ReadFile_TooLarge(t *testing.T) {
 	mr := &mockRuntime{readErr: sandbox.ErrTooLarge}
 	r, tok := newRouterWithMock(t, mr)
