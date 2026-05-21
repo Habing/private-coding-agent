@@ -19,6 +19,18 @@ coverage.txt
 *.env.local
 /deploy/compose/.env
 
+# Claude Code session state (per-machine)
+/.claude/
+
+# Ad-hoc curl payloads / scratch files left in deploy/compose during
+# manual smoke testing. Real fixtures live in the test scripts themselves.
+/deploy/compose/tmp-*.json
+/deploy/compose/chat.json
+/deploy/compose/embed.json
+/deploy/compose/embed2.json
+/deploy/compose/login.json
+/deploy/compose/mem.json
+
 # OS
 .DS_Store
 Thumbs.db
