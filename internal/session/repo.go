@@ -77,6 +77,24 @@ ORDER BY created_at DESC`, tenantID, ownerUserID)
 	return out, rows.Err()
 }
 
+// UpdateTitle overwrites the title for one session, scoped to tenant + owner.
+// Returns ErrSessionNotFound when the row doesn't exist or belongs elsewhere.
+// Used by the auto-title path in Service.SendMessage; never overwrites a
+// non-empty title (caller gates on sess.Title == "").
+func (r *SessionRepo) UpdateTitle(ctx context.Context, tenantID, ownerUserID, id uuid.UUID, title string) error {
+	tag, err := r.pool.Exec(ctx, `
+UPDATE sessions
+SET title=$4, updated_at=now()
+WHERE id=$1 AND tenant_id=$2 AND owner_user_id=$3`, id, tenantID, ownerUserID, title)
+	if err != nil {
+		return fmt.Errorf("update title: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrSessionNotFound
+	}
+	return nil
+}
+
 // Archive marks status='archived'. No-op if already archived; returns
 // ErrSessionNotFound when the row doesn't exist or belongs elsewhere.
 func (r *SessionRepo) Archive(ctx context.Context, tenantID, ownerUserID, id uuid.UUID) error {

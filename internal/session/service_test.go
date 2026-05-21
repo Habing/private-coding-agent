@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -247,6 +248,74 @@ func TestService_SendMessage_RehydratesHistory(t *testing.T) {
 	require.Equal(t, "first", eng.lastInIn.Messages[0].Content)
 	require.Equal(t, "round1", eng.lastInIn.Messages[1].Content)
 	require.Equal(t, "second", eng.lastInIn.Messages[2].Content)
+}
+
+func TestService_SendMessage_AutoTitle(t *testing.T) {
+	svc, eng, tid, uid := newService(t)
+	ctx := context.Background()
+	s, err := svc.CreateSession(ctx, tid, uid, session.CreateRequest{Model: "m"})
+	require.NoError(t, err)
+	require.Equal(t, "", s.Title)
+
+	eng.events = []agent.Event{
+		{Kind: agent.EventAssistantMessage, Step: 1, Text: "ok", FinishReason: "stop"},
+		{Kind: agent.EventFinal, Step: 1, Text: "ok", FinishReason: "stop"},
+	}
+	// Multi-line, whitespace-heavy first message: should collapse to single-line
+	// excerpt.
+	require.NoError(t, svc.SendMessage(ctx, tid, uid, s.ID,
+		"help me\n\n  refactor   this code please", nil))
+
+	got, err := svc.GetSession(ctx, tid, uid, s.ID)
+	require.NoError(t, err)
+	require.Equal(t, "help me refactor this code please", got.Title)
+
+	// A subsequent send should not overwrite the existing title.
+	eng.events = []agent.Event{
+		{Kind: agent.EventAssistantMessage, Step: 1, Text: "ok2", FinishReason: "stop"},
+		{Kind: agent.EventFinal, Step: 1, Text: "ok2", FinishReason: "stop"},
+	}
+	require.NoError(t, svc.SendMessage(ctx, tid, uid, s.ID, "another question", nil))
+	got, err = svc.GetSession(ctx, tid, uid, s.ID)
+	require.NoError(t, err)
+	require.Equal(t, "help me refactor this code please", got.Title)
+}
+
+func TestService_SendMessage_AutoTitle_DoesNotOverwriteSupplied(t *testing.T) {
+	svc, eng, tid, uid := newService(t)
+	ctx := context.Background()
+	s, err := svc.CreateSession(ctx, tid, uid, session.CreateRequest{
+		Model: "m", Title: "preset title",
+	})
+	require.NoError(t, err)
+
+	eng.events = []agent.Event{
+		{Kind: agent.EventAssistantMessage, Step: 1, Text: "ok", FinishReason: "stop"},
+		{Kind: agent.EventFinal, Step: 1, Text: "ok", FinishReason: "stop"},
+	}
+	require.NoError(t, svc.SendMessage(ctx, tid, uid, s.ID, "first message", nil))
+
+	got, err := svc.GetSession(ctx, tid, uid, s.ID)
+	require.NoError(t, err)
+	require.Equal(t, "preset title", got.Title)
+}
+
+func TestService_SendMessage_AutoTitle_LongMessageTruncates(t *testing.T) {
+	svc, eng, tid, uid := newService(t)
+	ctx := context.Background()
+	s, err := svc.CreateSession(ctx, tid, uid, session.CreateRequest{Model: "m"})
+	require.NoError(t, err)
+
+	eng.events = []agent.Event{
+		{Kind: agent.EventAssistantMessage, Step: 1, Text: "ok", FinishReason: "stop"},
+		{Kind: agent.EventFinal, Step: 1, Text: "ok", FinishReason: "stop"},
+	}
+	long := strings.Repeat("a", 200)
+	require.NoError(t, svc.SendMessage(ctx, tid, uid, s.ID, long, nil))
+
+	got, err := svc.GetSession(ctx, tid, uid, s.ID)
+	require.NoError(t, err)
+	require.Equal(t, strings.Repeat("a", 60)+"...", got.Title)
 }
 
 func TestService_ListMessages_CrossTenantReturns404(t *testing.T) {

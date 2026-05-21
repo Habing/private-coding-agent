@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
@@ -15,6 +18,11 @@ import (
 	pcametrics "github.com/yourorg/private-coding-agent/internal/metrics"
 	"github.com/yourorg/private-coding-agent/internal/modelgw"
 )
+
+// titleMaxRunes caps auto-derived session titles. Picked to fit in narrow UI
+// rails (the SessionList renders titles in a single line); the message body
+// is preserved in full in the messages table.
+const titleMaxRunes = 60
 
 // AgentEngine is the subset of *agent.Engine that the Service depends on.
 // Declared locally for testability (mockEngine in tests).
@@ -156,6 +164,20 @@ func (s *Service) SendMessage(ctx context.Context, tenantID, userID, sid uuid.UU
 		return fmt.Errorf("load history: %w", err)
 	}
 
+	// Auto-derive title on the first user message when none was supplied at
+	// session creation. WebUI does not collect a title up front; without this
+	// every session in the list would render as "Untitled". Failures here are
+	// logged-and-swallowed: a missing title is cosmetic.
+	if sess.Title == "" && !hasPriorUserMessage(history) {
+		if title := deriveTitle(content); title != "" {
+			if err := s.sessions.UpdateTitle(ctx, tenantID, userID, sid, title); err != nil {
+				slog.Warn("session.auto_title", "session_id", sid, "err", err.Error())
+			} else {
+				sess.Title = title
+			}
+		}
+	}
+
 	userSeq, err := s.messages.NextSeq(ctx, sid)
 	if err != nil {
 		return err
@@ -201,6 +223,46 @@ func (s *Service) SendMessage(ctx context.Context, tenantID, userID, sid uuid.UU
 		return err
 	}
 	return nil
+}
+
+// hasPriorUserMessage reports whether the persisted history already contains
+// at least one user-role row. We only derive a title on the very first user
+// turn so re-sending after the agent fails doesn't keep rewriting it.
+func hasPriorUserMessage(history []Message) bool {
+	for _, m := range history {
+		if m.Role == RoleUser {
+			return true
+		}
+	}
+	return false
+}
+
+// deriveTitle produces a single-line, rune-bounded excerpt of the first user
+// message. Whitespace runs (incl. newlines) collapse to one space; an empty
+// result (whitespace-only input) returns "" so the caller skips the update.
+func deriveTitle(content string) string {
+	var b strings.Builder
+	prevSpace := true
+	for _, r := range content {
+		if unicode.IsSpace(r) {
+			if !prevSpace {
+				b.WriteRune(' ')
+				prevSpace = true
+			}
+			continue
+		}
+		b.WriteRune(r)
+		prevSpace = false
+	}
+	cleaned := strings.TrimSpace(b.String())
+	if cleaned == "" {
+		return ""
+	}
+	runes := []rune(cleaned)
+	if len(runes) <= titleMaxRunes {
+		return cleaned
+	}
+	return string(runes[:titleMaxRunes]) + "..."
 }
 
 // historyToChatMessages converts persisted messages into ChatMessages suitable
