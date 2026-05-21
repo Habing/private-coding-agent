@@ -17,6 +17,15 @@ type Config struct {
 	Auth          AuthConfig          `mapstructure:"auth"`
 	Telemetry     TelemetryConfig     `mapstructure:"telemetry"`
 	Observability ObservabilityConfig `mapstructure:"observability"`
+	Memory        MemoryConfig        `mapstructure:"memory"`
+}
+
+// MemoryConfig drives the vector-memory pipeline. EmbedOnWrite=false is the
+// operational kill switch: Create / Search degrade to slice-7 keyword-only.
+type MemoryConfig struct {
+	EmbeddingModel string  `mapstructure:"embedding_model"` // e.g. "default-mock:text"
+	DedupThreshold float64 `mapstructure:"dedup_threshold"` // cosine sim; 0.92 default; 0 disables
+	EmbedOnWrite   bool    `mapstructure:"embed_on_write"`  // true to enable vector pipeline
 }
 
 type ServerConfig struct {

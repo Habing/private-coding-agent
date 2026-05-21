@@ -150,9 +150,19 @@ func run() error {
 	_ = toolRegistry.Register(tools.NewLLMChat(modelGateway))
 	_ = toolRegistry.Register(tools.NewLLMEmbed(modelGateway))
 
-	// Memory subsystem (slice 7) — declared before toolbus so the 4 memory
-	// tools can register against the bus.
-	memoryService := memory.NewService(memory.NewRepo(pool))
+	// Memory subsystem (slice 7 base + slice 11 vector pipeline).
+	// Embedder is constructed once and shared; tenant/user are resolved per
+	// call from request context. Nil embedder = vector pipeline off.
+	memCfg := memory.MemoryConfig{
+		EmbeddingModel: cfg.Memory.EmbeddingModel,
+		DedupThreshold: cfg.Memory.DedupThreshold,
+		EmbedOnWrite:   cfg.Memory.EmbedOnWrite,
+	}
+	var memEmbedder memory.Embedder
+	if memCfg.EmbedOnWrite && memCfg.EmbeddingModel != "" {
+		memEmbedder = memory.NewGatewayEmbedder(modelGateway, memCfg.EmbeddingModel)
+	}
+	memoryService := memory.NewService(memory.NewRepo(pool), memEmbedder, memCfg)
 	memoryHandler := memory.NewHandler(memoryService)
 	_ = toolRegistry.Register(tools.NewMemorySave(memoryService))
 	_ = toolRegistry.Register(tools.NewMemorySearch(memoryService))

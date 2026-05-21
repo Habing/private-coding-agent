@@ -3,215 +3,177 @@
 | 字段 | 值 |
 |---|---|
 | 项目名 | Private Coding Agent — 私有化部署的 AI 编码 Agent 平台 |
-| 项目根 | `D:\IdeaProjects\private-coding-agent` |
+| 项目根 | `F:\project\private-coding-agent` |
 | Git module | `github.com/yourorg/private-coding-agent` |
-| 当前日期 | 2026-05-20 |
-| 当前 HEAD | `3e9b4ce` (Slice 4 plan 已落盘,实施未开始) |
-| 累计 commits | 76 |
+| 当前日期 | 2026-05-21 |
+| 当前 HEAD | `b2eb6bb` (Slice 10 已完成并 push) |
+| 累计 commits | 139 |
+| 工作区状态 | Slice 11 代码 + 测试 + e2e + 文档已完成，**未 commit**（30 个修改文件 + 6 个新文件） |
 
 ---
 
 ## 1. 当前已完成的工作
 
-### 1.1 设计与规划阶段（全部完成）
+### 1.1 设计与规划阶段
 
-- 主设计 spec：`docs/superpowers/specs/2026-05-18-private-ai-coding-agent-design.md`（含 §1-§13 ADR 30+）
-- Slice 1 / 2 / 3 / 4 各自的 spec + plan，全部落盘
-- 整体 9 切片切分路线确定（Foundation → Sandbox → Model Gateway → Tool Bus → Agent → Session → Memory → Web → Integration）
+- 主设计 spec：`docs/superpowers/specs/2026-05-18-private-ai-coding-agent-design.md`
+- 每切片独立 spec + plan，全部落盘到 `docs/superpowers/{specs,plans}/`
+- 11 切片切分路线已全部覆盖（Foundation → … → Vector Memory）
 
-### 1.2 已交付切片（4 个，可独立运行）
+### 1.2 已交付切片（10 个 + 1 个未 commit）
 
-#### Slice 1 — Foundation（HEAD `8175d94`）
-- Go 项目骨架 + PG 迁移 + JWT 登录 + Gin HTTP + OpenTelemetry + audit_log + docker-compose
-- 表：`tenants` `users` `audit_log` + `schema_migrations`
-- 端点：`/healthz` `/readyz` `/auth/login` `/me`
-- 主服务镜像 + distroless 运行时
-
-#### Slice 1.5 — Foundation Hardening（HEAD `535b2ad`）
-- `db.Migrate(ctx, dsn)` 接收 context
-- `audit.Middleware` 用 detached ctx + 5s timeout 防请求 ctx 取消
-- `ValidateJWTConfig` 启动期拒绝默认 / 弱 JWT secret（最小 32 字节）
-- `NewJWT` 内置二次防御 panic
-
-#### Slice 2 — Sandbox Runtime + DockerDriver（HEAD `c4531c1`）
-- `internal/sandbox` 包 + `SandboxRuntime` 接口 + `DockerDriver` 实现
-- 沙箱基础镜像 `pca/sandbox:base`（1.13 GB，含 Go/Node/Python/git/rg/jq）
-- 表：`sandbox_sessions`
-- 端点：`POST/GET/DELETE /sandbox/sessions[/{id}]` + `/exec` + `/files` + `/snapshot`(501 stub)
-- 安全配置：`ReadonlyRootfs` + tmpfs + `CapDrop ALL` + `no-new-privileges` + PIDsLimit + 默认 `--internal` 网络
-- Redis 分布式锁（按沙箱 ID 锁定 destroy）
-- 启动期 Reconciler 清理脏数据
-
-#### Slice 3 — Model Gateway（HEAD `58a96ee`）
-- `internal/modelgw` 包 + `Provider` 接口 + `ProviderRegistry`（DB 驱动，60s refresh）
-- 3 provider 实现：`OpenAIProvider` / `OllamaProvider`（薄包装） / `ClaudeProvider`（含 Anthropic 协议双向适配 + SSE 流式状态机）
-- 表：`providers` `model_usage`
-- 端点：`POST /v1/chat/completions`（支持 SSE 流式） + `POST /v1/embeddings`
-- `mock-provider` 服务（compose 内置，无外部依赖即可跑 E2E）
-- Token 计量从 provider usage 字段读
+| 切片 | 状态 | HEAD | 内容摘要 |
+|---|---|---|---|
+| 1 — Foundation | ✅ | `8175d94` | Go 骨架 + PG 迁移 + JWT + Gin + OTel + audit_log + compose |
+| 1.5 — Hardening | ✅ | `535b2ad` | ctx-aware Migrate / detached audit / JWT secret 校验 |
+| 2 — Sandbox | ✅ | `c4531c1` | `SandboxRuntime` + `DockerDriver` + Redis 锁 + Reconciler |
+| 3 — Model Gateway | ✅ | `58a96ee` | 3 provider（OpenAI/Ollama/Claude）+ SSE + ProviderRegistry |
+| 4 — Tool Bus | ✅ | — | `Tool` 接口 + JSON Schema 校验 + 8 个内置工具 + `tool_invocations` |
+| 5 — Agent Engine | ✅ | — | ReAct 循环 + tool_calls + 上下文压缩 |
+| 6 — Session API + WS | ✅ | `0360877` | `/sessions` REST + WebSocket 流式 + `sessions/messages` 持久化 |
+| 7 — Memory (basic) | ✅ | `53a451d` | `/memories` REST + 4 个 memory.* 工具（ILIKE 关键字） |
+| 8 — Web Frontend | ✅ | `57955d1` | React+Vite+Tailwind+shadcn SPA，embed 进 Go 二进制 |
+| 9 — Audit 加固 | ✅ | `3d3e0a2` | admin 查询 + 领域事件落库（auth/sandbox/session/...） |
+| 10 — Observability | ✅ | `b2eb6bb` | OTel spans + Prometheus + 结构化日志 + Jaeger/Prom compose |
+| 11 — Vector Memory | 🟡 代码完工，**未 commit** | — | pgvector cosine 检索 + 0.92 dedup |
 
 ### 1.3 测试与验收
 
 | 维度 | 状态 |
 |---|---|
-| `go test ./... -count=1` | 全 PASS（11 包） |
-| `go test -tags=docker_integration ./...` | PASS（含真 Docker 沙箱 + httptest provider） |
-| `go vet / build` | 干净 |
-| E2E 脚本 `test-e2e.sh` | 12 步全过：登录 → 沙箱建/写/exec/销 → /v1/chat/* 非流 + 流 + /v1/embeddings → model_usage 校验 |
-| 提交粒度 | 76 commits，每 Task 1-2 commit，git tree clean |
+| `go test ./...` | 全 PASS（含 memory / modelgw / toolbus 等 dockertest 包） |
+| `go vet ./...` | 干净 |
+| `go build ./...` | 干净 |
+| E2E `test-e2e.sh` | Slice 10 截止 35 步全过；Slice 11 扩到 **39 步**（尚未运行验证） |
 
-### 1.4 设计 + 实施 plan 已就绪但**未开始实施**
+### 1.4 Slice 11 工作区状态（待 commit）
 
-- Slice 4 spec：`docs/superpowers/specs/2026-05-20-slice-04-toolbus-design.md`（510 行）
-- Slice 4 plan：`docs/superpowers/plans/2026-05-20-slice-04-toolbus.md`（3082 行，14 Task）
+工作树相对于 `b2eb6bb` 的改动：
+
+**新增（6 个）**：
+```
+internal/db/migrations/0010_memories_embedding.up.sql
+internal/db/migrations/0010_memories_embedding.down.sql
+internal/memory/embedder.go
+internal/memory/embedder_test.go
+docs/superpowers/specs/2026-05-21-slice-11-vector-memory-design.md
+docs/superpowers/plans/2026-05-21-slice-11-vector-memory.md
+```
+
+**修改（30 个）**：
+- 核心：`internal/memory/{types,repo,service,handler,errors}.go` + 各 `_test.go`
+- 工具：`internal/toolbus/tools/memory.go` + `_test.go`
+- 嵌入通道：`internal/modelgw/mockserver/main.go`（deterministic 1536-d）
+- 配置：`internal/config/config.go`、`config/config.example.yaml`、`cmd/server/main.go`
+- DB：`internal/db/db.go`（pgvector pgx codec 注册 `AfterConnect`）
+- 镜像：`deploy/compose/docker-compose.yml`（postgres → pgvector/pgvector:pg16）
+- 9 个 `*_test.go` 的 dockertest 镜像同步替换
+- E2E：`deploy/compose/test-e2e.sh`（35 → 39 步）
+- 文档：`README.md`（切片进度 + 记忆子系统小节）
+- 依赖：`go.mod` / `go.sum`（新增 `github.com/pgvector/pgvector-go` + `pgvector-go/pgx`）
+
+**推荐 commit 切分（4 个 Conventional Commits）**：
+1. `feat(db,memory): migration 0010 + pgvector codec + Embedder interface + Repo`
+2. `feat(memory): Service dedup + Search mode dispatch + handler + tool schema`
+3. `feat(mockserver,compose): deterministic 1536-d embed + pgvector compose image`
+4. `feat(config,e2e,docs): config wiring + e2e 39 steps + README + slice 11 specs`
 
 ---
 
-## 2. 修改过的文件（按目录组织）
+## 2. 系统能力快照（用户视角）
 
-### 2.1 项目根
+### 2.1 端点表
 
-```
-.gitignore               # 标准 Go + IDE + docker 忽略
-.dockerignore            # 含 sandbox/image 排除
-README.md                # 切片进度 + 端点表 + 启动指引
-Dockerfile               # 主服务镜像（多阶段 + distroless）
-go.mod / go.sum          # 直接依赖见 2.5
-HANDOFF.md               # 本文件
-```
+| 方法 | 路径 | 鉴权 | 说明 |
+|---|---|---|---|
+| GET | /healthz, /readyz | - | 健康检查 |
+| POST | /auth/login | - | 登录拿 JWT |
+| GET | /me | Bearer | 当前身份 |
+| POST/GET/DELETE | /sandbox/sessions[/{id}] | Bearer | 沙箱生命周期 |
+| POST | /sandbox/sessions/{id}/exec | Bearer | 沙箱内命令 |
+| GET/PUT | /sandbox/sessions/{id}/files | Bearer | 沙箱内读写 |
+| POST | /v1/chat/completions, /v1/embeddings | Bearer | OpenAI 兼容（支持 SSE） |
+| GET | /tools | Bearer | 列出 12 个内置工具 |
+| POST | /tools/invoke | Bearer | 调用工具 |
+| POST | /agent/run | Bearer | ReAct 循环（非流） |
+| POST/GET/DELETE | /sessions[/{id}] | Bearer | 会话生命周期 |
+| GET | /sessions/{id}/messages | Bearer | 历史 |
+| GET | /sessions/{id}/ws | Bearer (URL token shim) | WebSocket 流式 |
+| POST/GET/PUT/DELETE | /memories[/{id}] | Bearer | 记忆 CRUD |
+| GET | /audit | Bearer (admin) | 审计日志查询 |
+| GET | /metrics | Bearer (admin 或 scrape token) | Prometheus exposition |
+| GET | /, /login, /sessions/{id}, /audit | - | SPA shell（NoRoute fallback） |
 
-### 2.2 cmd/server/
+### 2.2 内部 MCP 工具（12 个）
 
-```
-main.go                  # 装配:config/db/auth/audit/otel/sandbox/modelgw
-                         # 用 run() error 模式;所有失败路径都 defer 执行
-```
+- `fs.read / fs.write / fs.list / fs.glob / grep / shell.exec`（沙箱内）
+- `llm.chat / llm.embed`（Model Gateway 透传）
+- `memory.save / memory.search / memory.list / memory.delete`（User scope；Slice 11 后 `memory.search` 支持 `mode=vector|keyword`，`memory.save` 响应携带 `created` bool）
 
-### 2.3 config/
-
-```
-config.example.yaml      # server/db/redis/auth/telemetry 五段配置
-```
-
-### 2.4 deploy/compose/
-
-```
-docker-compose.yml       # 4 服务:postgres / redis / mock-provider / server
-                         # server 容器挂 /var/run/docker.sock 调主机 daemon
-.env.example             # 含 32 字符 dev JWT secret
-test-e2e.sh              # 12 步 bash E2E(主用)
-test-e2e.ps1             # PowerShell 版(Windows 备用)
-```
-
-### 2.5 internal/
+### 2.3 持久化表（10 个迁移）
 
 ```
-audit/                   # 审计中间件 + InvocationRepo + Recorder
-auth/                    # JWT + middleware + handler + config(ValidateJWTConfig)
-config/                  # viper YAML+env 加载,字段:Server/DB/Redis/Auth/Telemetry
-db/                      # pgxpool + embed.FS + golang-migrate
-  migrations/            # 6 个迁移:
-    0001_create_tenants
-    0002_create_users
-    0003_create_audit_log
-    0004_create_sandbox_sessions
-    0005_create_providers
-    0006_create_model_usage
-httpx/                   # Gin engine + healthz/readyz + me + Recovery
-modelgw/                 # ~2000 行,Slice 3 最大块
-  types/validate/provider.go/registry.go/repo.go/recorder.go
-  gateway.go / sse.go / handler.go
-  provider_openai/ollama/claude.go
-  claude_translate.go / claude_stream.go
-  mockserver/             # 50 行 OpenAI 兼容 mock(compose build)
-sandbox/                 # ~1400 行,Slice 2
-  types/validate/path/runtime.go/sessionrepo.go
-  docker_driver.go / docker_driver_exec.go / docker_driver_fs.go
-  reconciler.go / handler.go
-telemetry/               # OpenTelemetry trace + metrics provider
-tenant/                  # tenant 模型 + repo + Lookup adapter
-user/                    # user 模型 + repo + bcrypt service
+0001 tenants
+0002 users
+0003 audit_log
+0004 sandbox_sessions
+0005 providers
+0006 model_usage
+0007 tool_invocations
+0008 sessions + messages
+0009 memories
+0010 memories.embedding (vector(1536)) + ivfflat partial cosine index   ← Slice 11
 ```
 
-### 2.6 sandbox/image/
+### 2.4 配置（`config/config.example.yaml`）
 
-```
-Dockerfile               # debian:12-slim + git/curl/jq/tree/rg/Go/Node/Python
-README.md                # 工具清单 + 大小说明 + trivy 提示
+```yaml
+server:        port / mode / ws_allowed_origins
+db:            dsn
+redis:         addr
+auth:          jwt_secret / jwt_ttl
+telemetry:     service_name / otlp_endpoint
+observability: log_format / log_level / metrics_token
+memory:        embedding_model / dedup_threshold / embed_on_write   ← Slice 11
 ```
 
-### 2.7 docs/superpowers/
-
-```
-specs/
-  2026-05-18-private-ai-coding-agent-design.md       # 主 spec
-  2026-05-18-private-ai-coding-agent-design.md       # Foundation
-  2026-05-18-slice-02-sandbox-design.md
-  2026-05-20-slice-03-model-gateway-design.md
-  2026-05-20-slice-04-toolbus-design.md              # ← Slice 4
-
-plans/
-  2026-05-18-slice-01-foundation.md
-  2026-05-18-slice-1-5-hardening.md
-  2026-05-18-slice-02-sandbox.md
-  2026-05-20-slice-03-model-gateway.md
-  2026-05-20-slice-04-toolbus.md                     # ← Slice 4(待实施)
-```
+env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 
 ---
 
 ## 3. 尚未完成的任务
 
-### 3.1 立即可开工：Slice 4 实施（14 Task）
+### 3.1 立即可做（Slice 11 收尾）
 
-Plan 位置：`docs/superpowers/plans/2026-05-20-slice-04-toolbus.md`
+1. **跑 e2e 验证**：`cd deploy/compose && ./test-e2e.sh`（期望 39/39 PASS）
+2. **commit** 按上述 4 段切分
+3. **push** 到 `origin/main`
 
-| Task | 内容 |
-|---|---|
-| 0 | Slice 3 carry-over：`internal/modelgw/redact.go` + 4 处 ProviderError 改写 |
-| 1 | `internal/toolbus/tool.go` + `errors.go`：Tool 接口 + 4 个错误哨兵 |
-| 2 | `internal/toolbus/registry.go`：Registry 注册器（线程安全 + 排序 List） |
-| 3 | `internal/toolbus/schema.go`：JSON Schema 编译 + 校验（santhosh-tekuri/jsonschema/v6） |
-| 4 | migration 0007 `tool_invocations` + `InvocationRepo` + `InvocationRecorder` + dockertest |
-| 5 | `internal/toolbus/bus.go`：Bus 编排（取 tool → schema 校验 → sha256 → invoke → record） |
-| 6 | `internal/toolbus/tools/fs.go`：fs.read / fs.write / fs.list / fs.glob 共 4 个工具 |
-| 7 | `internal/toolbus/tools/grep.go`：grep（ripgrep --json 解析） |
-| 8 | `internal/toolbus/tools/shell.go`：shell.exec（sandbox.Runtime.Exec 透传） |
-| 9 | `internal/toolbus/tools/llm.go`：llm.chat / llm.embed（modelgw.Gateway 透传） |
-| 10 | `internal/toolbus/handler.go`：HTTP `/tools` + `/tools/invoke` + 错误映射 |
-| 11 | `cmd/server/main.go` 装配 + 注册 8 个 tool |
-| 12 | integration tests（docker_integration tag）— fs / shell / llm 真链路 |
-| 13 | E2E 扩展（[13/16]-[16/16] 4 步）+ README 勾选 |
+### 3.2 后续切片（spec/plan 均未开始）
 
-执行方式：subagent-driven（每 Task 用 implementer subagent + spec/quality review），已在 Slice 1-3 用得很顺。
-
-### 3.2 后续切片（spec/plan 都未开始）
-
-| 切片 | 内容 | 状态 |
+| 候选切片 | 内容 | 触发条件 |
 |---|---|---|
-| Slice 5 | Agent Engine（ReAct 循环 + tool calling + 上下文压缩 + 流式事件） | 未规划 |
-| Slice 6 | Session API + WebSocket（前端真聊起来的入口） | 未规划 |
-| Slice 7 | Memory（user/project profile + 上下文注入 + pgvector） | 未规划 |
-| Slice 8 | Web Frontend（React UI） | 未规划 |
-| Slice 9 | Integration & Audit 加固 | 未规划 |
+| Reflection / Agent-driven memory | confidence 衰减 + 自动 propose + 异步 worker | Slice 11 稳定后 |
+| Project / Tenant scope memory | 共享记忆层 + ACL | 多用户协作场景显现 |
+| 会话起始自动注入 | session WS handler 在 first user msg 前 prepend 相关 memory | UX 反馈"Agent 忘事"出现 |
+| Hybrid 检索 | vector + keyword RRF 融合排序 | vector 召回率不够 |
+| Workflow Engine | n8n / 自研控制流原语；spec §11 ADR-3/4 | 多 step 任务编排需求显现 |
+| Snapshot 实现化 | sandbox 状态快照 → MinIO | 长时会话/恢复场景 |
+| Rate limit | 每租户 LLM 调用配额 | 上线前合规清账 |
 
-### 3.3 累积技术债（按优先级，**不**阻塞 Slice 4）
+### 3.3 累积技术债（按优先级，**不**阻塞 Slice 11 收尾）
 
-#### 已修
-- Slice 1 review 17 条 → Slice 1.5 修了 3 条最关键的
-- Slice 2 review → Slice 3 Task 0 修了 sandbox stdin/inspect/trivy 共 3 条
-- Slice 3 review → Slice 4 Task 0 将修 ProviderError redact 1 条
-
-#### 待修（建议 Slice 9 收尾或专题加固期）
+#### 待修（建议专题加固期）
 - HTTP per-tenant rate limit（防 ToolBus 放大 LLM 流量）
-- providers 表加 `tenant_id` 列 + Registry 按 tenant 过滤
-- server 容器以 root + 挂 docker.sock 的根本风险面（考虑 rootless docker 或 sock-proxy）
+- `providers` 表加 `tenant_id` + Registry 按 tenant 过滤（目前所有租户共享 provider）
+- server 容器以 root + 挂 `docker.sock` 的根本风险面（rootless docker / sock-proxy）
 - 自定义 seccomp profile（沙箱二级隔离）
 - 沙箱镜像 trivy 漏洞扫描接入 CI
-- Snapshot 实现化（接 MinIO，Slice 7 起做）
+- Snapshot 实现化（接 MinIO）
 - JWT 吊销列表 / logout
 - Audit log hash chain（不可篡改）
 - HTTP IdleTimeout / WriteTimeout
+- 历史无 embedding 行的一次性 re-embed admin endpoint（Slice 11 显式推后）
 
 ---
 
@@ -219,64 +181,70 @@ Plan 位置：`docs/superpowers/plans/2026-05-20-slice-04-toolbus.md`
 
 ### 4.1 阻塞性问题：无
 
-项目目前一切正常：测试全过、E2E 通、git tree clean、依赖未变。
+Slice 11 代码 / 单测 / 集成测试 / 构建 / vet 全过；e2e 待运行。
 
 ### 4.2 环境注意事项
 
 | 项 | 说明 |
 |---|---|
-| Go 1.26.3 | 安装在 `D:\tools\go`，PATH 已写入用户级注册表；新开 PowerShell 应能直接 `go version` |
-| GOPROXY | 已设 `https://goproxy.cn,direct`（国内网络） |
-| GOSUMDB | 已设 `sum.golang.org` |
-| Docker Desktop | 必须在跑（dockertest、Slice 2/3 集成测试、E2E、compose 都依赖） |
+| Go | Windows 全局 PATH 内可直接 `go version`；项目使用 Go 1.25+ 语法（pgvector-go/pgx 依赖） |
+| GOPROXY | `https://goproxy.cn,direct` |
+| Docker Desktop | 必须在跑（dockertest、E2E、compose 都依赖） |
+| Postgres 镜像 | **Slice 11 起 postgres → `pgvector/pgvector:pg16`**（compose + 9 个 dockertest 文件）。数据卷格式兼容（pgvector 镜像基于 postgres:16），无需迁移 |
 | Redis (本地) | dockertest 不自动起；跑 sandbox docker_integration 测试前手动 `docker run -d --rm --name pca-redis-test -p 6379:6379 redis:7-alpine` |
-| Docker socket | server 容器以 user 0:0 挂 `/var/run/docker.sock`；distroless nonroot + sock 权限冲突的妥协；Slice 9 重新设计 |
+| Docker socket | server 容器以 user 0:0 挂 `/var/run/docker.sock`；distroless nonroot 妥协 |
 
 ### 4.3 Windows 特定坑
 
 | 问题 | 规避 |
 |---|---|
-| PowerShell 5.1 `2>&1` 把 stderr 包成 `NativeCommandError` 导致 `ErrorActionPreference=Stop` 中断 | E2E 用 `test-e2e.sh`（Git Bash）跑；ps1 版只是参考 |
-| `pwsh` 不在 PATH（仅 Windows PowerShell 5.1） | 用 `& ./test-e2e.ps1` 或直接 sh 版 |
-| 主机无 jq | `test-e2e.sh` 内已通过 docker run jq 镜像绕过 |
-| Bash 子 shell 偶发外网超时（goproxy 不在 PATH） | implementer subagent 已学会用 PowerShell 装依赖 |
-| `LF will be replaced by CRLF` git 警告 | 正常，可忽略 |
+| PowerShell 5.1 `2>&1` 把 stderr 包成 `NativeCommandError` | E2E 用 `test-e2e.sh`（Git Bash） |
+| 主机无 `jq` | E2E 内部已通过 docker run jq 绕过 |
+| `LF will be replaced by CRLF` | 正常，可忽略 |
 
 ### 4.4 性能 / 资源
 
-- 首次跑 dockertest 启 PG ~10-20s（拉镜像）
-- 首次跑 sandbox integration 启沙箱容器 ~6s/个
-- 全包测试（不带 docker_integration tag）~25-40s
+- 首次跑 dockertest 启 PG ~10-20s（pgvector 镜像比 postgres:16-alpine 大 ~130MB，首次 pull 慢一些）
+- 全包测试（不带 docker_integration tag）~25-60s
 - 全包测试 + docker_integration ~3-5 分钟
+- E2E（39 步）~3-5 分钟（首次 build 镜像更久）
 
 ---
 
 ## 5. 下一步建议
 
-### 5.1 优先推进 Slice 4（已就绪）
+### 5.1 立即（Slice 11 收尾）
 
 ```bash
-# 复用既有 subagent-driven 流程
-# 每个 Task 一个 implementer + 二阶段 review
-# 14 Task 估计耗时 ~3-5 小时(连续推进,不停)
+cd F:/project/private-coding-agent/deploy/compose
+./test-e2e.sh          # 期望 39/39 PASS
+
+cd ..
+# 按 §1.4 推荐的 4 段切 commit
+git add internal/db/migrations/0010_*.sql internal/db/db.go \
+        internal/memory/embedder.go internal/memory/embedder_test.go \
+        internal/memory/repo.go internal/memory/repo_test.go \
+        internal/memory/errors.go internal/memory/types.go \
+        <9 个 dockertest *_test.go> go.mod go.sum
+git commit -m "feat(db,memory): ..."
+# ... 其余 3 段
+git push
 ```
 
-按 Slice 1-3 的节奏：每个 Task 我（控制层）派一个 implementer subagent，完成后派 spec reviewer + code quality reviewer，有问题派 fix subagent，无问题进下一 Task。
+### 5.2 中期方向（优先级建议）
 
-### 5.2 Slice 4 完成后建议的顺序
+1. **Reflection Agent / Memory 衰减** — 把 Slice 11 留的 hook（confidence / 自动 propose / re-embed）补上，让记忆系统真正"自我维护"
+2. **会话起始自动注入** — UX 影响最直接的小改动（session WS start hook 查 top-K memory prepend）
+3. **多租户隔离收紧** — `providers.tenant_id`、per-tenant rate limit；上线前必须做
+4. **Workflow Engine** — spec §11 ADR-3 描绘的最后一块大拼图
 
-1. **Slice 5（Agent Engine）** — 这是产品价值真正显现的切片；Tool Bus 是它的基础
-2. **Slice 6（Session WebSocket）** — Agent 跑起来必须有流式 UI 通道
-3. **Slice 8（Web Frontend）** — 让你能用浏览器直接聊
-4. **Slice 7（Memory）** — 长期记忆
-5. **Slice 9（Integration & Audit 加固）** — 上线前清账
+### 5.3 已知"未做"的设计决策（留给后续）
 
-> 这个顺序优先"看得见的能力"；如果是企业 IT 推内部使用，Slice 7 可提前到 Slice 5/6 之间。
-
-### 5.3 立即可做的小决策
-
-- 是否接受 Slice 4 plan 给 8 个 tool 的内容；要不要增删？现在改 plan 比实施完改便宜
-- Slice 5 Agent 用什么 Agent 框架？倾向 vanilla Go 自研（与 `modelgw.Gateway` 直接对接走 tool_calls），不引 LangChain Go / eino，但你拍板
+- Embedding 维度切换工具链（换模型 = 清表 / 重新生成）
+- 记忆 confidence / 衰减 / 重排（Reflection 切片）
+- Project / Tenant scope memory（多用户共享层）
+- Hybrid（vector + keyword RRF）检索融合
+- Long-content chunking（当前假设 memory 内容短）
 
 ---
 
@@ -290,37 +258,25 @@ Plan 位置：`docs/superpowers/plans/2026-05-20-slice-04-toolbus.md`
 | ADR-2 | Tool Bus 统一抽象，内置能力也 MCP 化 | 主 spec §11 |
 | ADR-3 | 控制流原语保留在 Workflow Engine 而非 MCP | 主 spec §11 |
 | ADR-4 | Workflow 发布后自动注册为 MCP 工具 | 主 spec §11 |
-| ADR-7 | N8N 作为对等服务集成，不进我们的进程 | 主 spec §11 |
+| ADR-7 | N8N 作为对等服务集成 | 主 spec §11 |
+| ADR-53 | pgvector 推后到 Slice 11（已兑现） | Slice 7 spec |
+| ADR-58 | Embedding 维度硬编码 1536 | Slice 11 spec |
+| ADR-59 | ivfflat lists=100 + partial WHERE embedding IS NOT NULL | Slice 11 spec |
+| ADR-60 | Search default vector，`mode=keyword` 显式退回 | Slice 11 spec |
+| ADR-61 | Create 0.92 dedup hit → touch + 返回原 id（200，不是 201） | Slice 11 spec |
+| ADR-62 | Embedder 同步、失败拒绝；不静默落库无 embedding | Slice 11 spec |
+| ADR-63 | Mock embedding sha256+L2-normalize 出 deterministic 1536-d | Slice 11 spec |
 
-### 6.2 已落地切片的决策
-
-| 决策 | 位置 |
-|---|---|
-| 多租户 schema 从 day 1 加 tenant_id，P0 默认单租户部署 | Slice 1 |
-| 默认本地 Ollama + 可选 API 双路 | Slice 1 spec |
-| Sandbox 接口（`Runtime`）屏蔽 Docker / K8s，DockerDriver 先做 | Slice 2 |
-| `Tool Bus` 统一所有调用入口，内置能力也按 MCP 协议 | Slice 4 |
-| Sandbox 默认 `--internal` 网络（无外网）+ ReadonlyRootfs + tmpfs | Slice 2 |
-| 销毁 sandbox 用 Redis owner-tagged 锁 + Lua 释放 | Slice 2 |
-| 内部协议用 OpenAI Chat Completions（Claude 内部做协议转换） | Slice 3 |
-| `provider:model` 显式前缀路由（不查表） | Slice 3 |
-| API key 走 `api_key_env` 环境变量名引用，DB 不存密钥 | Slice 3 |
-| Token 计量只读 provider usage 字段 | Slice 3 |
-| `ProviderError.Body` 截 4KB；env value redact（Slice 4 Task 0） | Slice 3+4 |
-| Tool 接口 in-process Go 调用（不走 MCP JSON-RPC） | Slice 4 |
-| Tool input/output 仅记 sha256，不存内容 | Slice 4 |
-| JSON Schema 手写（OpenAI tool calling 兼容） | Slice 4 |
-| `sandbox_id` 作为 input args 一员（Tool 不持 session 状态） | Slice 4 |
-
-### 6.3 哲学层
+### 6.2 哲学层
 
 | 原则 | 实践 |
 |---|---|
-| 安全先行 | 沙箱 cap_drop + 内网 + 资源限；token 不入库；audit 仅记 sha |
-| 隔离明确 | `SandboxRuntime` / `Provider` / `Tool` 三个接口屏蔽具体实现 |
-| 不重复造轮子 | 大量复用 OpenAI 协议 / Anthropic 官方协议 / MCP 设计；Slice 5+ 才考虑自研 |
-| 测试金字塔 | 70% 单元 / 20% 集成（dockertest+httptest）/ 8% E2E / 2% 在线 |
+| 安全先行 | 沙箱 cap_drop + 内网 + 资源限；token 不入库；audit 仅记 sha256 |
+| 隔离明确 | `SandboxRuntime` / `Provider` / `Tool` / `Embedder` 接口屏蔽具体实现 |
+| 不重复造轮子 | 复用 OpenAI / Anthropic / MCP / pgvector 协议 |
+| 测试金字塔 | ~70% 单元 / ~20% 集成（dockertest+httptest） / ~8% E2E / ~2% 在线 |
 | Detached ctx 写库 | audit / model_usage / tool_invocations 都用 5s detached ctx |
+| Embedder 失败拒绝 | 不静默落库无 embedding 行（避免"看似入库但 vector search 不可见"的隐形分裂） |
 
 ---
 
@@ -329,62 +285,53 @@ Plan 位置：`docs/superpowers/plans/2026-05-20-slice-04-toolbus.md`
 ### 7.1 一次性环境准备
 
 ```powershell
-# Windows PowerShell（管理员或普通都行）
-$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
-go version            # 应显示 go1.26.3 windows/amd64
+go version            # 应显示 go1.25+
 docker --version      # 应显示 Docker 28+
 docker compose version
 git --version
 ```
 
-如 Go 找不到：
-- 查 `D:\tools\go\bin\go.exe` 是否存在
-- 重启 PowerShell 窗口让 PATH 生效
-
 ### 7.2 单元 + 集成测试
 
 ```bash
-cd D:/IdeaProjects/private-coding-agent
+cd F:/project/private-coding-agent
 
 # 全部测试（不含真 Docker 集成）
-PATH="/d/tools/go/bin:$PATH" go test ./... -count=1
+go test ./... -count=1
 
 # vet / build
-PATH="/d/tools/go/bin:$PATH" go vet ./...
-PATH="/d/tools/go/bin:$PATH" go build ./...
+go vet ./...
+go build ./...
 
-# 真 Docker 集成测试（需 Docker Desktop + Redis 本地容器）
+# 真 Docker 集成测试
 docker run -d --rm --name pca-redis-test -p 6379:6379 redis:7-alpine
-PATH="/d/tools/go/bin:$PATH" go test -tags=docker_integration ./internal/sandbox/... -count=1 -timeout=180s
-PATH="/d/tools/go/bin:$PATH" go test -tags=docker_integration ./internal/modelgw/... -count=1
-# 跑完后清理
+go test -tags=docker_integration ./internal/sandbox/... -count=1 -timeout=180s
 docker stop pca-redis-test
 ```
 
-### 7.3 端到端（最有说服力的演示）
+### 7.3 端到端（39 步）
 
 ```bash
-cd D:/IdeaProjects/private-coding-agent/deploy/compose
-docker compose down 2>&1 | tail -1   # 清旧状态
-./test-e2e.sh                        # Git Bash 跑
+cd F:/project/private-coding-agent/deploy/compose
+docker compose down 2>&1 | tail -1
+./test-e2e.sh
 # 期望最后输出: E2E PASS
 ```
 
-12 步链路：
-1. compose up（postgres + redis + mock-provider + server 4 容器）
-2. 建 demo 用户
-3. 登录拿 JWT
-4-7. 沙箱：建 / 写文件 / exec cat / 销
-8. 验证已销毁沙箱返 404
-9. `/v1/chat/completions` 非流式
-10. `/v1/chat/completions` 流式（SSE）
-11. `/v1/embeddings`
-12. 校验 `model_usage` 表有 status=ok 行
+39 步覆盖：
+- [1-8] 沙箱生命周期
+- [9-12] model gateway（chat 非流/流 + embeddings + usage 校验）
+- [13-18] tool bus + agent
+- [19-21] sessions + WebSocket
+- [22-25] memory CRUD + MCP round-trip
+- [26-28] SPA fallback
+- [29-32] audit
+- [33-35] metrics
+- [36-39] **Slice 11**：vector ranking / keyword 退回 / dedup hit / dedup miss
 
-### 7.4 本地直接跑（不用 compose）
+### 7.4 本地直接跑
 
 ```powershell
-# 假设 postgres 起在 localhost:5432
 Copy-Item config\config.example.yaml config\config.yaml -Force
 $env:PCA_AUTH_JWT_SECRET = "dev-only-replace-in-prod-7Hk2wQpL3xRnF8tEsCvBmAyZ"
 go run ./cmd/server --config config\config.yaml
@@ -392,96 +339,83 @@ go run ./cmd/server --config config\config.yaml
 
 ### 7.5 跑 compose 后手工调端点
 
-```powershell
-# 登录
-$body = '{"tenant":"default","email":"demo@example.com","password":"demo123"}'
-$tok = (Invoke-RestMethod -Method POST -Uri http://localhost:8080/auth/login `
-        -ContentType application/json -Body $body).token
-$H = @{ Authorization = "Bearer $tok" }
+```bash
+TOK=$(curl -s -X POST http://localhost:8080/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"tenant":"default","email":"demo@example.com","password":"demo123"}' | jq -r .token)
 
-# 用 OpenAI SDK 兼容方式调
-Invoke-RestMethod -Method POST -Uri http://localhost:8080/v1/chat/completions `
-    -Headers $H -ContentType application/json -Body @'
-{"model":"default-mock:gpt-4o","messages":[{"role":"user","content":"hi"}]}
-'@
+# 创建一条记忆（自动算 embedding）
+curl -X POST http://localhost:8080/memories \
+  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"type":"preference","content":"user loves golang generics"}'
+
+# 向量检索（default mode = vector）
+curl -X POST http://localhost:8080/tools/invoke \
+  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"tool":"memory.search","input":{"query":"golang"}}'
 ```
 
 ### 7.6 查看持久化数据
 
-```powershell
-cd D:\IdeaProjects\private-coding-agent\deploy\compose
+```bash
+cd F:/project/private-coding-agent/deploy/compose
 
-# 表清单
-docker compose exec postgres psql -U app -d app -c "\dt"
-# 期望:tenants users audit_log sandbox_sessions providers model_usage schema_migrations
+# 验证 pgvector extension
+docker compose exec postgres psql -U app -d app -c "\dx vector"
 
-# 最近审计
-docker compose exec postgres psql -U app -d app -c "SELECT method, path, status FROM audit_log ORDER BY occurred_at DESC LIMIT 5;"
+# memories 表 + embedding 列
+docker compose exec postgres psql -U app -d app -c "\d memories"
 
-# LLM 用量
-docker compose exec postgres psql -U app -d app -c "SELECT provider_type, model, action, stream, status, input_tokens, output_tokens FROM model_usage ORDER BY occurred_at DESC LIMIT 5;"
+# 看 LLM 用量（含 embeddings）
+docker compose exec postgres psql -U app -d app -c \
+  "SELECT provider_type, model, action, status, input_tokens, output_tokens \
+   FROM model_usage ORDER BY occurred_at DESC LIMIT 10;"
 ```
 
 ### 7.7 git 状态总览
 
 ```bash
-cd D:/IdeaProjects/private-coding-agent
-git log --oneline | wc -l                    # 总 commits
-git log --oneline | head -20                 # 最近
-git diff --stat 210cba3..HEAD | tail -1      # 累计改动
-git status                                    # 应 clean
+cd F:/project/private-coding-agent
+git log --oneline | wc -l          # 应显示 139
+git status --short                  # Slice 11 改动列表
+git diff --stat HEAD                # 累计改动
 ```
-
-### 7.8 启动 Slice 4 实施（subagent-driven）
-
-```
-[控制层 = 你 / 我]
-1. 读 docs/superpowers/plans/2026-05-20-slice-04-toolbus.md 取 Task 0 全文
-2. 派 implementer subagent 实现 Task 0
-3. implementer 报告 DONE → 派 spec reviewer
-4. spec reviewer 通过 → 派 code quality reviewer
-5. quality reviewer 通过 → 标 Task 0 完成
-6. 重复 Task 1-13
-7. 全部完成派 final reviewer 总评
-```
-
-如果想恢复推进，告诉我「继续 Slice 4」即可。
 
 ---
 
-## 附录：完整 git 历史摘要（最近 30 条）
+## 附录：最近 30 条 commit
 
 ```
-3e9b4ce docs: slice 4 tool bus implementation plan
-53822a5 docs: slice 4 tool bus design spec
-58a96ee feat(modelgw): main wiring + mock-provider + E2E + README       ← Slice 3 完成
-5ca12f5 feat(modelgw): SSE writer + HTTP handlers
-108ab39 feat(modelgw): Gateway orchestration
-85aa8f0 feat(modelgw): ClaudeProvider over Anthropic Messages API
-5723579 feat(modelgw): Anthropic SSE → OpenAI chunks state machine
-030b30f feat(modelgw): Anthropic ↔ OpenAI translate
-4b673bc feat(modelgw): OllamaProvider as thin OpenAIProvider wrapper
-7f8e882 feat(modelgw): OpenAIProvider (chat / stream / embeddings)
-5e0239d feat(modelgw): Provider interface + ProviderRegistry
-6b54664 feat(modelgw): validate ChatRequest/EmbeddingsRequest
-3d70479 feat(modelgw): model_usage migration + UsageRepo + UsageRecorder
-361c2a6 feat(modelgw): providers migration + ProviderRepo
-d2e6f77 feat(modelgw): types, limits, error sentinels
-d1c7e1c chore: slice 2 carry-over
-97a3bd5 docs: slice 3 model gateway implementation plan
-d4d0b29 docs: slice 3 model gateway design spec
-c4531c1 fix(sandbox): destroyed sandbox returns NotFound; bash e2e       ← Slice 2 完成
-e4c77b7 docs: README + e2e script for slice 2
-792627c feat(sandbox): startup reconciler
-a65ff9a deploy: docker.sock + redis healthcheck + sandbox builder
-fc3f7bc feat(cmd): wire sandbox driver, Docker client, Redis
-3180246 feat(sandbox): HTTP handlers for sandbox lifecycle
-b74bb6f feat(sandbox): Snapshot stub
-ef507cc fix(sandbox): tar -- separator
-089fc6f feat(sandbox): ReadFile/WriteFile via tar streams
-2a97495 feat(sandbox): DockerDriver.Exec
-6b09c23 fix(sandbox): Destroy uses owner-tagged Redis lock
-d7561f5 feat(sandbox): DockerDriver Get + Destroy
+b2eb6bb docs(slice-10): observability section + plan archive
+dec7c54 feat(compose): wire jaeger + prometheus + e2e 35 steps
+ec179b8 feat(observability): OTel spans + Prometheus metrics
+ed0b7ab feat(observability): structured logging + request-id middleware
+3d3e0a2 feat(audit): slice 9 — admin audit query + domain event instrumentation
+f626093 test(e2e): step 28 uses GET to assert API content-type
+c064f09 fix(httpx): SPA fallback treats HEAD as GET
+57955d1 docs: mark slice 8 complete and document web frontend
+5a3b8c4 feat(server): embed web UI and serve SPA from Go binary
+f041887 feat(webui): WebSocket chat streaming with tool-call cards
+d2eac49 feat(web): chat page scaffold with history fetch and Composer
+25cbb7e feat(web): session list with create/delete + Home shell
+ca4625c feat(web): login page with auth flow
+c21e0d8 feat(web): types, api client, auth store, router shell
+cfc450a feat(web): Vite+React+TS+Tailwind+shadcn scaffold
+fa07f5f feat(server): WS ?token= shim + SPA fallback for embedded web UI
+9e3a7a4 docs(web): slice 8 design spec + formal plan
+384f590 docs(memory): formal slice 7 implementation plan
+53a451d docs: mark slice 7 complete and document /memories endpoints + memory tools
+8d2a5fe test(e2e): extend to 25 steps with /memories CRUD + MCP round-trip
+440a9a8 feat(memory): wire Service + REST handler + 4 MCP tools into main
+82617e3 feat(memory): internal MCP tools memory.{save,search,list,delete}
+a2a622f feat(memory): REST CRUD handler for /memories endpoints
+cf27aa8 feat(memory): Service layer with validation + cross-tenant safety
+3a43206 feat(memory): Repo with dockertest coverage (CRUD + search + last_used_at touch)
+5235647 feat(db): migration 0009 memories table
+e3623f2 docs(memory): design spec for slice 7 (basic memory)
+0360877 fix(e2e): route websocat via compose network
+5ddf401 docs(plan): slice 6 formal implementation plan
+a5fd48b docs: mark slice 6 complete in README and add /sessions endpoints
 ```
 
-完整历史可通过 `git log --oneline | head -76` 查看。
+完整历史：`git log --oneline | head -139`

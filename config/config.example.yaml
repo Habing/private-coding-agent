@@ -19,3 +19,13 @@ observability:
   # require admin JWT for every scrape. Override per env via
   # PCA_OBSERVABILITY_METRICS_TOKEN.
   metrics_token: ""
+memory:
+  # provider:model passed through to the model gateway for memory embeddings.
+  # default-mock:text is the dev / compose default; prod must override.
+  embedding_model: "default-mock:text"
+  # cosine-similarity cut-off above which Create deduplicates against an
+  # existing memory (touches last_used_at, returns existing id). 0 disables.
+  dedup_threshold: 0.92
+  # Operational kill switch: false makes Create skip embedding entirely
+  # and Search always falls back to keyword (slice-7 behaviour).
+  embed_on_write: true

@@ -15,6 +15,7 @@
 - [x] 切片 8：Web Frontend
 - [x] 切片 9：Audit Deepening
 - [x] 切片 10：Observability (OTel spans + Prometheus + structured logs)
+- [x] 切片 11：Vector Memory (pgvector cosine search + 0.92 dedup)
 
 ## 本地开发
 
@@ -93,6 +94,39 @@ pwsh ./test-e2e.ps1
 - `shell.exec` 沙箱内执行命令
 - `llm.chat / llm.embed` 调 Model Gateway
 - `memory.save / memory.search / memory.list / memory.delete` 持久化记忆（User scope）
+
+## 记忆子系统
+
+User-scope 持久化记忆，配套 4 个 MCP 工具与 REST 表面。
+
+**检索路径**（`memory.search` / `POST /memories/search`）：
+
+| `mode` | 行为 |
+|---|---|
+| `vector`（默认） | Gateway 算 query embedding → cosine `<=>` 排序 → 按 score 降序返回 |
+| `keyword` | 退回 Slice 7 的 ILIKE + tag overlap + type 过滤 |
+| 未设 + query 空 | 自动 keyword（保留 filter-only 场景） |
+| 未设 + query 非空 + `embed_on_write=true` | 自动 vector |
+
+`score` 字段仅在 vector path 出现（cosine 相似度，[-1, 1]）。
+
+**去重**（`memory.save` / `POST /memories`）：
+- Create 前先对 query embedding 做 top-1 cosine 比对
+- 命中 `memory.dedup_threshold`（默认 0.92）→ 不写新行，touch 既有行 `last_used_at`
+- 工具响应携带 `created` bool（false 表示 dedup hit），REST 状态码 200 vs 201
+
+**Embedding 维度固定 1536**：迁移列 `vector(1536)` 与 `internal/memory.EmbeddingDim` 必须一致。切换不同维度的模型（如 bge-base 768）需要新 migration + 重建数据；本切片不做运行时维度切换。
+
+**运维 kill switch**：`memory.embed_on_write=false` 时 Create 不算 embedding，Search 永远走 keyword（Slice 7 行为）。
+
+```yaml
+memory:
+  embedding_model: "default-mock:text"   # provider:model；生产必改
+  dedup_threshold: 0.92                  # 0 关闭去重
+  embed_on_write: true
+```
+
+dev / compose 默认走 mock provider 的 deterministic 1536-d 向量（sha256 → L2-normalize），同 input 必出同向量。切到真实模型后老向量与新向量不可比，需重建。
 
 ## Web Frontend
 
