@@ -14,6 +14,7 @@
 - [x] 切片 7：Memory (basic)
 - [x] 切片 8：Web Frontend
 - [x] 切片 9：Audit Deepening
+- [x] 切片 10：Observability (OTel spans + Prometheus + structured logs)
 
 ## 本地开发
 
@@ -79,6 +80,7 @@ pwsh ./test-e2e.ps1
 | PUT  | /memories/{id} | Bearer | 更新 content / tags / type |
 | DELETE | /memories/{id} | Bearer | 删除一条记忆 |
 | GET | /audit | Bearer (admin) | 查询审计日志,支持 action/user_id/from/to/min_status/max_status/limit/offset 过滤 |
+| GET | /metrics | Bearer (admin 或 scrape token) | Prometheus exposition,`pca_*` 指标 |
 | GET | / | - | SPA 首页（embed 进二进制） |
 | GET | /login, /sessions/{id}, /audit | - | SPA 前端路由，由 NoRoute fallback 返回 index.html |
 
@@ -141,6 +143,41 @@ docker-compose 路径会自动跑多阶段 build：`node:20-alpine` 先 `npm run
 `GET /audit` 仅对 `role=admin` 开放（`auth.RequireAdmin` 中间件 + 独立 router group），且永远按 `cl.TenantID` 过滤——不存在跨租户视图。`audit.Sink` 写盘 detached + 5s 超时，业务路径不会被审计写阻塞。
 
 PII 最小化：metadata 不存 prompt 内容、不存 shell 命令原文、不存文件内容，仅存 ID/计数/错误类目；`auth.login.failure` 的 target 字段记 email 是为支持追失败登录所必须。
+
+## 可观测性
+
+三层闭环：
+
+1. **结构化日志** — `internal/logx` 包装 `slog`，JSON handler 默认。`logx.FromCtx(ctx)` 自动注入 `request_id` / `trace_id` / `span_id` / `tenant_id` / `user_id`。日志格式与 level 由 `observability.log_format` / `observability.log_level` 控制（或 `PCA_OBSERVABILITY_LOG_FORMAT` / `_LOG_LEVEL`）。
+2. **Trace** — OTel + `otelgin` 自动根 span；以下路径打了手工子 span，便于在 Jaeger 看链路：
+
+   | Span 名 | 包 | 关键属性 |
+   |---|---|---|
+   | `agent.run` / `agent.step` | `internal/agent` | `agent.model`、`agent.profile`、`agent.max_steps`、`agent.step_index`、`agent.finish_reason` |
+   | `tool.invoke` | `internal/toolbus` | `tool.name`、`tool.outcome`、`tool.duration_ms`、`tool.error_class` |
+   | `model.chat` / `model.chat_stream` / `model.embed` | `internal/modelgw` | `model.id`、`model.prompt_tokens`、`model.completion_tokens`、`model.input_count` |
+   | `sandbox.create` / `sandbox.exec` / `sandbox.destroy` | `internal/sandbox` | `sandbox.image`、`sandbox.id`、`sandbox.exec.cmd_len`、`sandbox.exec.exit_code`、`sandbox.exec.timed_out` |
+
+   compose 启动时把 OTLP 指向 `jaeger:4317`，访问 <http://localhost:16686> 查 trace。
+
+3. **指标 (Prometheus)** — `GET /metrics` 暴露 10 个 `pca_*` 指标：
+
+   | 指标 | 类型 | 标签 |
+   |---|---|---|
+   | `pca_http_requests_total` | Counter | `method`、`route`、`status_code` |
+   | `pca_http_request_duration_seconds` | Histogram | `method`、`route` |
+   | `pca_tool_invocations_total` | Counter | `tool`、`outcome` |
+   | `pca_tool_invocation_duration_seconds` | Histogram | `tool` |
+   | `pca_model_calls_total` | Counter | `model`、`kind`、`outcome` |
+   | `pca_model_call_duration_seconds` | Histogram | `model`、`kind` |
+   | `pca_model_tokens_total` | Counter | `model`、`direction` (in/out) |
+   | `pca_sandbox_active` | UpDownCounter | — |
+   | `pca_ws_connections_active` | UpDownCounter | — |
+   | `pca_sessions_created_total` | Counter | `profile` |
+
+   `route` 来自 gin 的模板路径（带 `:id` 占位符）保证 cardinality 有界。`/metrics`、`/healthz`、`/readyz` 不进 `pca_http_*` 指标也不进 `audit_log`。
+
+   鉴权双通道：标准 admin JWT 或 `observability.metrics_token` 静态 bearer。Prom scraper 走静态 token（JWT TTL 会让定时抓取过期）。compose 的 `prometheus.yml` 已配好；UI <http://localhost:9090>。**生产环境必须改 `PCA_OBSERVABILITY_METRICS_TOKEN` 与 `prometheus.yml` 里的 token。**
 
 ## 配置
 
