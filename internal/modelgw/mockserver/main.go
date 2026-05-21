@@ -63,6 +63,14 @@ func chat(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
+	// Skills E2E hook: if any system message body contains the marker, reply
+	// with the canonical ack string. Lets the integration test confirm that
+	// SkillComposer actually injected the SKILL.md body into the run.
+	if hasSkillMarker(req.Messages) {
+		writeFinal(w, req.Model, "skill-marker-ok")
+		return
+	}
+
 	switch {
 	case last.Role == "tool":
 		// We've already executed a tool — return a final answer.
@@ -116,6 +124,20 @@ func writeToolCall(w http.ResponseWriter, model, callID, name, argsJSON string) 
 		"usage": map[string]int{"prompt_tokens": 5, "completion_tokens": 4, "total_tokens": 9},
 	}
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// skillMarker is the literal token embedded in skills/e2e/e2e-marker/SKILL.md.
+// Coupled to that file by intent: tests rely on the chain registry → resolver
+// → composer → modelgw → mockserver to surface the marker end-to-end.
+const skillMarker = "E2E_SKILL_MARKER_V1"
+
+func hasSkillMarker(msgs []mockMessage) bool {
+	for _, m := range msgs {
+		if m.Role == "system" && strings.Contains(m.Content, skillMarker) {
+			return true
+		}
+	}
+	return false
 }
 
 func containsAny(s string, subs ...string) bool {
