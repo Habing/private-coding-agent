@@ -232,6 +232,7 @@ func run() error {
 	sessionService.WithAuditSink(auditRepo)
 	sessionWSHandler.WithAuditSink(auditRepo)
 	toolBus.WithAuditSink(auditRepo)
+	agentEngine.WithAuditSink(auditRepo)
 	auditSvc := audit.NewService(auditRepo)
 	auditHandler := audit.NewHandler(auditSvc, func(c *gin.Context) (uuid.UUID, bool) {
 		cl := auth.FromCtx(c.Request.Context())
