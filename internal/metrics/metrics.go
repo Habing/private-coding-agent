@@ -35,6 +35,9 @@ var (
 	SandboxActive          metric.Int64UpDownCounter
 	WSConnectionsActive    metric.Int64UpDownCounter
 	SessionsCreatedTotal   metric.Int64Counter
+	SkillLoadTotal         metric.Int64Counter
+	SkillInjectionsTotal   metric.Int64Counter
+	SkillInjectedChars     metric.Int64Histogram
 )
 
 // Init creates all instrument handles against the current global MeterProvider.
@@ -111,6 +114,24 @@ func build(m metric.Meter) error {
 		metric.WithDescription("Sessions created, by profile."),
 	); err != nil {
 		return wrap("pca_sessions_created_total", err)
+	}
+	if SkillLoadTotal, err = m.Int64Counter(
+		"pca_skill_load_total",
+		metric.WithDescription("Skill files loaded from disk, by outcome."),
+	); err != nil {
+		return wrap("pca_skill_load_total", err)
+	}
+	if SkillInjectionsTotal, err = m.Int64Counter(
+		"pca_skill_injections_total",
+		metric.WithDescription("Agent runs that injected at least one Skill, by truncated flag."),
+	); err != nil {
+		return wrap("pca_skill_injections_total", err)
+	}
+	if SkillInjectedChars, err = m.Int64Histogram(
+		"pca_skill_injected_chars",
+		metric.WithDescription("Characters of Skill content injected into an agent run."),
+	); err != nil {
+		return wrap("pca_skill_injected_chars", err)
 	}
 	return nil
 }
