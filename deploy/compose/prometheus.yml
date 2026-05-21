@@ -1,0 +1,19 @@
+# Local dev Prometheus config. Targets the pca server's /metrics endpoint
+# with the dev static bearer token. MUST be kept in sync with
+# PCA_OBSERVABILITY_METRICS_TOKEN in .env / .env.example.
+#
+# Prometheus does not interpolate environment variables in its config file,
+# so the token is inlined below. Replace in production.
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+
+scrape_configs:
+  - job_name: pca-server
+    metrics_path: /metrics
+    scheme: http
+    authorization:
+      type: Bearer
+      credentials: dev-scrape-token-change-me
+    static_configs:
+      - targets: ['server:8080']
