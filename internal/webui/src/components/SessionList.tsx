@@ -11,7 +11,7 @@ import type { CreateSessionRequest, Session, SessionListResponse } from '@/types
 
 // No model picker UI in slice 8, so new sessions default to the mock model
 // the rest of the project uses for E2E. Replace once a settings page lands.
-const DEFAULT_MODEL = 'default-mock:gpt-4o'
+const DEFAULT_MODEL = 'dashscope:qwen3.6-plus'
 
 export function SessionList() {
   const navigate = useNavigate()
@@ -75,7 +75,7 @@ export function SessionList() {
         {isLoading && <li className="px-2 py-1 text-xs text-muted-foreground">加载中…</li>}
         {data?.sessions.map((s) => {
           const active = s.id === activeID
-          const title = s.title.trim() || 'Untitled'
+          const title = s.title.trim() || '新会话'
           return (
             <li key={s.id} className="group flex items-center">
               <Link

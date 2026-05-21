@@ -18,7 +18,7 @@ function makeSession(over: Partial<Session>): Session {
     tenant_id: 't1',
     owner_user_id: 'u1',
     title: 'Untitled',
-    model: 'default-mock:gpt-4o',
+    model: 'dashscope:qwen3.6-plus',
     profile: 'coding',
     status: 'active',
     created_at: '2026-05-20T10:00:00Z',
@@ -86,8 +86,8 @@ describe('<SessionList />', () => {
     renderAt('/')
     expect(await screen.findByText('First')).toBeInTheDocument()
     expect(screen.getByText('Second')).toBeInTheDocument()
-    // Untitled rendered for the row with empty title.
-    expect(screen.getByText(/untitled|未命名/i)).toBeInTheDocument()
+    // Empty-title fallback ("新会话") rendered for the row with no title.
+    expect(screen.getByText('新会话')).toBeInTheDocument()
   })
 
   it('marks the active route', async () => {
