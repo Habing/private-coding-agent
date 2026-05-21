@@ -18,6 +18,27 @@
 - [x] 切片 11：Vector Memory (pgvector cosine search + 0.92 dedup)
 - [x] 切片 12：Agent Skills (SKILL.md registry + Profile/Session/Run 路由 + 系统消息注入)
 
+### P1 — 企业可用（规划已落盘，实施中）
+
+**路线图：** [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md)
+
+#### MVP-P1（企业试点）— 切片 13～17
+
+- [ ] 切片 13：Enterprise Foundation（provider 租户隔离、quota、JWT logout）
+- [ ] 切片 14：Session ↔ Sandbox 强绑定（创建会话自动建沙箱）
+- [ ] 切片 15：SSO (OIDC)
+- [ ] 切片 16：Enterprise Web（沙箱文件浏览、Memory 注入/UI）
+- [ ] 切片 17：Skills 12b（租户 Skill API + Admin UI）
+
+#### Full P1 — 切片 18～23
+
+- [ ] 切片 18：Sub-Agents + `agent.delegate`
+- [ ] 切片 19：Workflow Engine
+- [ ] 切片 20：Reflection Agent
+- [ ] 切片 21：编排路由 + External MCP
+- [ ] 切片 22：K8s Helm + K8sDriver + 安全深化
+- [ ] 切片 23：N8N 集成（可选）
+
 ## 本地开发
 
 ```powershell
@@ -39,9 +60,16 @@ go run ./cmd/server --config config\config.yaml
 docker build -t pca/sandbox:base ./sandbox/image   # 首次必须
 cd deploy\compose
 copy .env.example .env
+# 接真实 LLM：在 .env 填入 DASHSCOPE_API_KEY=sk-...（见 deploy/compose/QWEN.md）
 docker compose up -d --build
 curl http://localhost:8080/healthz
 ```
+
+### 阿里云 Qwen 3.6 Plus
+
+- 迁移 `0012` 注册 provider `dashscope` → 百炼 OpenAI 兼容端点
+- 对话模型：`dashscope:qwen3.6-plus`
+- 详细步骤：[deploy/compose/QWEN.md](deploy/compose/QWEN.md)
 
 ## 端到端验证
 
@@ -51,7 +79,8 @@ cd deploy\compose
 # pwsh ./test-e2e.ps1   # 仅覆盖早期切片，完整验收请用 .sh
 ```
 
-每切片完成后的增量步号与 L1/L2 命令见 [`docs/SLICE-VERIFICATION.md`](docs/SLICE-VERIFICATION.md)。
+每切片完成后的增量步号与 L1/L2 命令见 [`docs/SLICE-VERIFICATION.md`](docs/SLICE-VERIFICATION.md)。  
+P1 开工前完成 **Gate**：E2E 1～42 全绿 + 工作区提交（见 [`HANDOFF.md`](HANDOFF.md) §3.0）。
 
 ## 关键端点
 
@@ -125,7 +154,7 @@ User-scope 持久化记忆，配套 4 个 MCP 工具与 REST 表面。
 
 ```yaml
 memory:
-  embedding_model: "default-mock:text"   # provider:model；生产必改
+  embedding_model: "default-mock:text"   # 百炼: dashscope:text-embedding-v4（1536 维）
   dedup_threshold: 0.92                  # 0 关闭去重
   embed_on_write: true
 ```

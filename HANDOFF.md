@@ -6,9 +6,10 @@
 | 项目根 | `F:\project\private-coding-agent` |
 | Git module | `github.com/yourorg/private-coding-agent` |
 | 当前日期 | 2026-05-21 |
-| 当前 HEAD | `b2eb6bb` (Slice 10 已完成并 push) |
-| 累计 commits | 139 |
-| 工作区状态 | Slice 11 代码 + 测试 + e2e + 文档已完成，**未 commit**（30 个修改文件 + 6 个新文件） |
+| 当前 HEAD | `aa2c17c` (Slice 12 已 push；含会话标题、WebUI 等) |
+| P1 规划 | **已落盘** — [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md) |
+| 工作区状态 | 有未提交改动（DashScope 迁移、流式 Agent、WebUI 等）；**Gate G1 待收口** |
+| 下一阶段 | **Gate** → **MVP-P1 切片 13～17** → **Full P1 切片 18～23** |
 
 ---
 
@@ -18,33 +19,34 @@
 
 - 主设计 spec：`docs/superpowers/specs/2026-05-18-private-ai-coding-agent-design.md`
 - 每切片独立 spec + plan，全部落盘到 `docs/superpowers/{specs,plans}/`
-- 11 切片切分路线已全部覆盖（Foundation → … → Vector Memory）
+- P0 切片 1～12 路线已覆盖；P1 见 [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md)
 
-### 1.2 已交付切片（10 个 + 1 个未 commit）
+### 1.2 已交付切片（P0：切片 1～12）
 
-| 切片 | 状态 | HEAD | 内容摘要 |
-|---|---|---|---|
-| 1 — Foundation | ✅ | `8175d94` | Go 骨架 + PG 迁移 + JWT + Gin + OTel + audit_log + compose |
-| 1.5 — Hardening | ✅ | `535b2ad` | ctx-aware Migrate / detached audit / JWT secret 校验 |
-| 2 — Sandbox | ✅ | `c4531c1` | `SandboxRuntime` + `DockerDriver` + Redis 锁 + Reconciler |
-| 3 — Model Gateway | ✅ | `58a96ee` | 3 provider（OpenAI/Ollama/Claude）+ SSE + ProviderRegistry |
-| 4 — Tool Bus | ✅ | — | `Tool` 接口 + JSON Schema 校验 + 8 个内置工具 + `tool_invocations` |
-| 5 — Agent Engine | ✅ | — | ReAct 循环 + tool_calls + 上下文压缩 |
-| 6 — Session API + WS | ✅ | `0360877` | `/sessions` REST + WebSocket 流式 + `sessions/messages` 持久化 |
-| 7 — Memory (basic) | ✅ | `53a451d` | `/memories` REST + 4 个 memory.* 工具（ILIKE 关键字） |
-| 8 — Web Frontend | ✅ | `57955d1` | React+Vite+Tailwind+shadcn SPA，embed 进 Go 二进制 |
-| 9 — Audit 加固 | ✅ | `3d3e0a2` | admin 查询 + 领域事件落库（auth/sandbox/session/...） |
-| 10 — Observability | ✅ | `b2eb6bb` | OTel spans + Prometheus + 结构化日志 + Jaeger/Prom compose |
-| 11 — Vector Memory | 🟡 代码完工，**未 commit** | — | pgvector cosine 检索 + 0.92 dedup |
+| 切片 | 状态 | 内容摘要 |
+|---|---|---|
+| 1 — Foundation | ✅ | Go 骨架 + PG 迁移 + JWT + Gin + OTel + audit_log + compose |
+| 1.5 — Hardening | ✅ | ctx-aware Migrate / detached audit / JWT secret 校验 |
+| 2 — Sandbox | ✅ | `SandboxRuntime` + `DockerDriver` + Redis 锁 + Reconciler |
+| 3 — Model Gateway | ✅ | 多 provider + SSE + ProviderRegistry |
+| 4 — Tool Bus | ✅ | 12 内置工具 + `tool_invocations` |
+| 5 — Agent Engine | ✅ | ReAct + tool_calls + 上下文压缩 |
+| 6 — Session API + WS | ✅ | `/sessions` REST + WebSocket + messages |
+| 7 — Memory (basic) | ✅ | `/memories` REST + memory.* 工具 |
+| 8 — Web Frontend | ✅ | React SPA embed |
+| 9 — Audit 加固 | ✅ | admin `/audit` + 领域事件 |
+| 10 — Observability | ✅ | OTel + Prometheus + 结构化日志 |
+| 11 — Vector Memory | ✅ | pgvector + 0.92 dedup |
+| 12 — Agent Skills (12a) | ✅ | SKILL.md 注入 + `GET /skills` + E2E 40–42 |
 
-### 1.3 测试与验收
+### 1.3 测试与验收（P0）
 
 | 维度 | 状态 |
 |---|---|
-| `go test ./...` | 全 PASS（含 memory / modelgw / toolbus 等 dockertest 包） |
+| `go test ./...` | 预期全 PASS |
 | `go vet ./...` | 干净 |
 | `go build ./...` | 干净 |
-| E2E `test-e2e.sh` | Slice 10 截止 35 步全过；Slice 11 扩到 **39 步**（尚未运行验证） |
+| E2E `test-e2e.sh` | 全量 **42 步**（发版 / Gate 前必跑） |
 
 ### 1.4 Slice 11 工作区状态（待 commit）
 
@@ -141,47 +143,66 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 
 ---
 
-## 3. 尚未完成的任务
+## 3. P1 执行计划（已批准）
 
-### 3.1 立即可做（Slice 11 收尾）
+**总路线图**：[`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md)  
+**MVP Spec**：[`docs/superpowers/specs/2026-05-21-p1-mvp-enterprise-design.md`](docs/superpowers/specs/2026-05-21-p1-mvp-enterprise-design.md)  
+**Full Spec**：[`docs/superpowers/specs/2026-05-21-p1-full-enterprise-design.md`](docs/superpowers/specs/2026-05-21-p1-full-enterprise-design.md)  
+**验收**：[`docs/SLICE-VERIFICATION.md`](docs/SLICE-VERIFICATION.md)
 
-1. **跑 e2e 验证**：`cd deploy/compose && ./test-e2e.sh`（期望 39/39 PASS）
-2. **commit** 按上述 4 段切分
-3. **push** 到 `origin/main`
+### 3.0 Gate（开工 Slice 13 前）
 
-### 3.2 后续切片（spec/plan 均未开始）
+| ID | 项 | 状态 |
+|----|-----|------|
+| G1 | 工作区未提交改动 commit | 🟡 进行中 |
+| G2 | 本 HANDOFF 与 HEAD 一致 | ✅ |
+| G3 | E2E **42/42** + `go test ./...` | ✅ |
+| G4 | P0 缺口归属确认（文件浏览→16，自动沙箱→14） | ✅ 已写入 spec |
 
-| 候选切片 | 内容 | 触发条件 |
-|---|---|---|
-| Reflection / Agent-driven memory | confidence 衰减 + 自动 propose + 异步 worker | Slice 11 稳定后 |
-| Project / Tenant scope memory | 共享记忆层 + ACL | 多用户协作场景显现 |
-| 会话起始自动注入 | session WS handler 在 first user msg 前 prepend 相关 memory | UX 反馈"Agent 忘事"出现 |
-| Hybrid 检索 | vector + keyword RRF 融合排序 | vector 召回率不够 |
-| Workflow Engine | n8n / 自研控制流原语；spec §11 ADR-3/4 | 多 step 任务编排需求显现 |
-| Snapshot 实现化 | sandbox 状态快照 → MinIO | 长时会话/恢复场景 |
-| Rate limit | 每租户 LLM 调用配额 | 上线前合规清账 |
+### 3.1 MVP-P1（切片 13～17）— 企业试点
 
-### 3.3 累积技术债（按优先级，**不**阻塞 Slice 11 收尾）
+| 切片 | 状态 | E2E | Plan |
+|------|------|-----|------|
+| 13 Enterprise Foundation | ⬜ | 43–44 | `plans/2026-05-21-slice-13-enterprise-foundation.md` |
+| 14 Session↔Sandbox | ⬜ | 45 | `plans/2026-05-21-slice-14-session-sandbox-binding.md` |
+| 15 SSO (OIDC) | ⬜ | 46 | `plans/2026-05-21-slice-15-sso-oidc.md` |
+| 16 Enterprise Web | ⬜ | 47–48 | `plans/2026-05-21-slice-16-enterprise-web.md` |
+| 17 Skills 12b | ⬜ | 49 | `plans/2026-05-21-slice-17-skills-12b.md` |
 
-#### 待修（建议专题加固期）
-- HTTP per-tenant rate limit（防 ToolBus 放大 LLM 流量）
-- `providers` 表加 `tenant_id` + Registry 按 tenant 过滤（目前所有租户共享 provider）
-- server 容器以 root + 挂 `docker.sock` 的根本风险面（rootless docker / sock-proxy）
-- 自定义 seccomp profile（沙箱二级隔离）
-- 沙箱镜像 trivy 漏洞扫描接入 CI
-- Snapshot 实现化（接 MinIO）
-- JWT 吊销列表 / logout
-- Audit log hash chain（不可篡改）
-- HTTP IdleTimeout / WriteTimeout
-- 历史无 embedding 行的一次性 re-embed admin endpoint（Slice 11 显式推后）
+**MVP 完成后**：E2E **55** 步；可对外「企业试点」。
+
+### 3.2 Full P1（切片 18～23）— 主 spec §11 字面
+
+| 切片 | 状态 | E2E | 说明 |
+|------|------|-----|------|
+| 18 Sub-Agents + delegate | ⬜ | 56 | |
+| 19 Workflow Engine | ⬜ | 57–60 | 可拆 19a/19b |
+| 20 Reflection | ⬜ | 61 | |
+| 21 Orchestration + External MCP | ⬜ | 62–63 | |
+| 22 K8s + 安全深化 | ⬜ | 64+ | seccomp、trivy、Snapshot |
+| 23 N8N（可选） | ⬜ | 65+ | 需法务确认 |
+
+### 3.3 技术债 ↔ 切片映射
+
+| 项 | 归入 |
+|----|------|
+| `providers.tenant_id`、quota、rate limit、JWT logout、HTTP 超时 | **13** |
+| session 自动建沙箱 | **14** |
+| Memory 自动注入、Memory UI、沙箱文件浏览 | **16** |
+| Tenant Skills DB | **17** |
+| seccomp、trivy、Snapshot、Helm、audit hash chain | **22** |
+| Reflection、Workflow、delegate、N8N | **18–23** |
+| Hybrid 检索、Project/Tenant memory | **P2** /  backlog |
+| 历史 re-embed admin | backlog |
 
 ---
 
 ## 4. 当前遇到的问题
 
-### 4.1 阻塞性问题：无
+### 4.1 阻塞性问题
 
-Slice 11 代码 / 单测 / 集成测试 / 构建 / vet 全过；e2e 待运行。
+- **Gate G1/G3** 未完成前不宜开工 Slice 13（避免在脏树 / 未验证 P0 上叠 P1）。
+- WebUI **无沙箱创建入口**；聊天依赖 **Slice 14** 或手动 `POST /sandbox/sessions`。
 
 ### 4.2 环境注意事项
 
@@ -207,36 +228,35 @@ Slice 11 代码 / 单测 / 集成测试 / 构建 / vet 全过；e2e 待运行。
 - 首次跑 dockertest 启 PG ~10-20s（pgvector 镜像比 postgres:16-alpine 大 ~130MB，首次 pull 慢一些）
 - 全包测试（不带 docker_integration tag）~25-60s
 - 全包测试 + docker_integration ~3-5 分钟
-- E2E（39 步）~3-5 分钟（首次 build 镜像更久）
+- E2E（42 步 P0；55 步 MVP-P1）~3-8 分钟（首次 build 镜像更久）
 
 ---
 
 ## 5. 下一步建议
 
-### 5.1 立即（Slice 11 收尾）
+### 5.1 立即（Gate）
 
 ```bash
-cd F:/project/private-coding-agent/deploy/compose
-./test-e2e.sh          # 期望 39/39 PASS
-
-cd ..
-# 按 §1.4 推荐的 4 段切 commit
-git add internal/db/migrations/0010_*.sql internal/db/db.go \
-        internal/memory/embedder.go internal/memory/embedder_test.go \
-        internal/memory/repo.go internal/memory/repo_test.go \
-        internal/memory/errors.go internal/memory/types.go \
-        <9 个 dockertest *_test.go> go.mod go.sum
-git commit -m "feat(db,memory): ..."
-# ... 其余 3 段
-git push
+cd F:/project/private-coding-agent
+go test ./... -count=1
+go vet ./...
+cd deploy/compose && ./test-e2e.sh   # 期望 42/42 E2E PASS
+# 提交工作区未提交改动（G1），再 push
 ```
 
-### 5.2 中期方向（优先级建议）
+### 5.2 MVP-P1 实施顺序
 
-1. **Reflection Agent / Memory 衰减** — 把 Slice 11 留的 hook（confidence / 自动 propose / re-embed）补上，让记忆系统真正"自我维护"
-2. **会话起始自动注入** — UX 影响最直接的小改动（session WS start hook 查 top-K memory prepend）
-3. **多租户隔离收紧** — `providers.tenant_id`、per-tenant rate limit；上线前必须做
-4. **Workflow Engine** — spec §11 ADR-3 描绘的最后一块大拼图
+1. **Slice 13** — Foundation（provider 租户、quota、logout）
+2. **Slice 14** — Session↔Sandbox（**14 阻塞 16 文件浏览**）
+3. **Slice 15** — OIDC（可与 14 尾段并行）
+4. **Slice 16** — Enterprise Web
+5. **Slice 17** — Skills 12b
+
+每切片：读 plan → 实现 → 更新 `SLICE-VERIFICATION.md` + E2E 步号 → README 勾选。
+
+### 5.3 Full P1（MVP 完成后）
+
+按 [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md)：**18 → 19 → 20 → 21**；**22** 视交付压力可提前；**23** 可选。
 
 ### 5.3 已知"未做"的设计决策（留给后续）
 
