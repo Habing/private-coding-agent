@@ -37,6 +37,7 @@ type Session struct {
 	Model       string    `json:"model"`
 	Profile     string    `json:"profile"`
 	Status      string    `json:"status"`
+	SkillIDs    []string  `json:"skill_ids"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -58,9 +59,10 @@ type Message struct {
 
 // CreateRequest is the body of POST /sessions.
 type CreateRequest struct {
-	Model   string `json:"model"`
-	Profile string `json:"profile"`
-	Title   string `json:"title"`
+	Model    string   `json:"model"`
+	Profile  string   `json:"profile"`
+	Title    string   `json:"title"`
+	SkillIDs []string `json:"skill_ids,omitempty"`
 }
 
 // WebSocket frame type constants — shared by client and server payloads.

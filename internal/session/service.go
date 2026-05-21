@@ -80,6 +80,7 @@ func (s *Service) CreateSession(ctx context.Context, tenantID, userID uuid.UUID,
 		Model:       req.Model,
 		Profile:     profile,
 		Status:      StatusActive,
+		SkillIDs:    req.SkillIDs,
 	}
 	if err := s.sessions.Create(ctx, sess); err != nil {
 		return nil, err
@@ -171,11 +172,12 @@ func (s *Service) SendMessage(ctx context.Context, tenantID, userID, sid uuid.UU
 	chatMsgs = append(chatMsgs, modelgw.ChatMessage{Role: modelgw.RoleUser, Content: content})
 
 	in := agent.RunInput{
-		TenantID:    tenantID,
-		UserID:      userID,
-		Model:       sess.Model,
-		Messages:    chatMsgs,
-		ProfileName: sess.Profile,
+		TenantID:        tenantID,
+		UserID:          userID,
+		Model:           sess.Model,
+		Messages:        chatMsgs,
+		ProfileName:     sess.Profile,
+		SessionSkillIDs: sess.SkillIDs,
 	}
 
 	yield := func(evt agent.Event) error {

@@ -22,6 +22,7 @@ export interface Session {
   model: string
   profile: string
   status: 'active' | 'archived'
+  skill_ids?: string[]
   created_at: string
   updated_at: string
 }
