@@ -40,7 +40,7 @@ function makeSession(id: string): Session {
     tenant_id: 't1',
     owner_user_id: 'u1',
     title: `S-${id}`,
-    model: 'default-mock:gpt-4o',
+    model: 'dashscope:qwen3.6-plus',
     profile: 'coding',
     status: 'active',
     created_at: '2026-05-20T10:00:00Z',

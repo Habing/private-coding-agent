@@ -50,6 +50,7 @@ export interface Message {
 // never emits 'user'.
 export type AgentEventKind =
   | 'user'
+  | 'assistant_delta'
   | 'assistant_message'
   | 'tool_call'
   | 'tool_result'

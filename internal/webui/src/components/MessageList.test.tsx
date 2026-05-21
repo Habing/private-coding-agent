@@ -42,6 +42,17 @@ describe('<MessageList />', () => {
     expect(screen.getByText('sure thing')).toBeInTheDocument()
   })
 
+  it('merges assistant_delta chunks into one bubble', () => {
+    const events: AgentEvent[] = [
+      { kind: 'assistant_delta', text: 'hel', step: 1 },
+      { kind: 'assistant_delta', text: 'lo', step: 1 },
+      { kind: 'assistant_message', text: 'hello', step: 1 },
+    ]
+    render(<MessageList history={[]} events={events} />)
+    expect(screen.getByText('hello')).toBeInTheDocument()
+    expect(screen.queryAllByText('hel')).toHaveLength(0)
+  })
+
   it('pairs tool_call with tool_result by tool_call_id and shows ok status', async () => {
     const events: AgentEvent[] = [
       {

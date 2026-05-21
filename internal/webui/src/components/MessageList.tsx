@@ -75,6 +75,31 @@ function HistoryBubble({ msg }: { msg: Message }) {
 interface RenderItem {
   key: string
   node: JSX.Element
+  /** True while assistant text is still streaming (assistant_delta). */
+  streaming?: boolean
+  streamText?: string
+}
+
+function appendAssistantText(items: RenderItem[], key: string, chunk: string) {
+  const last = items[items.length - 1]
+  if (last?.streaming) {
+    last.streamText = (last.streamText ?? '') + chunk
+    last.node = <AssistantBubble text={last.streamText} />
+    return
+  }
+  items.push({
+    key,
+    streaming: true,
+    streamText: chunk,
+    node: <AssistantBubble text={chunk} />,
+  })
+}
+
+function finalizeStreamingAssistant(items: RenderItem[]) {
+  const last = items[items.length - 1]
+  if (last?.streaming) {
+    last.streaming = false
+  }
 }
 
 function buildEventItems(events: AgentEvent[]): RenderItem[] {
@@ -120,9 +145,29 @@ function buildEventItems(events: AgentEvent[]): RenderItem[] {
       })
       return
     }
-    if (ev.kind === 'assistant_message' || ev.kind === 'final') {
+    if (ev.kind === 'assistant_delta') {
+      const delta = ev.text ?? ''
+      if (!delta) return
+      appendAssistantText(items, `ev-${i}`, delta)
+      return
+    }
+    if (ev.kind === 'final') {
+      finalizeStreamingAssistant(items)
+      return
+    }
+    if (ev.kind === 'assistant_message') {
       const text = ev.text ?? ''
-      if (!text) return
+      if (!text) {
+        finalizeStreamingAssistant(items)
+        return
+      }
+      const last = items[items.length - 1]
+      if (last?.streaming) {
+        last.streamText = text
+        last.node = <AssistantBubble text={text} />
+        last.streaming = false
+        return
+      }
       items.push({
         key: `ev-${i}`,
         node: <AssistantBubble text={text} />,

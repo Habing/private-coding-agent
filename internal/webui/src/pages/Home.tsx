@@ -6,7 +6,8 @@ import { ApiError, api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import type { CreateSessionRequest, Session, SessionListResponse } from '@/types/api'
 
-const DEFAULT_MODEL = 'default-mock:gpt-4o'
+// provider:model — dashscope from migration 0012; requires DASHSCOPE_API_KEY in compose .env
+const DEFAULT_MODEL = 'dashscope:qwen3.6-plus'
 
 export function Home() {
   const navigate = useNavigate()
