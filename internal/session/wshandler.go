@@ -246,7 +246,10 @@ func (w *wsConn) readLoop(ctx context.Context, tid, uid, sid uuid.UUID, svc WSSe
 			// disconnects (which cancel ctx and abort SendMessage).
 			go func(content string) {
 				defer w.release()
-				w.handleUserMessage(ctx, tid, uid, sid, content, svc)
+				// Do not cancel the agent run when the client disconnects mid-stream;
+				// persistence must complete even if the websocket writer fails.
+				runCtx := context.WithoutCancel(ctx)
+				w.handleUserMessage(runCtx, tid, uid, sid, content, svc)
 			}(f.Content)
 		default:
 			w.writeClose(websocket.CloseUnsupportedData, "unknown_frame_type")

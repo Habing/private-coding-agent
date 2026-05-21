@@ -39,6 +39,7 @@ type RunInput struct {
 type EventKind string
 
 const (
+	EventAssistantDelta   EventKind = "assistant_delta"   // incremental text chunk while LLM streams
 	EventAssistantMessage EventKind = "assistant_message"
 	EventToolCall         EventKind = "tool_call"
 	EventToolResult       EventKind = "tool_result"

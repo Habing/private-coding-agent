@@ -51,7 +51,7 @@ func chat(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	if req.Stream {
-		streamChat(w, req.Model)
+		streamChat(w, req.Model, req.Messages)
 		return
 	}
 
@@ -161,7 +161,37 @@ func extractSandbox(s string) string {
 	return ""
 }
 
-func streamChat(w http.ResponseWriter, model string) {
+// streamTextDeltas emits content chunks that concatenate to text exactly.
+func streamTextDeltas(send func(map[string]any), model, text string) {
+	switch text {
+	case "hello from mock":
+		for _, c := range []string{"hello ", "from ", "mock"} {
+			send(map[string]any{
+				"id": "mock-1", "object": "chat.completion.chunk", "model": model,
+				"choices": []map[string]any{{"index": 0,
+					"delta": map[string]any{"content": c}}},
+			})
+		}
+		return
+	case "skill-marker-ok", "done":
+		send(map[string]any{
+			"id": "mock-1", "object": "chat.completion.chunk", "model": model,
+			"choices": []map[string]any{{"index": 0,
+				"delta": map[string]any{"content": text}}},
+		})
+		return
+	default:
+		if text != "" {
+			send(map[string]any{
+				"id": "mock-1", "object": "chat.completion.chunk", "model": model,
+				"choices": []map[string]any{{"index": 0,
+					"delta": map[string]any{"content": text}}},
+			})
+		}
+	}
+}
+
+func streamChat(w http.ResponseWriter, model string, msgs []mockMessage) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	fl := w.(http.Flusher)
 	send := func(payload map[string]any) {
@@ -169,19 +199,50 @@ func streamChat(w http.ResponseWriter, model string) {
 		_, _ = fmt.Fprintf(w, "data: %s\n\n", b)
 		fl.Flush()
 	}
+
+	var last mockMessage
+	if n := len(msgs); n > 0 {
+		last = msgs[n-1]
+	}
+
 	send(map[string]any{
 		"id": "mock-1", "object": "chat.completion.chunk", "model": model,
 		"choices": []map[string]any{{"index": 0,
 			"delta": map[string]any{"role": "assistant"}}},
 	})
-	for _, c := range []string{"hello ", "from ", "mock"} {
+
+	var text string
+	var finish string
+	var toolName, toolArgs, toolID string
+
+	switch {
+	case hasSkillMarker(msgs):
+		text, finish = "skill-marker-ok", "stop"
+	case last.Role == "tool":
+		text, finish = "done", "stop"
+	case last.Role == "user" && containsAny(strings.ToLower(last.Content), "list", "ls"):
+		path := extractSandbox(last.Content)
+		toolID, toolName = "call_mock_1", "fs.list"
+		toolArgs = fmt.Sprintf(`{"sandbox_id":%q,"path":"/workspace"}`, path)
+		finish = "tool_calls"
+	default:
+		text, finish = "hello from mock", "stop"
+	}
+
+	if finish == "tool_calls" {
 		send(map[string]any{
 			"id": "mock-1", "object": "chat.completion.chunk", "model": model,
-			"choices": []map[string]any{{"index": 0,
-				"delta": map[string]any{"content": c}}},
+			"choices": []map[string]any{{"index": 0, "delta": map[string]any{
+				"tool_calls": []map[string]any{{
+					"index": 0, "id": toolID, "type": "function",
+					"function": map[string]any{"name": toolName, "arguments": toolArgs},
+				}},
+			}}},
 		})
+	} else {
+		streamTextDeltas(send, model, text)
 	}
-	finish := "stop"
+
 	send(map[string]any{
 		"id": "mock-1", "object": "chat.completion.chunk", "model": model,
 		"choices": []map[string]any{{"index": 0,

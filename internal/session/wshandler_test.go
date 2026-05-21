@@ -200,20 +200,23 @@ func TestWS_Archived_WritesErrorFrame(t *testing.T) {
 	require.Equal(t, "archived", got["code"])
 }
 
-func TestWS_ClientDisconnect_CancelsEngine(t *testing.T) {
+func TestWS_ClientDisconnect_RunStillCompletes(t *testing.T) {
 	sid := uuid.New()
-	released := make(chan struct{}, 1)
+	done := make(chan struct{}, 1)
 	svc := &mockWSSvc{
 		getSessFn: func(_ context.Context, tid, uid, _ uuid.UUID) (*session.Session, error) {
 			return &session.Session{ID: sid, TenantID: tid, OwnerUserID: uid, Status: session.StatusActive}, nil
 		},
 		sendFn: func(ctx context.Context, _, _, _ uuid.UUID, _ string, on func(agent.Event) error) error {
-			// Push one event so the client knows we're alive.
 			_ = on(agent.Event{Kind: agent.EventAssistantMessage, Step: 1, Text: "..."})
-			// Block until ctx is cancelled by the connection closing.
-			<-ctx.Done()
-			released <- struct{}{}
-			return ctx.Err()
+			// Simulate a short LLM run that must finish even if the client disconnects.
+			select {
+			case <-time.After(200 * time.Millisecond):
+				done <- struct{}{}
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		},
 	}
 	base, tok, _ := newWSServer(t, svc)
@@ -224,12 +227,12 @@ func TestWS_ClientDisconnect_CancelsEngine(t *testing.T) {
 	require.NoError(t, c.ReadJSON(&got))
 	require.Equal(t, `"event"`, string(got["type"]))
 
-	// Close the connection; server should cancel ctx in SendMessage.
+	// Close the client early; SendMessage uses WithoutCancel and should still finish.
 	_ = c.Close()
 	select {
-	case <-released:
+	case <-done:
 	case <-time.After(3 * time.Second):
-		t.Fatal("engine ctx not cancelled within 3s")
+		t.Fatal("SendMessage did not complete after client disconnect")
 	}
 }
 

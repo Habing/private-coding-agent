@@ -33,6 +33,7 @@ type ChatMessage struct {
 
 // ToolCall 是 OpenAI tool calling 格式。
 type ToolCall struct {
+	Index    int          `json:"index,omitempty"` // stream deltas only
 	ID       string       `json:"id"`
 	Type     string       `json:"type"`
 	Function ToolCallFunc `json:"function"`
@@ -111,8 +112,9 @@ type ChatStreamDelta struct {
 }
 
 type EmbeddingsRequest struct {
-	Model string   `json:"model"`
-	Input []string `json:"input"`
+	Model      string   `json:"model"`
+	Input      []string `json:"input"`
+	Dimensions *int     `json:"dimensions,omitempty"` // OpenAI / DashScope optional output width
 }
 
 type Embedding struct {

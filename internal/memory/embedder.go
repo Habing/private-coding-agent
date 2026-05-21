@@ -53,9 +53,11 @@ func (g *GatewayEmbedder) Embed(ctx context.Context, inputs []string) ([][]float
 	if cl == nil {
 		return nil, fmt.Errorf("embed: missing auth context")
 	}
+	dim := EmbeddingDim
 	resp, err := g.gw.Embeddings(ctx, cl.TenantID, cl.UserID, modelgw.EmbeddingsRequest{
-		Model: g.model,
-		Input: inputs,
+		Model:      g.model,
+		Input:      inputs,
+		Dimensions: &dim,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("embed: %w", err)

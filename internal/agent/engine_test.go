@@ -38,6 +38,50 @@ func (m *mockGateway) ChatCompletion(_ context.Context, _, _ uuid.UUID,
 	return resp, err
 }
 
+func (m *mockGateway) ChatCompletionStream(_ context.Context, _, _ uuid.UUID,
+	req modelgw.ChatRequest, yield func(modelgw.ChatStreamChunk) error) error {
+	resp, err := m.ChatCompletion(context.Background(), uuid.Nil, uuid.Nil, req)
+	if err != nil {
+		return err
+	}
+	if resp == nil || len(resp.Choices) == 0 {
+		return errors.New("mockGateway: empty choices")
+	}
+	msg := resp.Choices[0].Message
+	fr := resp.Choices[0].FinishReason
+	const chunkSize = 3
+	runes := []rune(msg.Content)
+	for i := 0; i < len(runes); i += chunkSize {
+		end := i + chunkSize
+		if end > len(runes) {
+			end = len(runes)
+		}
+		if err := yield(modelgw.ChatStreamChunk{
+			Choices: []modelgw.ChatStreamChoice{{
+				Delta: modelgw.ChatStreamDelta{Content: string(runes[i:end])},
+			}},
+		}); err != nil {
+			return err
+		}
+	}
+	if len(msg.ToolCalls) > 0 {
+		if err := yield(modelgw.ChatStreamChunk{
+			Choices: []modelgw.ChatStreamChoice{{
+				Delta:        modelgw.ChatStreamDelta{ToolCalls: msg.ToolCalls},
+				FinishReason: &fr,
+			}},
+		}); err != nil {
+			return err
+		}
+		return nil
+	}
+	return yield(modelgw.ChatStreamChunk{
+		Choices: []modelgw.ChatStreamChoice{{
+			FinishReason: &fr,
+		}},
+	})
+}
+
 // mockBus returns canned outputs keyed by tool name.
 type mockBus struct {
 	tools   []toolbus.ToolDef
@@ -127,10 +171,30 @@ func TestEngine_DirectFinal(t *testing.T) {
 	events, err := runEngine(t, gw, bus, newRunInput("hi"))
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(events), 2)
-	require.Equal(t, agent.EventAssistantMessage, events[0].Kind)
+	require.Contains(t, eventKinds(events), agent.EventAssistantDelta)
 	require.Equal(t, agent.EventFinal, events[len(events)-1].Kind)
 	require.Equal(t, "hi back", events[len(events)-1].Text)
 	require.Equal(t, "stop", events[len(events)-1].FinishReason)
+	var streamed strings.Builder
+	for _, ev := range events {
+		if ev.Kind == agent.EventAssistantDelta {
+			streamed.WriteString(ev.Text)
+		}
+	}
+	require.Equal(t, "hi back", streamed.String())
+}
+
+func TestEngine_StreamYieldsDeltas(t *testing.T) {
+	gw := &mockGateway{responses: []*modelgw.ChatResponse{chatStop("abcdef")}}
+	events, err := runEngine(t, gw, &mockBus{}, newRunInput("hi"))
+	require.NoError(t, err)
+	var deltas int
+	for _, ev := range events {
+		if ev.Kind == agent.EventAssistantDelta {
+			deltas++
+		}
+	}
+	require.Greater(t, deltas, 1, "mock stream should split text into multiple deltas")
 }
 
 func TestEngine_SingleToolCall(t *testing.T) {
@@ -145,13 +209,11 @@ func TestEngine_SingleToolCall(t *testing.T) {
 	events, err := runEngine(t, gw, bus, newRunInput("read a.txt"))
 	require.NoError(t, err)
 	kinds := eventKinds(events)
-	require.Equal(t, []agent.EventKind{
-		agent.EventAssistantMessage,
-		agent.EventToolCall,
-		agent.EventToolResult,
-		agent.EventAssistantMessage,
-		agent.EventFinal,
-	}, kinds)
+	require.Equal(t, agent.EventAssistantMessage, kinds[0])
+	require.Equal(t, agent.EventToolCall, kinds[1])
+	require.Equal(t, agent.EventToolResult, kinds[2])
+	require.Contains(t, kinds, agent.EventAssistantDelta)
+	require.Equal(t, agent.EventFinal, kinds[len(kinds)-1])
 	require.Equal(t, "fs.read", events[1].ToolName)
 	require.JSONEq(t, `{"content":"hello"}`, string(events[2].ToolOutput))
 

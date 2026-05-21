@@ -26,6 +26,8 @@ var tracer trace.Tracer = otel.Tracer("internal/agent")
 type Gateway interface {
 	ChatCompletion(ctx context.Context, tenantID, userID uuid.UUID,
 		req modelgw.ChatRequest) (*modelgw.ChatResponse, error)
+	ChatCompletionStream(ctx context.Context, tenantID, userID uuid.UUID,
+		req modelgw.ChatRequest, yield func(modelgw.ChatStreamChunk) error) error
 }
 
 // Bus is the subset of *toolbus.Bus the Engine depends on.
@@ -147,7 +149,20 @@ func (e *Engine) Run(ctx context.Context, in RunInput, yield func(Event) error) 
 			Messages: messages,
 			Tools:    modelTools,
 		}
-		resp, err := e.gw.ChatCompletion(stepCtx, in.TenantID, in.UserID, req)
+		var accum streamAccum
+		err := e.gw.ChatCompletionStream(stepCtx, in.TenantID, in.UserID, req,
+			func(chunk modelgw.ChatStreamChunk) error {
+				if delta := accum.apply(chunk); delta != "" {
+					if err := yield(Event{
+						Kind: EventAssistantDelta,
+						Step: step,
+						Text: delta,
+					}); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
 		if err != nil {
 			_ = yield(Event{Kind: EventError, Step: step, Text: err.Error(), FinishReason: "llm_error"})
 			stepSpan.RecordError(err)
@@ -155,27 +170,24 @@ func (e *Engine) Run(ctx context.Context, in RunInput, yield func(Event) error) 
 			stepSpan.End()
 			return fmt.Errorf("%w: %v", ErrLLMFailed, err)
 		}
-		if len(resp.Choices) == 0 {
-			_ = yield(Event{Kind: EventError, Step: step, Text: "empty choices", FinishReason: "llm_error"})
-			stepSpan.SetStatus(codes.Error, "empty choices")
-			stepSpan.End()
-			return ErrLLMFailed
+		assistant := accum.message()
+		finishReason := accum.finishReason
+		if finishReason == "" {
+			finishReason = "stop"
 		}
-		choice := resp.Choices[0]
-		assistant := choice.Message
-		stepSpan.SetAttributes(attribute.String("agent.finish_reason", choice.FinishReason))
+		stepSpan.SetAttributes(attribute.String("agent.finish_reason", finishReason))
 		if err := yield(Event{
 			Kind:         EventAssistantMessage,
 			Step:         step,
 			Text:         assistant.Content,
 			ToolCalls:    assistant.ToolCalls,
-			FinishReason: choice.FinishReason,
+			FinishReason: finishReason,
 		}); err != nil {
 			stepSpan.End()
 			return err
 		}
 
-		if choice.FinishReason == "tool_calls" && len(assistant.ToolCalls) > 0 {
+		if finishReason == "tool_calls" && len(assistant.ToolCalls) > 0 {
 			messages = append(messages, assistant)
 			for _, call := range assistant.ToolCalls {
 				messages = append(messages, e.runToolCall(stepCtx, in, step, call, allowed, yield))
@@ -188,7 +200,7 @@ func (e *Engine) Run(ctx context.Context, in RunInput, yield func(Event) error) 
 			Kind:         EventFinal,
 			Step:         step,
 			Text:         assistant.Content,
-			FinishReason: choice.FinishReason,
+			FinishReason: finishReason,
 		}); err != nil {
 			stepSpan.End()
 			return err
