@@ -26,7 +26,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("dockertest: %v", err)
 	}
 	res, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "postgres", Tag: "16",
+		Repository: "pgvector/pgvector", Tag: "pg16",
 		Env: []string{"POSTGRES_USER=app", "POSTGRES_PASSWORD=app", "POSTGRES_DB=app"},
 	}, func(c *docker.HostConfig) {
 		c.AutoRemove = true
@@ -90,7 +90,7 @@ func TestRepo_InsertGetList(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewRepo(pg)
 
-	m, err := repo.Insert(ctx, newMem(t, tid, uid, memory.TypePreference, "user likes Go", []string{"go", "lang"}))
+	m, err := repo.Insert(ctx, newMem(t, tid, uid, memory.TypePreference, "user likes Go", []string{"go", "lang"}), nil)
 	require.NoError(t, err)
 	require.Equal(t, "user likes Go", m.Content)
 	require.Equal(t, []string{"go", "lang"}, m.Tags)
@@ -112,7 +112,7 @@ func TestRepo_GetNotFound_CrossTenant(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewRepo(pg)
 
-	m, err := repo.Insert(ctx, newMem(t, tid, uid, memory.TypeKnowledge, "x", nil))
+	m, err := repo.Insert(ctx, newMem(t, tid, uid, memory.TypeKnowledge, "x", nil), nil)
 	require.NoError(t, err)
 
 	_, err = repo.Get(ctx, uuid.New(), uid, m.ID)
@@ -129,11 +129,11 @@ func TestRepo_List_Filters(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewRepo(pg)
 
-	_, err := repo.Insert(ctx, newMem(t, tid, uid, memory.TypePreference, "prefers tabs", []string{"style"}))
+	_, err := repo.Insert(ctx, newMem(t, tid, uid, memory.TypePreference, "prefers tabs", []string{"style"}), nil)
 	require.NoError(t, err)
-	_, err = repo.Insert(ctx, newMem(t, tid, uid, memory.TypeKnowledge, "uses postgres", []string{"db", "pg"}))
+	_, err = repo.Insert(ctx, newMem(t, tid, uid, memory.TypeKnowledge, "uses postgres", []string{"db", "pg"}), nil)
 	require.NoError(t, err)
-	_, err = repo.Insert(ctx, newMem(t, tid, uid, memory.TypeKnowledge, "loves Go", []string{"go"}))
+	_, err = repo.Insert(ctx, newMem(t, tid, uid, memory.TypeKnowledge, "loves Go", []string{"go"}), nil)
 	require.NoError(t, err)
 
 	byType, err := repo.List(ctx, tid, uid, memory.ListFilter{Type: memory.TypeKnowledge})
@@ -157,7 +157,7 @@ func TestRepo_List_LimitOffset(t *testing.T) {
 	repo := memory.NewRepo(pg)
 
 	for i := 0; i < 5; i++ {
-		_, err := repo.Insert(ctx, newMem(t, tid, uid, memory.TypeKnowledge, fmt.Sprintf("n=%d", i), nil))
+		_, err := repo.Insert(ctx, newMem(t, tid, uid, memory.TypeKnowledge, fmt.Sprintf("n=%d", i), nil), nil)
 		require.NoError(t, err)
 	}
 	list, err := repo.List(ctx, tid, uid, memory.ListFilter{Limit: 2})
@@ -175,23 +175,23 @@ func TestRepo_Update_Partial(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewRepo(pg)
 
-	m, err := repo.Insert(ctx, newMem(t, tid, uid, memory.TypePreference, "orig", []string{"a"}))
+	m, err := repo.Insert(ctx, newMem(t, tid, uid, memory.TypePreference, "orig", []string{"a"}), nil)
 	require.NoError(t, err)
 
 	newContent := "updated"
-	updated, err := repo.Update(ctx, tid, uid, m.ID, memory.UpdateRequest{Content: &newContent})
+	updated, err := repo.Update(ctx, tid, uid, m.ID, memory.UpdateRequest{Content: &newContent}, nil)
 	require.NoError(t, err)
 	require.Equal(t, "updated", updated.Content)
 	require.Equal(t, memory.TypePreference, updated.Type)
 	require.Equal(t, []string{"a"}, updated.Tags)
 
 	// Replace tags with empty slice (TagsSet=true, Tags=nil → clear).
-	cleared, err := repo.Update(ctx, tid, uid, m.ID, memory.UpdateRequest{TagsSet: true})
+	cleared, err := repo.Update(ctx, tid, uid, m.ID, memory.UpdateRequest{TagsSet: true}, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{}, cleared.Tags)
 
 	// Cross-tenant update returns ErrMemoryNotFound.
-	_, err = repo.Update(ctx, uuid.New(), uid, m.ID, memory.UpdateRequest{Content: &newContent})
+	_, err = repo.Update(ctx, uuid.New(), uid, m.ID, memory.UpdateRequest{Content: &newContent}, nil)
 	require.ErrorIs(t, err, memory.ErrMemoryNotFound)
 }
 
@@ -201,7 +201,7 @@ func TestRepo_Delete(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewRepo(pg)
 
-	m, err := repo.Insert(ctx, newMem(t, tid, uid, memory.TypeKnowledge, "x", nil))
+	m, err := repo.Insert(ctx, newMem(t, tid, uid, memory.TypeKnowledge, "x", nil), nil)
 	require.NoError(t, err)
 	require.NoError(t, repo.Delete(ctx, tid, uid, m.ID))
 
@@ -217,26 +217,26 @@ func TestRepo_Search_VariousFilters(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewRepo(pg)
 
-	_, err := repo.Insert(ctx, newMem(t, tid, uid, memory.TypePreference, "user likes Go and tabs", []string{"go", "style"}))
+	_, err := repo.Insert(ctx, newMem(t, tid, uid, memory.TypePreference, "user likes Go and tabs", []string{"go", "style"}), nil)
 	require.NoError(t, err)
-	_, err = repo.Insert(ctx, newMem(t, tid, uid, memory.TypeKnowledge, "uses pgvector for embeddings", []string{"db", "ai"}))
+	_, err = repo.Insert(ctx, newMem(t, tid, uid, memory.TypeKnowledge, "uses pgvector for embeddings", []string{"db", "ai"}), nil)
 	require.NoError(t, err)
-	_, err = repo.Insert(ctx, newMem(t, tid, uid, memory.TypeLesson, "rate limit external APIs", []string{"infra"}))
+	_, err = repo.Insert(ctx, newMem(t, tid, uid, memory.TypeLesson, "rate limit external APIs", []string{"infra"}), nil)
 	require.NoError(t, err)
 
-	byQuery, err := repo.Search(ctx, tid, uid, memory.SearchRequest{Query: "Go"})
+	byQuery, err := repo.SearchKeyword(ctx, tid, uid, memory.SearchRequest{Query: "Go"})
 	require.NoError(t, err)
 	require.Len(t, byQuery, 1)
 
-	byTags, err := repo.Search(ctx, tid, uid, memory.SearchRequest{Tags: []string{"db", "infra"}})
+	byTags, err := repo.SearchKeyword(ctx, tid, uid, memory.SearchRequest{Tags: []string{"db", "infra"}})
 	require.NoError(t, err)
 	require.Len(t, byTags, 2)
 
-	byType, err := repo.Search(ctx, tid, uid, memory.SearchRequest{Type: memory.TypeLesson})
+	byType, err := repo.SearchKeyword(ctx, tid, uid, memory.SearchRequest{Type: memory.TypeLesson})
 	require.NoError(t, err)
 	require.Len(t, byType, 1)
 
-	combined, err := repo.Search(ctx, tid, uid, memory.SearchRequest{Query: "uses", Type: memory.TypeKnowledge})
+	combined, err := repo.SearchKeyword(ctx, tid, uid, memory.SearchRequest{Query: "uses", Type: memory.TypeKnowledge})
 	require.NoError(t, err)
 	require.Len(t, combined, 1)
 }
@@ -247,14 +247,14 @@ func TestRepo_Search_TouchesLastUsedAt(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewRepo(pg)
 
-	m, err := repo.Insert(ctx, newMem(t, tid, uid, memory.TypeKnowledge, "find me", []string{"x"}))
+	m, err := repo.Insert(ctx, newMem(t, tid, uid, memory.TypeKnowledge, "find me", []string{"x"}), nil)
 	require.NoError(t, err)
 	original := m.LastUsedAt
 
 	// Ensure DB clock advances enough to detect the touch.
 	time.Sleep(50 * time.Millisecond)
 
-	hits, err := repo.Search(ctx, tid, uid, memory.SearchRequest{Query: "find"})
+	hits, err := repo.SearchKeyword(ctx, tid, uid, memory.SearchRequest{Query: "find"})
 	require.NoError(t, err)
 	require.Len(t, hits, 1)
 
@@ -270,10 +270,10 @@ func TestRepo_Search_CrossTenant(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewRepo(pg)
 
-	_, err := repo.Insert(ctx, newMem(t, tidA, uidA, memory.TypeKnowledge, "tenant A secret", []string{"a"}))
+	_, err := repo.Insert(ctx, newMem(t, tidA, uidA, memory.TypeKnowledge, "tenant A secret", []string{"a"}), nil)
 	require.NoError(t, err)
 
-	hitsB, err := repo.Search(ctx, tidB, uidA, memory.SearchRequest{Query: "tenant"})
+	hitsB, err := repo.SearchKeyword(ctx, tidB, uidA, memory.SearchRequest{Query: "tenant"})
 	require.NoError(t, err)
 	require.Len(t, hitsB, 0)
 }

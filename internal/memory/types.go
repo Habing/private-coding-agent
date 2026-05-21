@@ -75,12 +75,49 @@ type ListFilter struct {
 }
 
 // SearchRequest is the input to Service.Search / memory.search.
+//
+// Mode picks the retrieval backend:
+//   - ""        → default: vector if Query is non-empty and embedder available,
+//                 else keyword.
+//   - "vector"  → cosine similarity over the `embedding` column; requires
+//                 Query and a configured embedder.
+//   - "keyword" → legacy ILIKE + tag overlap path (slice 7 semantics).
 type SearchRequest struct {
 	Query string   `json:"query,omitempty"`
 	Type  string   `json:"type,omitempty"`
 	Tags  []string `json:"tags,omitempty"`
 	Limit int      `json:"limit,omitempty"`
+	Mode  string   `json:"mode,omitempty"`
 }
+
+// SearchResult pairs a Memory with the cosine similarity score on vector
+// search. Keyword path leaves Score zero (omitted from JSON).
+type SearchResult struct {
+	Memory
+	Score float64 `json:"score,omitempty"`
+}
+
+// MemoryConfig is the runtime config for the memory subsystem. Wired from
+// `memory:` config section / `PCA_MEMORY_*` env.
+type MemoryConfig struct {
+	// EmbeddingModel is the `provider:model` string for the Embedder.
+	EmbeddingModel string
+	// DedupThreshold is the cosine similarity above which a Create call
+	// touches the matching existing row and returns it instead of inserting.
+	// 0.92 by default; 0 disables dedup.
+	DedupThreshold float64
+	// EmbedOnWrite gates the entire vector pipeline. False = behave like
+	// slice 7 (keyword only, no embeddings written or queried). Operational
+	// kill-switch — not the default.
+	EmbedOnWrite bool
+}
+
+// Search mode constants.
+const (
+	SearchModeAuto    = ""
+	SearchModeVector  = "vector"
+	SearchModeKeyword = "keyword"
+)
 
 // DefaultListLimit / MaxListLimit cap List & Search responses.
 const (
