@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -52,9 +52,14 @@ services:
       - "4317:4317"    # OTLP gRPC
 
   prometheus:
-    image: prom/prometheus:v2.51.2
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    # Bake prometheus.yml into a derived image instead of using a bind mount —
+    # Docker Desktop for Windows occasionally fails to share F:\ paths
+    # ("mkdir /run/desktop/mnt/host/f: file exists"), which blocks compose-up.
+    # The image is rebuilt automatically when prometheus.yml changes.
+    build:
+      context: .
+      dockerfile: prometheus.Dockerfile
+    image: pca/prometheus:dev
     ports:
       - "9090:9090"
     depends_on:

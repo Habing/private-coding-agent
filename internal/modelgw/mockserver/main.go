@@ -3,14 +3,21 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 )
+
+// embedDim is the fixed vector width returned by the mock embeddings
+// endpoint. Must match internal/memory.EmbeddingDim and the DB column.
+const embedDim = 1536
 
 func main() {
 	addr := ":8081"
@@ -170,10 +177,10 @@ func embed(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	data := make([]map[string]any, 0, len(req.Input))
-	for i := range req.Input {
+	for i, in := range req.Input {
 		data = append(data, map[string]any{
 			"index": i, "object": "embedding",
-			"embedding": []float64{0.1, 0.2, 0.3},
+			"embedding": deterministicVec(in, embedDim),
 		})
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -181,4 +188,36 @@ func embed(w http.ResponseWriter, r *http.Request) {
 		"object": "list", "data": data, "model": req.Model,
 		"usage": map[string]int{"prompt_tokens": 1, "total_tokens": 1},
 	})
+}
+
+// deterministicVec builds a unit-length float vector seeded by sha256(input).
+// Properties exploited by tests:
+//   - same input always returns the same vector (dedup is testable)
+//   - different inputs produce different vectors (vector ranking is non-trivial)
+//   - L2-normalized → cosine similarity = dot product, bounded in [-1, 1]
+func deterministicVec(s string, dim int) []float64 {
+	out := make([]float64, dim)
+	var sum float64
+	// Repeatedly hash (seed || counter) to fill the slice with 8-byte floats.
+	seed := sha256.Sum256([]byte(s))
+	var ctr uint32
+	for i := 0; i < dim; i++ {
+		var buf [4]byte
+		binary.BigEndian.PutUint32(buf[:], ctr)
+		h := sha256.Sum256(append(seed[:], buf[:]...))
+		// Map first 8 bytes to a float64 in [-1, 1) via uint64 → fraction.
+		u := binary.BigEndian.Uint64(h[:8])
+		f := float64(u)/float64(math.MaxUint64)*2 - 1
+		out[i] = f
+		sum += f * f
+		ctr++
+	}
+	norm := math.Sqrt(sum)
+	if norm == 0 {
+		return out
+	}
+	for i := range out {
+		out[i] /= norm
+	}
+	return out
 }

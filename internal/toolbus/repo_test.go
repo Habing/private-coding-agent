@@ -26,7 +26,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("dockertest: %v", err)
 	}
 	res, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "postgres", Tag: "16",
+		Repository: "pgvector/pgvector", Tag: "pg16",
 		Env: []string{"POSTGRES_USER=app", "POSTGRES_PASSWORD=app", "POSTGRES_DB=app"},
 	}, func(c *docker.HostConfig) {
 		c.AutoRemove = true

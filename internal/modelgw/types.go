@@ -158,7 +158,11 @@ const (
 	MaxEmbeddingInput = 100
 	MaxEmbeddingItem  = 8 * 1024
 	DefaultTimeoutSec = 120
-	MaxProviderBody   = 4 * 1024
+	// MaxProviderBody caps each upstream provider response. A single 1536-d
+	// embedding JSON-encodes to ~33 KB, so a batch of MaxEmbeddingInput (100)
+	// can approach ~3.3 MB. 8 MB leaves comfortable headroom for both
+	// embeddings batches and long-context chat completions.
+	MaxProviderBody = 8 * 1024 * 1024
 	StreamIdleTimeout = 60 * time.Second
 	MaxStreamSeconds  = 600 * time.Second
 )
