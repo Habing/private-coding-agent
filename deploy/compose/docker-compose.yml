@@ -87,6 +87,8 @@ services:
       PCA_OBSERVABILITY_METRICS_TOKEN: ${PCA_OBSERVABILITY_METRICS_TOKEN}
       PCA_OBSERVABILITY_LOG_FORMAT: ${PCA_OBSERVABILITY_LOG_FORMAT}
       PCA_OBSERVABILITY_LOG_LEVEL: ${PCA_OBSERVABILITY_LOG_LEVEL}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      PCA_MEMORY_EMBEDDING_MODEL: ${PCA_MEMORY_EMBEDDING_MODEL:-dashscope:text-embedding-v4}
       DOCKER_HOST: "unix:///var/run/docker.sock"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

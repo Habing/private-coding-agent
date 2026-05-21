@@ -35,8 +35,9 @@ skills:
   # Reserved for a future fs-watch-based hot reload. No-op today.
   hot_reload: false
 memory:
-  # provider:model passed through to the model gateway for memory embeddings.
-  # default-mock:text is the dev / compose default; prod must override.
+  # provider:model for memory embeddings (1536-d via dimensions param).
+  # Compose with DASHSCOPE_API_KEY: dashscope:text-embedding-v4
+  # Offline / E2E: default-mock:text
   embedding_model: "default-mock:text"
   # cosine-similarity cut-off above which Create deduplicates against an
   # existing memory (touches last_used_at, returns existing id). 0 disables.
