@@ -5,13 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/yourorg/private-coding-agent/internal/audit"
+	pcametrics "github.com/yourorg/private-coding-agent/internal/metrics"
 	"github.com/yourorg/private-coding-agent/internal/modelgw"
 	"github.com/yourorg/private-coding-agent/internal/toolbus"
 )
@@ -36,18 +40,34 @@ type Engine struct {
 	gw             Gateway
 	bus            Bus
 	profiles       map[string]Profile
+	composer       ContextComposer
+	auditSink      audit.Sink
 	maxOutputBytes int
 }
 
 // NewEngine wires the engine. profiles must contain at least one entry; the
 // "coding" profile is used as the default when RunInput.ProfileName is empty.
-func NewEngine(gw Gateway, bus Bus, profiles map[string]Profile) *Engine {
+// composer composes the system-layer prefix; pass NoopComposer{} to preserve
+// pre-Slice-12 behavior.
+func NewEngine(gw Gateway, bus Bus, profiles map[string]Profile, composer ContextComposer) *Engine {
+	if composer == nil {
+		composer = NoopComposer{}
+	}
 	return &Engine{
 		gw:             gw,
 		bus:            bus,
 		profiles:       profiles,
+		composer:       composer,
 		maxOutputBytes: DefaultMaxToolOutputBytes,
 	}
+}
+
+// WithAuditSink wires an audit.Sink so the engine records skill.inject
+// entries on Runs that produce a non-empty Skill set. Returns the receiver
+// for chaining.
+func (e *Engine) WithAuditSink(sink audit.Sink) *Engine {
+	e.auditSink = sink
+	return e
 }
 
 // Run drives the ReAct loop. Each event is emitted via yield(); if yield returns
@@ -87,14 +107,27 @@ func (e *Engine) Run(ctx context.Context, in RunInput, yield func(Event) error) 
 		runSpan.End()
 	}()
 
-	// Build conversation: system prompt first, then caller-provided messages.
-	messages := make([]modelgw.ChatMessage, 0, len(in.Messages)+1)
-	if profile.SystemPrompt != "" {
-		messages = append(messages, modelgw.ChatMessage{
-			Role:    modelgw.RoleSystem,
-			Content: profile.SystemPrompt,
-		})
+	// Build conversation: composer-built system prefix, then caller messages.
+	sysMsgs, meta, err := e.composer.ComposeSystem(ctx, ComposeInput{
+		TenantID:        in.TenantID,
+		UserID:          in.UserID,
+		Profile:         profile,
+		RunSkillIDs:     in.SkillIDs,
+		SessionSkillIDs: in.SessionSkillIDs,
+	})
+	if err != nil {
+		return fmt.Errorf("compose system: %w", err)
 	}
+	if len(meta.SkillIDs) > 0 {
+		runSpan.SetAttributes(
+			attribute.StringSlice("agent.skill_ids", meta.SkillIDs),
+			attribute.Int("agent.skill_chars", meta.CharCount),
+			attribute.Bool("agent.skill_truncated", meta.Truncated),
+		)
+		e.recordSkillInject(ctx, in, meta)
+	}
+	messages := make([]modelgw.ChatMessage, 0, len(sysMsgs)+len(in.Messages))
+	messages = append(messages, sysMsgs...)
 	messages = append(messages, in.Messages...)
 
 	// Resolve and convert tools once per Run.
@@ -243,6 +276,31 @@ func (e *Engine) runToolCall(ctx context.Context, in RunInput, step int,
 		Name:       name,
 		Content:    string(truncated),
 	}
+}
+
+func (e *Engine) recordSkillInject(ctx context.Context, in RunInput, meta ComposeMeta) {
+	if pcametrics.SkillInjectionsTotal != nil {
+		pcametrics.SkillInjectionsTotal.Add(ctx, 1,
+			metric.WithAttributes(attribute.Bool("truncated", meta.Truncated)))
+	}
+	if pcametrics.SkillInjectedChars != nil {
+		pcametrics.SkillInjectedChars.Record(ctx, int64(meta.CharCount))
+	}
+	if e.auditSink == nil {
+		return
+	}
+	tid := in.TenantID
+	uid := in.UserID
+	audit.Detached(e.auditSink, audit.Entry{
+		OccurredAt: time.Now(),
+		TenantID:   &tid, UserID: &uid,
+		Action: "skill.inject",
+		Metadata: map[string]any{
+			"skill_ids": meta.SkillIDs,
+			"chars":     meta.CharCount,
+			"truncated": meta.Truncated,
+		},
+	}, nil)
 }
 
 func toolErrorMessage(callID, errMsg string) modelgw.ChatMessage {

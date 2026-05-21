@@ -103,7 +103,7 @@ func runEngine(t *testing.T, gw agent.Gateway, bus agent.Bus, in agent.RunInput)
 	if in.ProfileName == "" {
 		in.ProfileName = "coding"
 	}
-	e := agent.NewEngine(gw, bus, defaultProfileMap())
+	e := agent.NewEngine(gw, bus, defaultProfileMap(), agent.NoopComposer{})
 	var events []agent.Event
 	err := e.Run(context.Background(), in, func(ev agent.Event) error {
 		events = append(events, ev)
@@ -287,7 +287,7 @@ func TestEngine_ToolOutputTruncated(t *testing.T) {
 func TestEngine_EmptyMessages(t *testing.T) {
 	gw := &mockGateway{}
 	bus := &mockBus{}
-	e := agent.NewEngine(gw, bus, defaultProfileMap())
+	e := agent.NewEngine(gw, bus, defaultProfileMap(), agent.NoopComposer{})
 	err := e.Run(context.Background(), agent.RunInput{ProfileName: "coding"}, func(_ agent.Event) error { return nil })
 	require.ErrorIs(t, err, agent.ErrEmptyMessages)
 }
@@ -295,7 +295,7 @@ func TestEngine_EmptyMessages(t *testing.T) {
 func TestEngine_UnknownProfile(t *testing.T) {
 	gw := &mockGateway{}
 	bus := &mockBus{}
-	e := agent.NewEngine(gw, bus, defaultProfileMap())
+	e := agent.NewEngine(gw, bus, defaultProfileMap(), agent.NoopComposer{})
 	in := newRunInput("x")
 	in.ProfileName = "ghost"
 	err := e.Run(context.Background(), in, func(_ agent.Event) error { return nil })

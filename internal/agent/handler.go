@@ -32,6 +32,7 @@ type runRequest struct {
 	Profile  string                `json:"profile"`
 	Messages []modelgw.ChatMessage `json:"messages"`
 	MaxSteps int                   `json:"max_steps"`
+	SkillIDs []string              `json:"skill_ids,omitempty"`
 }
 
 type apiError struct {
@@ -71,6 +72,7 @@ func (h *Handler) run(c *gin.Context) {
 		Messages:    req.Messages,
 		ProfileName: req.Profile,
 		MaxSteps:    req.MaxSteps,
+		SkillIDs:    req.SkillIDs,
 	}
 
 	events := make([]Event, 0, 8)

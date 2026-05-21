@@ -16,5 +16,8 @@ func TestDefaultCodingProfile(t *testing.T) {
 	require.Contains(t, p.ToolAllowlist, "fs.read")
 	require.Contains(t, p.ToolAllowlist, "shell.exec")
 	require.Contains(t, p.ToolAllowlist, "llm.chat")
-	require.Len(t, p.ToolAllowlist, 8)
+	require.Contains(t, p.ToolAllowlist, "memory.save")
+	require.Contains(t, p.ToolAllowlist, "memory.search")
+	require.Len(t, p.ToolAllowlist, 12)
+	require.Equal(t, []string{"platform-coding-standards"}, p.SkillIDs)
 }

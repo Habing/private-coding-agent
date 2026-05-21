@@ -25,6 +25,14 @@ type RunInput struct {
 	Messages    []modelgw.ChatMessage // user/system/assistant; engine prepends system from profile
 	ProfileName string                // looked up in Engine.profiles; empty falls back to "coding"
 	MaxSteps    int                   // 0 -> profile default
+
+	// SkillIDs is an explicit override from the caller (POST /agent/run body).
+	// Wins over SessionSkillIDs and Profile.SkillIDs.
+	SkillIDs []string `json:"skill_ids,omitempty"`
+
+	// SessionSkillIDs is populated by the session service from sessions.skill_ids.
+	// Never bound from JSON; transport-only field.
+	SessionSkillIDs []string `json:"-"`
 }
 
 // EventKind enumerates the event types emitted by Engine.Run.
