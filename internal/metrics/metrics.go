@@ -40,6 +40,9 @@ var (
 	SkillInjectedChars     metric.Int64Histogram
 	ReflectionProposalsTotal metric.Int64Counter
 	OrchestratorRoutesTotal  metric.Int64Counter
+	MCPInvocationsTotal      metric.Int64Counter
+	MCPInvocationDuration    metric.Float64Histogram
+	MCPHeartbeatTotal        metric.Int64Counter
 )
 
 // Init creates all instrument handles against the current global MeterProvider.
@@ -146,6 +149,25 @@ func build(m metric.Meter) error {
 		metric.WithDescription("Orchestration router decisions per agent Run, by outcome (hit|no_match|disabled) and target_type (tool|workflow|sub_agent|skill|empty)."),
 	); err != nil {
 		return wrap("pca_orchestrator_routes_total", err)
+	}
+	if MCPInvocationsTotal, err = m.Int64Counter(
+		"pca_mcp_invocations_total",
+		metric.WithDescription("External MCP tool invocations, by server slug, tool name, and outcome (success|error|tool_error|tenant_mismatch|bad_input)."),
+	); err != nil {
+		return wrap("pca_mcp_invocations_total", err)
+	}
+	if MCPInvocationDuration, err = m.Float64Histogram(
+		"pca_mcp_invocation_duration_seconds",
+		metric.WithDescription("External MCP tools/call duration in seconds, by server slug and tool name."),
+		metric.WithUnit("s"),
+	); err != nil {
+		return wrap("pca_mcp_invocation_duration_seconds", err)
+	}
+	if MCPHeartbeatTotal, err = m.Int64Counter(
+		"pca_mcp_heartbeat_total",
+		metric.WithDescription("External MCP server heartbeat pings, by server slug and outcome (success|fail)."),
+	); err != nil {
+		return wrap("pca_mcp_heartbeat_total", err)
 	}
 	return nil
 }
