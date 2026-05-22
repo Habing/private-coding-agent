@@ -6,7 +6,7 @@
 | 项目根 | `F:\project\private-coding-agent` |
 | Git module | `github.com/yourorg/private-coding-agent` |
 | 当前日期 | 2026-05-22 |
-| 当前 HEAD | `TBD` *(Slice 20 Reflection 全量 push 后回填；E2E 61/61 PASS 目标)* |
+| 当前 HEAD | `abd5071` *(Slice 20 Reflection 全量 push；E2E 61/61 PASS)* |
 | P1 规划 | **已落盘** — [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md) |
 | 工作区状态 | MVP-P1 17 ✅；Full-P1 18 ✅, 19a ✅, 19b ✅, 20 ✅；E2E 61/61 PASS（2026-05-22） |
 | 下一阶段 | **Full P1 切片 21–23**（21 Orchestration + External MCP 起步） |
