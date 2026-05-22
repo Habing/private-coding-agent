@@ -230,11 +230,22 @@ cd deploy/compose
 | 审计 | 5 个 action：`reflection.session.{complete,failed}`、`memory.proposal.{create,approve,reject}`；metric `pca_reflection_proposals_total{outcome=created\|auto_approved\|approved\|rejected\|dropped\|llm_failed}` |
 | Mock 协议 | Reflector 系统 prompt 拼接 `REFLECTION_TASK_V1`；mock-provider 看到该 token 返回固定 JSON 数组 `[{"type":"preference","content":"E2E test prefers golang generics","tags":["golang","e2e"],"confidence":0.5}]`，chat + stream 两路一致 |
 
-### 切片 21 — Orchestration + External MCP
+### 切片 21a — Orchestration Router (Shadow + Hint)
 
 | 项 | 验证 |
 |----|------|
-| L3 增量 | E2E **[62–63]** |
+| L1 | `go test ./internal/orchestrator/... ./internal/agent/... ./internal/config/... ./internal/modelgw/... -count=1` |
+| L2 | `go build ./...`；`go vet ./...` 干净；mock-provider canned 分支无新警告 |
+| L3 增量 | E2E **[62]**：`agent.run` 含 `E2E_ORCHESTRATOR_HINT_V1` → mock 返回 `"orchestrator-hint-ok"`（证明 `ORCHESTRATOR_E2E_HINT_DELIVERED` system msg 注入）；`/audit?action=orchestrator.route` 5–10s 内出现一行 `rule_name=e2e-orchestrator-marker` + `matched=true` |
+| 不变量 | (a) `cfg.Orchestrator.Enabled=false` 时 main.go 不构造 `NewEngine`，`engine.router` 保持 nil，`Route` 整段 short-circuit；(b) 启动期任意 rule `content_regex` 编译失败 → server boot fail-fast；(c) rule `match` 块空（`profile=[]` + `content_regex=""` + `content_contains=""`）→ `NewEngine` 返回 error；(d) 命中规则时 hint 排在 skills/memory system block 之后、用户消息之前（保留 skills 优先级）；(e) `inject_hint=false` 仅 audit + counter，不修改 messages；(f) no_match 也发 audit + counter（`matched=false, outcome=no_match`），便于影子分析；(g) `Engine.Route` 是纯函数（不发 audit / metric），由 `agent.Engine.recordOrchestratorRoute` 统一发送；(h) 规则按 YAML 顺序首匹胜出，未命中且 `default_hint` 非空 → 注入合成 default 规则 |
+| 审计 | 1 个 action：`orchestrator.route`（target=命中规则的 `suggest.target` 或 `""`，metadata `{matched, rule_name, type, matched_on, profile}`）；metric `pca_orchestrator_routes_total{outcome=hit\|no_match\|disabled\|error, target_type=tool\|workflow\|sub_agent\|skill\|""}` |
+| Mock 协议 | mock-provider chat + stream 两路看到任意 system message 含 `ORCHESTRATOR_E2E_HINT_DELIVERED` → 直接返回 final `"orchestrator-hint-ok"`，优先级 0a（早于 reflection 0b）；marker 必须在 system message（user message 不触发） |
+
+### 切片 21b — External MCP Manager（待启动）
+
+| 项 | 验证 |
+|----|------|
+| L3 增量 | E2E **[63]** |
 
 ### 切片 22 — K8s + 生产安全
 
@@ -262,6 +273,7 @@ cd deploy/compose
 | Full P1（含 18） | `./test-e2e.sh` | 1–50（slice 18 完成后） |
 | Full P1（含 19a） | `./test-e2e.sh` | 1–60（slice 19a 完成后） |
 | Full P1（含 20） | `./test-e2e.sh` | 1–61（slice 20 完成后） |
+| Full P1（含 21a） | `./test-e2e.sh` | 1–62（slice 21a 完成后） |
 
 ```powershell
 go test ./... -count=1
@@ -311,7 +323,8 @@ cd deploy/compose
 | 19a | 57–60 |
 | 19b | — (纯前端 + L1/L2，无 E2E 步号) |
 | 20 | 61 |
-| 21 | 62–63 |
+| 21a | 62 |
+| 21b | 63 |
 | 22 | 64+ |
 | 23 | 65+（可选） |
 | **Full P1 全量** | **1–70+** |

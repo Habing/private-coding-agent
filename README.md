@@ -36,7 +36,8 @@
 - [x] 切片 19a：Workflow Engine（YAML DSL + DAG executor + `workflow.<slug>` 注册到 ToolBus + Dry-Run mock mutating tools）
 - [x] 切片 19b：Workflows & Tools Web UI（`/workflows` admin 管理页 + `/toolbox` 工具浏览页 + `GET /tools` 暴露 `mutating` 标志）
 - [x] 切片 20：Reflection Agent（异步 worker + `memory_proposals` 表 + admin 审核 + auto-approve 阈值 + WebUI `/admin/memory-proposals`）
-- [ ] 切片 21：编排路由 + External MCP
+- [x] 切片 21a：Orchestration Router（YAML 规则 + 命中后注入 routing hint system msg + `pca_orchestrator_routes_total` + audit `orchestrator.route`）
+- [ ] 切片 21b：External MCP（mcp_servers 表 + JSON-RPC client + admin 管理页）
 - [ ] 切片 22：K8s Helm + K8sDriver + 安全深化
 - [ ] 切片 23：N8N 集成（可选）
 
@@ -281,6 +282,47 @@ reflection:
 **Web 入口：** `/admin/memory-proposals`（admin only）— 4 个状态 tab、表格列出 proposal、点 Approve 弹对话框可覆盖 type/content/tags 后再提交，Reject 直接生效。
 
 **v1 不做**：① 服务重启时 in-flight job 丢失（用户重 archive 一次即可，监控 `outcome=dropped`）；② 失败重试队列；③ proposal TTL 自动 reject；④ 普通用户自审视图（仅 admin）。outbox / Redis stream 是 P2 议题。
+
+## Orchestration Router
+
+Slice 21a 在 Agent Engine 的 ReAct 循环之前插了一个**轻量规则引擎**：每次 `agent.Engine.Run` 启动时拿最近一条 user 消息 + profile name 跑一遍配置里的规则；命中则把 `suggest.hint` 作为 system message 注入到 skills/memory 之后、user 历史之前 —— LLM 看得到，但**ReAct 自己决定是否采纳**（shadow + hint，不强路由）。
+
+**关键点：**
+
+- **规则在 YAML 不在 DB**：`orchestrator.rules` 段一行一规则，启动期编译 regex；非法 regex / 空 match 块 → 启动失败（与 reflection 阈值非法同位）。
+- **总是 audit + 计 metric**：命中或未命中都发一行 `orchestrator.route` + 增计 `pca_orchestrator_routes_total{outcome,target_type}`，便于 shadow 期统计覆盖率与误报率。
+- **三档输入控制**：`enabled: false` 完全短路（不构造引擎、不发 audit）；`inject_hint: false` 仍计算 Decision + audit + metric，但不写 system msg（纯 shadow 模式）；`default_hint: ""` 非空则在所有规则未命中时作为兜底 hint 注入。
+- **不验证 target 真实存在**：rule 可以提前编排尚未发布的 workflow / 不存在的 profile，避免循环依赖。
+- **不消耗 ReAct 步数**：规则引擎是纯函数，不调 LLM、不发 HTTP，P95 < 50 µs。
+
+**Rule schema**（`config.example.yaml`）：
+
+```yaml
+orchestrator:
+  enabled: true
+  inject_hint: true
+  default_hint: ""
+  rules:
+    - name: code-review-suggest
+      match:
+        profile: ["coding"]              # 留空 = 不限 profile
+        content_regex: "(?i)code review|审查"
+        # content_contains: "..."        # 也可以；regex 与 contains 任一命中即可
+      suggest:
+        type: workflow                   # tool | workflow | sub_agent | skill
+        target: code-review              # 工具名 / workflow slug / profile 名
+        hint: |
+          Routing hint: this looks like a code review task. Consider
+          invoking workflow.code-review if published, or delegate to
+          agent.delegate(profile="review", ...).
+```
+
+env override：`PCA_ORCHESTRATOR_ENABLED` / `PCA_ORCHESTRATOR_INJECT_HINT`（规则只走 YAML）。
+
+**Audit 单 action：** `orchestrator.route`（target=`suggest.target` 或空；metadata `matched / rule_name / type / matched_on / profile`）。  
+**Metric：** `pca_orchestrator_routes_total{outcome=hit|no_match, target_type=tool|workflow|sub_agent|skill|""}`。
+
+**21a 不做**：① 强路由 / bypass ReAct（v2+ 议题）；② ML / embedding-based routing（P2+）；③ 路由器自己 invoke workflow / 强制选 skill（仅注入提示）；④ WebUI 路由器配置页（v1 走 YAML）；⑤ 外部 MCP（拆到 21b）。
 
 ## Agent Skills
 
