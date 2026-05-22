@@ -32,7 +32,7 @@
 
 #### Full P1 — 切片 18～23
 
-- [ ] 切片 18：Sub-Agents + `agent.delegate`
+- [x] 切片 18：Sub-Agents + `agent.delegate`（review / research / workflow-authoring profile + 父子 Agent 协作）
 - [ ] 切片 19：Workflow Engine
 - [ ] 切片 20：Reflection Agent
 - [ ] 切片 21：编排路由 + External MCP
@@ -75,7 +75,7 @@ curl http://localhost:8080/healthz
 
 ```powershell
 cd deploy\compose
-./test-e2e.sh    # Git Bash / WSL，推荐（48 步全量；含切片 13–16）
+./test-e2e.sh    # Git Bash / WSL，推荐（50 步全量；含切片 13–18）
 # pwsh ./test-e2e.ps1   # 仅覆盖早期切片，完整验收请用 .sh
 ```
 
@@ -105,6 +105,7 @@ P0 Gate：**E2E 1～42**；切片 13 起增量 **43～48**（quota+logout / sess
 | GET | /tools | Bearer | 列出 12 个 internal tools |
 | POST | /tools/invoke | Bearer | 调用 tool |
 | POST | /agent/run | Bearer | ReAct 循环,返回 events 数组 (非流式) |
+| GET  | /agent/profiles | Bearer | 列出可用 Profile（name + description） |
 | POST | /sessions | Bearer | 创建会话 |
 | GET  | /sessions | Bearer | 列出当前用户会话 |
 | GET  | /sessions/{id} | Bearer | 查询会话 |
@@ -123,13 +124,37 @@ P0 Gate：**E2E 1～42**；切片 13 起增量 **43～48**（quota+logout / sess
 
 ## 内部 MCP 工具
 
-8 个基础工具 + 4 个记忆工具 = 12 个（通过 `GET /tools` 列出）：
+8 个基础工具 + 4 个记忆工具 + 1 个 sub-agent 委派 = 13 个（通过 `GET /tools` 列出）：
 
 - `fs.read / fs.write / fs.list / fs.glob` 沙箱内文件读写
 - `grep` 沙箱内全文搜索
 - `shell.exec` 沙箱内执行命令
 - `llm.chat / llm.embed` 调 Model Gateway
 - `memory.save / memory.search / memory.list / memory.delete` 持久化记忆（User scope）
+- `agent.delegate` 委派子 Run 给另一个 Profile（仅 coding profile 持有；详见「Sub-Agents 与 Profile」）
+
+## Sub-Agents 与 Profile
+
+Slice 18 把"单 Profile"扩成"父子 Agent + 多 Profile 协作"。
+
+**4 个内置 Profile**（`GET /agent/profiles` 列出）：
+
+| Profile | 工具白名单 | 用途 |
+|---------|-----------|------|
+| `coding` | 全 12 个基础/记忆工具 + `agent.delegate` | 默认；可写沙箱、可委派 |
+| `review` | fs.read / fs.list / fs.glob / grep / memory.search / memory.list / llm.chat | 只读评审，不改沙箱 |
+| `research` | llm.chat / llm.embed / memory.{search,list,save} | 资料检索 + 记忆沉淀，不碰沙箱 |
+| `workflow-authoring` | llm.chat / memory.search / fs.read / fs.glob / grep | Slice 19 SKILL.md 作者助手（预热接入） |
+
+**`agent.delegate` 工具**：input `{profile, task, max_steps?}`；父 Run 一次调用，子 Run 跑完返回 `{result, sub_steps, status, sub_tool_calls}`。
+
+不变量：
+- 子 Run **继承父会话的 sandbox_id**（通过 `internal/agent.RunCtx` 经 ctx 透传，不靠 LLM 推断）
+- 递归深度上限 = **1**（ctx 计数 + 子 Profile 白名单不含 `agent.delegate`，双保险）
+- 子 Run 的 `assistant_delta / tool_call / tool_result` **不外泄**到父客户端流；父客户端只看到 delegate 的 `tool_call` + `tool_result`
+- 子 Run 强制继承父 TenantID/UserID/Model；配额走原 quota 中间件自然兜底
+- 审计：`agent.delegate.start` + `agent.delegate.complete`（含 `parent_profile / sub_profile / sub_steps / status / duration_ms`）
+- OTel：子 `agent.run` span 自动嵌套在父 `tool.invoke{tool=agent.delegate}` span 下
 
 ## 记忆子系统
 

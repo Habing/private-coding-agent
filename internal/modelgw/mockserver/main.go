@@ -55,37 +55,93 @@ func chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Simple state machine: look at the last message in the conversation.
-	var last mockMessage
-	if n := len(req.Messages); n > 0 {
-		last = req.Messages[n-1]
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 
-	// Skills E2E hooks: a literal marker in any system message proves the
-	// SkillComposer injected the body into the run. The tenant marker is
-	// distinct so the e2e suite can tell DB skills apart from FS skills.
-	if hasTenantSkillMarker(req.Messages) {
-		writeFinal(w, req.Model, "tenant-skill-marker-ok")
+	resp := pickDeterministicResponse(req.Messages)
+	if resp.kind == "tool_call" {
+		writeToolCall(w, req.Model, resp.callID, resp.toolName, resp.toolArgs)
 		return
 	}
-	if hasSkillMarker(req.Messages) {
-		writeFinal(w, req.Model, "skill-marker-ok")
-		return
+	writeFinal(w, req.Model, resp.text)
+}
+
+// mockResponse is the canned reaction produced by pickDeterministicResponse.
+// Either kind == "final" with text, or kind == "tool_call" with toolName +
+// toolArgs (+ callID).
+type mockResponse struct {
+	kind     string // "final" or "tool_call"
+	text     string
+	toolName string
+	toolArgs string
+	callID   string
+}
+
+// pickDeterministicResponse centralises mock-provider dispatch. New markers
+// (skills, tenant skills, delegate parent/sub …) plug in here so the chat
+// and streamChat code paths stay in lockstep.
+//
+// Priority (highest to lowest):
+//  1. tenant-skill marker — DB-backed skill round-trip.
+//  2. delegate sub marker — set on the review profile's system prompt; signals
+//     "this Run is the child of an agent.delegate". Returns the canonical
+//     final string the E2E suite asserts on.
+//  3. delegate parent marker — token in the user message; first turn returns
+//     a tool_call for agent.delegate(review,…); after the tool result comes
+//     back, returns the parent's final answer that includes the sub result.
+//  4. skill marker — FS skill round-trip.
+//  5. last message is a tool observation — "done" final.
+//  6. last user message asks to list workspace — fs.list tool_call.
+//  7. fallback: "hello from mock" final.
+func pickDeterministicResponse(msgs []mockMessage) mockResponse {
+	var last mockMessage
+	if n := len(msgs); n > 0 {
+		last = msgs[n-1]
+	}
+
+	if hasTenantSkillMarker(msgs) {
+		return mockResponse{kind: "final", text: "tenant-skill-marker-ok"}
+	}
+	// Sub-Run check runs BEFORE tool-message check: a child Run will only
+	// ever see system + user messages on its first call (the parent's tool
+	// observation lives in the parent's history, not the child's), so this
+	// ordering is safe — and protects us if a future change ever surfaces
+	// tool messages into the child somehow.
+	if hasDelegateSubMarker(msgs) {
+		return mockResponse{kind: "final", text: "delegate-sub-marker-ok"}
+	}
+	if hasDelegateParentMarker(msgs) {
+		// Second turn: the role=tool observation is back, time to finalise.
+		if hasToolMessage(msgs) {
+			return mockResponse{
+				kind: "final",
+				text: "delegate-parent-final: " + summariseDelegateResult(msgs),
+			}
+		}
+		// First turn: emit a tool_call asking the review profile to look it over.
+		return mockResponse{
+			kind:     "tool_call",
+			callID:   "call_delegate_1",
+			toolName: "agent.delegate",
+			toolArgs: `{"profile":"review","task":"E2E delegate sub-task — please review"}`,
+		}
+	}
+	if hasSkillMarker(msgs) {
+		return mockResponse{kind: "final", text: "skill-marker-ok"}
 	}
 
 	switch {
 	case last.Role == "tool":
-		// We've already executed a tool — return a final answer.
-		writeFinal(w, req.Model, "done")
+		return mockResponse{kind: "final", text: "done"}
 	case last.Role == "user" && containsAny(strings.ToLower(last.Content), "list", "ls", "files", "workspace"):
-		// User asked to list — issue a fs.list tool_call (sandbox from system inject or message).
-		path := sandboxIDFromMessages(req.Messages)
-		writeToolCall(w, req.Model, "call_mock_1", "fs.list",
-			fmt.Sprintf(`{"sandbox_id":%q,"path":"/workspace"}`, path))
+		path := sandboxIDFromMessages(msgs)
+		return mockResponse{
+			kind:     "tool_call",
+			callID:   "call_mock_1",
+			toolName: "fs.list",
+			toolArgs: fmt.Sprintf(`{"sandbox_id":%q,"path":"/workspace"}`, path),
+		}
 	default:
-		writeFinal(w, req.Model, "hello from mock")
+		return mockResponse{kind: "final", text: "hello from mock"}
 	}
 }
 
@@ -140,6 +196,16 @@ const skillMarker = "E2E_SKILL_MARKER_V1"
 // DB row (and not just a stale FS skill).
 const tenantSkillMarker = "E2E_TENANT_SKILL_V1"
 
+// delegateParentMarker rides on the user message that kicks off a delegate
+// chain in E2E step 50. Triggers a tool_call agent.delegate(...) on the
+// parent's first turn.
+const delegateParentMarker = "E2E_DELEGATE_PARENT_V1"
+
+// delegateSubMarker is embedded in the review profile's system prompt so the
+// child Run (which never sees the parent's user message) can still be
+// identified and produce the canonical sub-final string.
+const delegateSubMarker = "E2E_DELEGATE_SUB_V1"
+
 func hasSkillMarker(msgs []mockMessage) bool {
 	for _, m := range msgs {
 		if m.Role == "system" && strings.Contains(m.Content, skillMarker) {
@@ -156,6 +222,47 @@ func hasTenantSkillMarker(msgs []mockMessage) bool {
 		}
 	}
 	return false
+}
+
+func hasDelegateParentMarker(msgs []mockMessage) bool {
+	for _, m := range msgs {
+		if m.Role == "user" && strings.Contains(m.Content, delegateParentMarker) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasDelegateSubMarker(msgs []mockMessage) bool {
+	for _, m := range msgs {
+		if m.Role == "system" && strings.Contains(m.Content, delegateSubMarker) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasToolMessage(msgs []mockMessage) bool {
+	for _, m := range msgs {
+		if m.Role == "tool" {
+			return true
+		}
+	}
+	return false
+}
+
+// summariseDelegateResult extracts the embedded sub-final string from the
+// tool observation. The delegate tool returns JSON like
+// {"result":"delegate-sub-marker-ok",...}; rather than parse it, we just look
+// for the canonical sub-marker and echo it back so the E2E assertion has a
+// single string to match. Falls back to a fixed placeholder.
+func summariseDelegateResult(msgs []mockMessage) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == "tool" && strings.Contains(msgs[i].Content, "delegate-sub-marker-ok") {
+			return "delegate-sub-marker-ok"
+		}
+	}
+	return "ok"
 }
 
 func containsAny(s string, subs ...string) bool {
@@ -206,9 +313,13 @@ func extractSandbox(s string) string {
 }
 
 // streamTextDeltas emits content chunks that concatenate to text exactly.
+// "hello from mock" is split into a few chunks to exercise the streaming code
+// path; everything else is emitted as a single chunk for simplicity.
 func streamTextDeltas(send func(map[string]any), model, text string) {
-	switch text {
-	case "hello from mock":
+	if text == "" {
+		return
+	}
+	if text == "hello from mock" {
 		for _, c := range []string{"hello ", "from ", "mock"} {
 			send(map[string]any{
 				"id": "mock-1", "object": "chat.completion.chunk", "model": model,
@@ -217,22 +328,12 @@ func streamTextDeltas(send func(map[string]any), model, text string) {
 			})
 		}
 		return
-	case "skill-marker-ok", "tenant-skill-marker-ok", "done":
-		send(map[string]any{
-			"id": "mock-1", "object": "chat.completion.chunk", "model": model,
-			"choices": []map[string]any{{"index": 0,
-				"delta": map[string]any{"content": text}}},
-		})
-		return
-	default:
-		if text != "" {
-			send(map[string]any{
-				"id": "mock-1", "object": "chat.completion.chunk", "model": model,
-				"choices": []map[string]any{{"index": 0,
-					"delta": map[string]any{"content": text}}},
-			})
-		}
 	}
+	send(map[string]any{
+		"id": "mock-1", "object": "chat.completion.chunk", "model": model,
+		"choices": []map[string]any{{"index": 0,
+			"delta": map[string]any{"content": text}}},
+	})
 }
 
 func streamChat(w http.ResponseWriter, model string, msgs []mockMessage) {
@@ -244,49 +345,28 @@ func streamChat(w http.ResponseWriter, model string, msgs []mockMessage) {
 		fl.Flush()
 	}
 
-	var last mockMessage
-	if n := len(msgs); n > 0 {
-		last = msgs[n-1]
-	}
-
 	send(map[string]any{
 		"id": "mock-1", "object": "chat.completion.chunk", "model": model,
 		"choices": []map[string]any{{"index": 0,
 			"delta": map[string]any{"role": "assistant"}}},
 	})
 
-	var text string
+	resp := pickDeterministicResponse(msgs)
 	var finish string
-	var toolName, toolArgs, toolID string
-
-	switch {
-	case hasTenantSkillMarker(msgs):
-		text, finish = "tenant-skill-marker-ok", "stop"
-	case hasSkillMarker(msgs):
-		text, finish = "skill-marker-ok", "stop"
-	case last.Role == "tool":
-		text, finish = "done", "stop"
-	case last.Role == "user" && containsAny(strings.ToLower(last.Content), "list", "ls", "files", "workspace"):
-		path := sandboxIDFromMessages(msgs)
-		toolID, toolName = "call_mock_1", "fs.list"
-		toolArgs = fmt.Sprintf(`{"sandbox_id":%q,"path":"/workspace"}`, path)
+	if resp.kind == "tool_call" {
 		finish = "tool_calls"
-	default:
-		text, finish = "hello from mock", "stop"
-	}
-
-	if finish == "tool_calls" {
 		send(map[string]any{
 			"id": "mock-1", "object": "chat.completion.chunk", "model": model,
 			"choices": []map[string]any{{"index": 0, "delta": map[string]any{
 				"tool_calls": []map[string]any{{
-					"index": 0, "id": toolID, "type": "function",
-					"function": map[string]any{"name": toolName, "arguments": toolArgs},
+					"index": 0, "id": resp.callID, "type": "function",
+					"function": map[string]any{"name": resp.toolName, "arguments": resp.toolArgs},
 				}},
 			}}},
 		})
 	} else {
-		streamTextDeltas(send, model, text)
+		finish = "stop"
+		streamTextDeltas(send, model, resp.text)
 	}
 
 	send(map[string]any{

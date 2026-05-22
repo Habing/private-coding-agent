@@ -5,11 +5,11 @@
 | 项目名 | Private Coding Agent — 私有化部署的 AI 编码 Agent 平台 |
 | 项目根 | `F:\project\private-coding-agent` |
 | Git module | `github.com/yourorg/private-coding-agent` |
-| 当前日期 | 2026-05-21 |
-| 当前 HEAD | `bd21e6d` (Gate G1 收口；流式 Agent + DashScope + 会话标题 + E2E 重入幂等 全部 push) |
+| 当前日期 | 2026-05-22 |
+| 当前 HEAD | `bd21e6d` *(Slice 18 commits 待 push — 提交后回填)* |
 | P1 规划 | **已落盘** — [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md) |
-| 工作区状态 | 干净；`main` 与 `origin/main` 同步；**Gate G1–G4 全部清零** |
-| 下一阶段 | **MVP-P1 切片 13～17** → **Full P1 切片 18～23** |
+| 工作区状态 | Slice 18 已实现待 commit；MVP-P1 17 ✅；Full-P1 18 ✅ |
+| 下一阶段 | **Full P1 切片 19–23**（19 Workflow Engine 起步） |
 
 ---
 
@@ -158,7 +158,7 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 
 | 切片 | 状态 | E2E | 说明 |
 |------|------|-----|------|
-| 18 Sub-Agents + delegate | ⬜ | 56 | |
+| 18 Sub-Agents + delegate | ✅ | 50 | review/research/workflow-authoring profile + `agent.delegate` + ctx-based RunCtx |
 | 19 Workflow Engine | ⬜ | 57–60 | 可拆 19a/19b |
 | 20 Reflection | ⬜ | 61 | |
 | 21 Orchestration + External MCP | ⬜ | 62–63 | |
@@ -212,34 +212,35 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 - 首次跑 dockertest 启 PG ~10-20s（pgvector 镜像比 postgres:16-alpine 大 ~130MB，首次 pull 慢一些）
 - 全包测试（不带 docker_integration tag）~25-60s
 - 全包测试 + docker_integration ~3-5 分钟
-- E2E（49 步含切片 13–17；MVP-P1 完成版）~3-8 分钟（首次 build 镜像更久）
+- E2E（50 步含切片 13–18；Full-P1 进行中）~3-8 分钟（首次 build 镜像更久）
 
 ---
 
 ## 5. 下一步建议
 
-### 5.1 立即（Slice 17 启动前自检）
+### 5.1 立即（Slice 19 启动前自检）
 
 ```bash
 cd F:/project/private-coding-agent
 go test ./... -count=1
 go vet ./...
-cd deploy/compose && ./test-e2e.sh   # 期望 48/48 E2E PASS
+cd deploy/compose && ./test-e2e.sh   # 期望 50/50 E2E PASS（含切片 18 delegate 链路）
 ```
 
-### 5.2 MVP-P1 实施顺序
+### 5.2 已完成
 
 1. ~~**Slice 13** — Foundation~~ ✅
 2. ~~**Slice 14** — Session↔Sandbox~~ ✅
 3. ~~**Slice 15** — OIDC~~ ✅
 4. ~~**Slice 16** — Enterprise Web~~ ✅
-5. **Slice 17** — Skills 12b
+5. ~~**Slice 17** — Skills 12b~~ ✅（MVP-P1 收口）
+6. ~~**Slice 18** — Sub-Agents + delegate~~ ✅（Full-P1 起步）
 
 每切片：读 plan → 实现 → 更新 `SLICE-VERIFICATION.md` + E2E 步号 → README 勾选。
 
-### 5.3 Full P1（MVP 完成后）
+### 5.3 Full P1 剩余
 
-按 [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md)：**18 → 19 → 20 → 21**；**22** 视交付压力可提前；**23** 可选。
+按 [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md)：**19 → 20 → 21**；**22** 视交付压力可提前；**23** 可选。Slice 18 已铺好 `workflow-authoring` profile + `agent.delegate` 钩子，Slice 19 接入 Workflow 时无需再改 Profile 注册表。
 
 ### 5.3 已知"未做"的设计决策（留给后续）
 

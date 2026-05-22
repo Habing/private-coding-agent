@@ -194,7 +194,10 @@ cd deploy/compose
 
 | 项 | 验证 |
 |----|------|
-| L3 增量 | E2E **[56]**：`agent.delegate` 回灌 |
+| L1 | `go test ./internal/agent/... -count=1`（含 `TestDelegateTool_*`、`TestRunCtx*`、`TestHandler_ListProfiles_*`） |
+| L2 | `cd internal/webui && npm run build`（Home 页 profile 下拉） |
+| L3 增量 | E2E **[50]**：`GET /agent/profiles` 4 项；`agent.run` 用 `E2E_DELEGATE_PARENT_V1` 触发 `agent.delegate` → review 子 Run → `delegate-parent-final: delegate-sub-marker-ok`；audit 含 `agent.delegate.start` + `agent.delegate.complete`（含 `sub_profile=review`） |
+| 不变量 | coding profile 工具列表含 `agent.delegate`；review/research/workflow-authoring 都**不含** `agent.delegate`；MaxDelegateDepth=1（ctx 计数 + 子 profile 白名单双保险） |
 
 ### 切片 19 — Workflow Engine
 
@@ -236,8 +239,8 @@ cd deploy/compose
 | 里程碑 | 命令 | E2E 步号 |
 |--------|------|----------|
 | P0 / Gate | `./test-e2e.sh` | 1–42 |
-| MVP-P1 | `./test-e2e.sh` | 1–55 |
-| Full P1 | `./test-e2e.sh` | 1–70+ |
+| MVP-P1 | `./test-e2e.sh` | 1–49 |
+| Full P1（含 18） | `./test-e2e.sh` | 1–50（slice 18 完成后） |
 
 ```powershell
 go test ./... -count=1
