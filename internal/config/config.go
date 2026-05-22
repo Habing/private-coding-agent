@@ -25,6 +25,37 @@ type Config struct {
 	Quota         QuotaConfig         `mapstructure:"quota"`
 	RateLimit     RateLimitConfig     `mapstructure:"rate_limit"`
 	Reflection    ReflectionConfig    `mapstructure:"reflection"`
+	Orchestrator  OrchestratorConfig  `mapstructure:"orchestrator"`
+}
+
+// OrchestratorConfig drives Slice 21a's pre-Run routing pass. Enabled=false
+// causes main.go to skip engine construction entirely (no audit, no metric).
+// Rules live in YAML; env vars only toggle the two booleans + default_hint.
+type OrchestratorConfig struct {
+	Enabled     bool                    `mapstructure:"enabled"`
+	InjectHint  bool                    `mapstructure:"inject_hint"`
+	DefaultHint string                  `mapstructure:"default_hint"`
+	Rules       []OrchestratorRuleConfig `mapstructure:"rules"`
+}
+
+// OrchestratorRuleConfig mirrors orchestrator.Rule for YAML binding. Kept in
+// internal/config so internal/orchestrator stays import-free of viper.
+type OrchestratorRuleConfig struct {
+	Name    string                        `mapstructure:"name"`
+	Match   OrchestratorRuleMatchConfig   `mapstructure:"match"`
+	Suggest OrchestratorRuleSuggestConfig `mapstructure:"suggest"`
+}
+
+type OrchestratorRuleMatchConfig struct {
+	Profile         []string `mapstructure:"profile"`
+	ContentRegex    string   `mapstructure:"content_regex"`
+	ContentContains string   `mapstructure:"content_contains"`
+}
+
+type OrchestratorRuleSuggestConfig struct {
+	Type   string `mapstructure:"type"`
+	Target string `mapstructure:"target"`
+	Hint   string `mapstructure:"hint"`
 }
 
 // ReflectionConfig drives the Reflection Agent (slice 20). Enabled=false skips

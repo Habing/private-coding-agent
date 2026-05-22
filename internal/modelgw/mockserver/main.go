@@ -81,8 +81,11 @@ type mockResponse struct {
 // and streamChat code paths stay in lockstep.
 //
 // Priority (highest to lowest):
-//  0. reflection marker — set on the Reflector's system prompt; returns a
-//     canned JSON array so the worker has something deterministic to parse.
+//  0a. orchestrator hint marker — set on a system message by Slice 21a's
+//      router. Returns a canned final so the E2E suite can prove the hint
+//      made it from the rule engine into the LLM prompt.
+//  0b. reflection marker — set on the Reflector's system prompt; returns a
+//      canned JSON array so the worker has something deterministic to parse.
 //  1. tenant-skill marker — DB-backed skill round-trip.
 //  2. delegate sub marker — set on the review profile's system prompt; signals
 //     "this Run is the child of an agent.delegate". Returns the canonical
@@ -100,6 +103,9 @@ func pickDeterministicResponse(msgs []mockMessage) mockResponse {
 		last = msgs[n-1]
 	}
 
+	if hasOrchestratorHint(msgs) {
+		return mockResponse{kind: "final", text: "orchestrator-hint-ok"}
+	}
 	if hasReflectionMarker(msgs) {
 		return mockResponse{
 			kind: "final",
@@ -234,6 +240,20 @@ const workflowMarker = "E2E_WORKFLOW_V1"
 // sync with reflection.ReflectionMarker (we can't import the package — this
 // is the leaf binary).
 const reflectionMarker = "REFLECTION_TASK_V1"
+
+// orchestratorHintMarker is the literal substring Slice 21a's rule engine
+// embeds in the routing hint system message for E2E step 62. Coupled to the
+// hint text in deploy/compose/docker-compose.yml's orchestrator rules YAML.
+const orchestratorHintMarker = "ORCHESTRATOR_E2E_HINT_DELIVERED"
+
+func hasOrchestratorHint(msgs []mockMessage) bool {
+	for _, m := range msgs {
+		if m.Role == "system" && strings.Contains(m.Content, orchestratorHintMarker) {
+			return true
+		}
+	}
+	return false
+}
 
 func hasReflectionMarker(msgs []mockMessage) bool {
 	for _, m := range msgs {

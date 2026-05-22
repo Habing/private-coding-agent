@@ -39,6 +39,7 @@ var (
 	SkillInjectionsTotal   metric.Int64Counter
 	SkillInjectedChars     metric.Int64Histogram
 	ReflectionProposalsTotal metric.Int64Counter
+	OrchestratorRoutesTotal  metric.Int64Counter
 )
 
 // Init creates all instrument handles against the current global MeterProvider.
@@ -139,6 +140,12 @@ func build(m metric.Meter) error {
 		metric.WithDescription("Memory proposals emitted by the Reflection worker, by outcome (created|auto_approved|approved|rejected|dropped|llm_failed)."),
 	); err != nil {
 		return wrap("pca_reflection_proposals_total", err)
+	}
+	if OrchestratorRoutesTotal, err = m.Int64Counter(
+		"pca_orchestrator_routes_total",
+		metric.WithDescription("Orchestration router decisions per agent Run, by outcome (hit|no_match|disabled) and target_type (tool|workflow|sub_agent|skill|empty)."),
+	); err != nil {
+		return wrap("pca_orchestrator_routes_total", err)
 	}
 	return nil
 }

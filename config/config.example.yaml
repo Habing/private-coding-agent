@@ -106,3 +106,46 @@ reflection:
   worker_buffer: 256
   # Per-job timeout (LLM call + persist).
   worker_timeout: 5m
+
+orchestrator:
+  # Slice 21a: pre-Run routing pass. Inspects the latest user message and
+  # may inject a "routing hint" system message before the LLM sees the prompt.
+  # ReAct still decides whether to act on the hint — this is shadow + hint,
+  # not a hard router. enabled=false skips engine construction entirely.
+  enabled: true
+  # When true, hint text is appended as a system message between skills and
+  # the user history. When false, the engine still computes the Decision and
+  # emits audit + metric, but no hint reaches the LLM (pure-shadow mode for
+  # production rollout / A-B comparison).
+  inject_hint: true
+  # If non-empty AND no rule matched, this hint is injected as if a synthetic
+  # rule named "default" had fired. Leave empty to skip on no_match.
+  default_hint: ""
+  rules:
+    - name: e2e-orchestrator-marker
+      match:
+        content_contains: "E2E_ORCHESTRATOR_HINT_V1"
+      suggest:
+        type: tool
+        target: fs.list
+        hint: "ORCHESTRATOR_E2E_HINT_DELIVERED: E2E orchestrator router fired."
+    # Production examples — uncomment / extend as needed.
+    # - name: code-review-suggest
+    #   match:
+    #     profile: ["coding"]
+    #     content_regex: "(?i)code review|审查|review this"
+    #   suggest:
+    #     type: workflow
+    #     target: code-review
+    #     hint: |
+    #       Routing hint: this looks like a code review task. Consider
+    #       invoking workflow.code-review if published, or delegate to
+    #       agent.delegate(profile="review", ...).
+    # - name: research-route
+    #   match:
+    #     profile: ["coding"]
+    #     content_regex: "(?i)research|gather (info|sources)"
+    #   suggest:
+    #     type: sub_agent
+    #     target: research
+    #     hint: "Routing hint: research-heavy task — agent.delegate(profile=\"research\", task=...) may help."

@@ -31,6 +31,7 @@ import (
 	"github.com/yourorg/private-coding-agent/internal/memory"
 	"github.com/yourorg/private-coding-agent/internal/metrics"
 	"github.com/yourorg/private-coding-agent/internal/modelgw"
+	"github.com/yourorg/private-coding-agent/internal/orchestrator"
 	"github.com/yourorg/private-coding-agent/internal/quota"
 	"github.com/yourorg/private-coding-agent/internal/reflection"
 	"github.com/yourorg/private-coding-agent/internal/sandbox"
@@ -260,6 +261,28 @@ func run() error {
 	sessionWSHandler.WithAuditSink(auditRepo)
 	toolBus.WithAuditSink(auditRepo)
 	agentEngine.WithAuditSink(auditRepo)
+
+	// Slice 21a — Orchestration Router. Build the rule engine eagerly so a
+	// bad regex / empty match block fails the server boot rather than
+	// surfacing per-request. router=nil → engine short-circuits to a zero
+	// Decision and emits no audit / metric.
+	if cfg.Orchestrator.Enabled {
+		routerCfg := orchestrator.Config{
+			Enabled:     cfg.Orchestrator.Enabled,
+			InjectHint:  cfg.Orchestrator.InjectHint,
+			DefaultHint: cfg.Orchestrator.DefaultHint,
+			Rules:       toOrchestratorRules(cfg.Orchestrator.Rules),
+		}
+		routerEng, err := orchestrator.NewEngine(routerCfg)
+		if err != nil {
+			return fmt.Errorf("orchestrator: %w", err)
+		}
+		agentEngine.WithRouter(routerEng)
+		slog.Info("orchestrator router enabled",
+			"inject_hint", cfg.Orchestrator.InjectHint,
+			"rules", len(cfg.Orchestrator.Rules))
+	}
+
 	// Slice 18: late-register agent.delegate now that both the engine and
 	// the audit sink are available. The tool needs an *Engine reference (for
 	// child Run dispatch) and a sink (for delegate.{start,complete} events),
@@ -497,4 +520,28 @@ func (a *reflectionMemoryAdapter) CreateForReflection(ctx context.Context,
 		return uuid.Nil, false, err
 	}
 	return res.Memory.ID, !res.Created, nil
+}
+
+// toOrchestratorRules converts the config-layer rule structs into the
+// orchestrator package's Rule type. The two packages stay decoupled (config
+// imports skills; orchestrator imports nothing internal) at the cost of this
+// trivial shim.
+func toOrchestratorRules(in []config.OrchestratorRuleConfig) []orchestrator.Rule {
+	out := make([]orchestrator.Rule, 0, len(in))
+	for _, r := range in {
+		out = append(out, orchestrator.Rule{
+			Name: r.Name,
+			Match: orchestrator.RuleMatch{
+				Profile:         r.Match.Profile,
+				ContentRegex:    r.Match.ContentRegex,
+				ContentContains: r.Match.ContentContains,
+			},
+			Suggest: orchestrator.RuleSuggest{
+				Type:   r.Suggest.Type,
+				Target: r.Suggest.Target,
+				Hint:   r.Suggest.Hint,
+			},
+		})
+	}
+	return out
 }

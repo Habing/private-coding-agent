@@ -118,6 +118,11 @@ services:
       # worker's LLM call hits the canned REFLECTION_TASK_V1 branch.
       PCA_REFLECTION_ENABLED: ${PCA_REFLECTION_ENABLED:-true}
       PCA_REFLECTION_MODEL: ${PCA_REFLECTION_MODEL:-default-mock:gpt-4o}
+      # Slice 21a: orchestration router. Rules live in config.yaml (compose
+      # mounts the example); only the on/off + inject toggles are env-driven.
+      # E2E step 62 depends on enabled=true + inject_hint=true.
+      PCA_ORCHESTRATOR_ENABLED: ${PCA_ORCHESTRATOR_ENABLED:-true}
+      PCA_ORCHESTRATOR_INJECT_HINT: ${PCA_ORCHESTRATOR_INJECT_HINT:-true}
       DOCKER_HOST: "unix:///var/run/docker.sock"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

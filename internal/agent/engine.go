@@ -175,10 +175,13 @@ func (e *Engine) Run(ctx context.Context, in RunInput, yield func(Event) error) 
 		e.recordSkillInject(ctx, in, meta)
 	}
 	// Slice 21a: route the Run through the orchestrator (no-op when nil or
-	// disabled). The Decision is computed unconditionally so callers can later
-	// emit audit / metric even on no_match; only injection is gated by
-	// InjectHintEnabled + non-empty Hint.
+	// disabled). Decision is computed unconditionally; audit + metric fire
+	// even on no_match (orchestrator visibility / shadow analysis); only
+	// injection is gated by InjectHintEnabled + non-empty Hint.
 	routeDecision := e.routeIfEnabled(ctx, profileName, in.Messages)
+	if e.router != nil {
+		e.recordOrchestratorRoute(ctx, in, routeDecision)
+	}
 	messages := make([]modelgw.ChatMessage, 0, len(sysMsgs)+len(in.Messages)+2)
 	if in.SandboxID != uuid.Nil {
 		messages = append(messages, modelgw.ChatMessage{
@@ -376,6 +379,39 @@ func lastUserContent(msgs []modelgw.ChatMessage) string {
 		}
 	}
 	return ""
+}
+
+func (e *Engine) recordOrchestratorRoute(ctx context.Context, in RunInput, d orchestrator.Decision) {
+	outcome := "no_match"
+	targetType := ""
+	if d.Matched {
+		outcome = "hit"
+		targetType = d.Type
+	}
+	if pcametrics.OrchestratorRoutesTotal != nil {
+		pcametrics.OrchestratorRoutesTotal.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("outcome", outcome),
+			attribute.String("target_type", targetType),
+		))
+	}
+	if e.auditSink == nil {
+		return
+	}
+	tid := in.TenantID
+	uid := in.UserID
+	audit.Detached(e.auditSink, audit.Entry{
+		OccurredAt: time.Now(),
+		TenantID:   &tid, UserID: &uid,
+		Action: "orchestrator.route",
+		Target: d.Target,
+		Metadata: map[string]any{
+			"matched":    d.Matched,
+			"rule_name":  d.RuleName,
+			"type":       d.Type,
+			"matched_on": d.MatchedOn,
+			"profile":    in.ProfileName,
+		},
+	}, nil)
 }
 
 func (e *Engine) recordSkillInject(ctx context.Context, in RunInput, meta ComposeMeta) {
