@@ -80,6 +80,17 @@ func (b *Bus) Register(t Tool) error {
 	return nil
 }
 
+// Unregister removes a tool from the registry and drops its compiled schema.
+// Workflow Publish/Unpublish path uses this to swap freshly-parsed DSL into
+// the live ToolBus. Returns an error if the name was not registered.
+func (b *Bus) Unregister(name string) error {
+	if err := b.reg.Unregister(name); err != nil {
+		return err
+	}
+	delete(b.schemas, name)
+	return nil
+}
+
 // ListTools returns all registered tools as OpenAI-tool-calling-compatible defs.
 func (b *Bus) ListTools(_ context.Context, _ uuid.UUID) []ToolDef {
 	tools := b.reg.List()

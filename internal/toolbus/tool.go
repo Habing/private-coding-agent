@@ -42,3 +42,27 @@ type ToolDef struct {
 	Description string          `json:"description"`
 	Parameters  json.RawMessage `json:"parameters"`
 }
+
+// Mutating is an optional interface tools implement to flag side-effecting
+// behavior. The Workflow Engine consults this during Dry-Run to short-circuit
+// mutating tools with a mock JSON envelope instead of dispatching them. Tools
+// that do not implement Mutating are treated as non-mutating.
+type Mutating interface {
+	IsMutating() bool
+}
+
+// IsMutating returns true iff the named tool implements Mutating and reports
+// true. Used by Engine to decide whether to invoke or mock during Dry-Run.
+// Unknown tool names return false (the unknown-tool error surfaces later in
+// Bus.Invoke during the real call path).
+func (b *Bus) IsMutating(name string) bool {
+	t, ok := b.reg.Get(name)
+	if !ok {
+		return false
+	}
+	m, ok := t.(Mutating)
+	if !ok {
+		return false
+	}
+	return m.IsMutating()
+}

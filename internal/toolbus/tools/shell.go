@@ -15,7 +15,8 @@ type shellExec struct{ rt Runtime }
 
 func NewShellExec(rt Runtime) toolbus.Tool { return &shellExec{rt: rt} }
 
-func (t *shellExec) Name() string { return "shell.exec" }
+func (t *shellExec) Name() string       { return "shell.exec" }
+func (t *shellExec) IsMutating() bool   { return true }
 func (t *shellExec) Description() string {
 	return "Run a shell command inside the sandbox. Returns exit code, stdout, stderr."
 }

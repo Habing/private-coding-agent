@@ -81,7 +81,8 @@ type fsWrite struct{ rt Runtime }
 
 func NewFSWrite(rt Runtime) toolbus.Tool { return &fsWrite{rt: rt} }
 
-func (t *fsWrite) Name() string { return "fs.write" }
+func (t *fsWrite) Name() string       { return "fs.write" }
+func (t *fsWrite) IsMutating() bool   { return true }
 func (t *fsWrite) Description() string {
 	return "Write content to a file in the sandbox workspace. Creates intermediate directories. Overwrites if exists."
 }

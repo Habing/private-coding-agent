@@ -39,7 +39,8 @@ type memorySave struct{ svc MemoryService }
 
 func NewMemorySave(svc MemoryService) toolbus.Tool { return &memorySave{svc: svc} }
 
-func (t *memorySave) Name() string { return "memory.save" }
+func (t *memorySave) Name() string       { return "memory.save" }
+func (t *memorySave) IsMutating() bool   { return true }
 func (t *memorySave) Description() string {
 	return "Persist a memory entry (profile/preference/knowledge/lesson) for the current user. Returns the new entry's id."
 }
@@ -212,7 +213,8 @@ type memoryDelete struct{ svc MemoryService }
 
 func NewMemoryDelete(svc MemoryService) toolbus.Tool { return &memoryDelete{svc: svc} }
 
-func (t *memoryDelete) Name() string { return "memory.delete" }
+func (t *memoryDelete) Name() string       { return "memory.delete" }
+func (t *memoryDelete) IsMutating() bool   { return true }
 func (t *memoryDelete) Description() string {
 	return "Delete one memory entry by id."
 }

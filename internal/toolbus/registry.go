@@ -28,6 +28,20 @@ func (r *Registry) Register(t Tool) error {
 	return nil
 }
 
+// Unregister removes a tool by name. Returns an error if it was not present
+// so the caller can distinguish "did nothing" from "removed". Workflow
+// Engine's Publish/Unpublish path relies on this to swap a refreshed DSL into
+// the live ToolBus without restarting the server.
+func (r *Registry) Unregister(name string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.tools[name]; !exists {
+		return fmt.Errorf("toolbus: tool %q not registered", name)
+	}
+	delete(r.tools, name)
+	return nil
+}
+
 // Get returns the tool by name (ok=false if missing).
 func (r *Registry) Get(name string) (Tool, bool) {
 	r.mu.RLock()
