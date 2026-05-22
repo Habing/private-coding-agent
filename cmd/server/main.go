@@ -41,6 +41,7 @@ import (
 	"github.com/yourorg/private-coding-agent/internal/toolbus/tools"
 	"github.com/yourorg/private-coding-agent/internal/user"
 	"github.com/yourorg/private-coding-agent/internal/webui"
+	"github.com/yourorg/private-coding-agent/internal/workflow"
 )
 
 func main() {
@@ -266,6 +267,22 @@ func run() error {
 	if err := toolBus.Register(delegateTool); err != nil {
 		return fmt.Errorf("register agent.delegate: %w", err)
 	}
+
+	// Slice 19 — Workflow Engine. Wire repo + engine (backed by the bus
+	// adapter) + service, then re-register every published workflow into the
+	// Bus so process restarts don't drop workflow.<slug> tools.
+	workflowRepo := workflow.NewRepo(pool)
+	workflowEngine := workflow.NewEngine(workflow.BusStepRunner{Bus: toolBus}, workflow.DefaultConfig())
+	workflowService := workflow.NewService(workflowRepo, workflowEngine, toolBus, auditRepo)
+	for _, t := range workflow.NewAdminTools(workflowService) {
+		if err := toolBus.Register(t); err != nil {
+			return fmt.Errorf("register %s: %w", t.Name(), err)
+		}
+	}
+	if err := workflowService.RepublishAll(ctx); err != nil {
+		slog.Warn("workflow: republish on boot", "err", err.Error())
+	}
+
 	auditSvc := audit.NewService(auditRepo)
 	auditHandler := audit.NewHandler(auditSvc, func(c *gin.Context) (uuid.UUID, bool) {
 		cl := auth.FromCtx(c.Request.Context())
@@ -347,6 +364,7 @@ func run() error {
 		if skillDBRepo != nil {
 			skills.NewAdminHandler(skillDBRepo).WithAuditSink(auditRepo).Register(adminGroup)
 		}
+		workflow.NewAdminHandler(workflowService).Register(adminGroup)
 
 		// /metrics — Prometheus exposition. Authenticated via the dual-channel
 		// metrics.Auth middleware: static token bypass (for Prom scrape jobs)

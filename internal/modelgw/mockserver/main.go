@@ -128,6 +128,17 @@ func pickDeterministicResponse(msgs []mockMessage) mockResponse {
 	if hasSkillMarker(msgs) {
 		return mockResponse{kind: "final", text: "skill-marker-ok"}
 	}
+	if hasWorkflowMarker(msgs) {
+		if hasToolMessage(msgs) {
+			return mockResponse{kind: "final", text: "workflow-tool-final: ok"}
+		}
+		return mockResponse{
+			kind:     "tool_call",
+			callID:   "call_workflow_1",
+			toolName: "workflow.e2e-demo",
+			toolArgs: `{"name":"World"}`,
+		}
+	}
 
 	switch {
 	case last.Role == "tool":
@@ -205,6 +216,20 @@ const delegateParentMarker = "E2E_DELEGATE_PARENT_V1"
 // child Run (which never sees the parent's user message) can still be
 // identified and produce the canonical sub-final string.
 const delegateSubMarker = "E2E_DELEGATE_SUB_V1"
+
+// workflowMarker rides on the user message that kicks off the Slice 19 E2E.
+// First turn emits a tool_call workflow.e2e-demo; second turn (after the tool
+// observation) closes out with the canonical final string.
+const workflowMarker = "E2E_WORKFLOW_V1"
+
+func hasWorkflowMarker(msgs []mockMessage) bool {
+	for _, m := range msgs {
+		if m.Role == "user" && strings.Contains(m.Content, workflowMarker) {
+			return true
+		}
+	}
+	return false
+}
 
 func hasSkillMarker(msgs []mockMessage) bool {
 	for _, m := range msgs {

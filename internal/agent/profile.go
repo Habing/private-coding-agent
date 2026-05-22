@@ -32,9 +32,10 @@ func DefaultCodingProfile() Profile {
 			"llm.chat", "llm.embed",
 			"memory.save", "memory.search", "memory.list", "memory.delete",
 			"agent.delegate",
+			"workflow.create", "workflow.update", "workflow.list", "workflow.get",
 		},
 		MaxSteps: 16,
-		SkillIDs: []string{"platform-coding-standards"},
+		SkillIDs: []string{"platform-coding-standards", "workflow-dsl-authoring"},
 	}
 }
 
@@ -86,15 +87,19 @@ func DefaultResearchProfile() Profile {
 func DefaultWorkflowAuthoringProfile() Profile {
 	return Profile{
 		Name:        "workflow-authoring",
-		Description: "Drafts workflow specifications from natural-language requirements (warm-up for Slice 19).",
-		SystemPrompt: "You help users transform natural-language requirements into a SKILL.md-shaped workflow draft. " +
+		Description: "Drafts and persists Workflow Engine DSL from natural-language requirements; cannot publish.",
+		SystemPrompt: "You help users transform natural-language requirements into Workflow Engine YAML DSL. " +
 			"Inspect related files with fs.read / fs.glob / grep, consult memories, and call llm.chat to refine the draft. " +
-			"You cannot modify the sandbox or execute shell commands.",
+			"Persist drafts with workflow.create, modify with workflow.update; inspect existing workflows with workflow.list / workflow.get. " +
+			"You cannot publish, delete, or invoke workflows — those require admin REST so a human stays in the loop. " +
+			"You also cannot modify the sandbox or execute shell commands.",
 		ToolAllowlist: []string{
 			"llm.chat",
 			"memory.search",
 			"fs.read", "fs.glob", "grep",
+			"workflow.create", "workflow.update", "workflow.list", "workflow.get",
 		},
 		MaxSteps: 6,
+		SkillIDs: []string{"workflow-dsl-authoring"},
 	}
 }

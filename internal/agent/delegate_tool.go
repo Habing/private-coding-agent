@@ -65,6 +65,12 @@ const (
 // Name returns the canonical tool identifier.
 func (t *DelegateTool) Name() string { return "agent.delegate" }
 
+// IsMutating reports true because a child Run can dispatch any tool —
+// including mutating ones — and the parent has no static view of which.
+// Conservatively marking the whole delegate path as mutating means workflow
+// Dry-Run short-circuits it with a mock envelope rather than executing.
+func (t *DelegateTool) IsMutating() bool { return true }
+
 // Description is surfaced to the LLM via the Tool Bus list.
 func (t *DelegateTool) Description() string {
 	return "Delegate a subtask to a different Agent Profile (review / research / workflow-authoring). " +

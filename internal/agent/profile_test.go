@@ -20,8 +20,12 @@ func TestDefaultCodingProfile(t *testing.T) {
 	require.Contains(t, p.ToolAllowlist, "memory.save")
 	require.Contains(t, p.ToolAllowlist, "memory.search")
 	require.Contains(t, p.ToolAllowlist, "agent.delegate")
-	require.Len(t, p.ToolAllowlist, 13)
-	require.Equal(t, []string{"platform-coding-standards"}, p.SkillIDs)
+	require.Contains(t, p.ToolAllowlist, "workflow.create")
+	require.Contains(t, p.ToolAllowlist, "workflow.update")
+	require.Contains(t, p.ToolAllowlist, "workflow.list")
+	require.Contains(t, p.ToolAllowlist, "workflow.get")
+	require.Len(t, p.ToolAllowlist, 17)
+	require.Equal(t, []string{"platform-coding-standards", "workflow-dsl-authoring"}, p.SkillIDs)
 }
 
 func TestDefaultReviewProfile(t *testing.T) {
@@ -63,7 +67,12 @@ func TestDefaultWorkflowAuthoringProfile(t *testing.T) {
 	require.Contains(t, p.ToolAllowlist, "memory.search")
 	require.Contains(t, p.ToolAllowlist, "fs.read")
 	require.Contains(t, p.ToolAllowlist, "grep")
+	require.Contains(t, p.ToolAllowlist, "workflow.create")
+	require.Contains(t, p.ToolAllowlist, "workflow.update")
+	require.Contains(t, p.ToolAllowlist, "workflow.list")
+	require.Contains(t, p.ToolAllowlist, "workflow.get")
 	require.NotContains(t, p.ToolAllowlist, "fs.write")
 	require.NotContains(t, p.ToolAllowlist, "shell.exec")
 	require.NotContains(t, p.ToolAllowlist, "agent.delegate")
+	require.Equal(t, []string{"workflow-dsl-authoring"}, p.SkillIDs)
 }
