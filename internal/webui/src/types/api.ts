@@ -200,3 +200,12 @@ export interface ProfileSkillBinding {
   profile: string
   skill_keys: string[]
 }
+
+export interface ProfileInfo {
+  name: string
+  description: string
+}
+
+export interface ProfileListResponse {
+  profiles: ProfileInfo[]
+}
