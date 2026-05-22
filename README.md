@@ -37,7 +37,7 @@
 - [x] 切片 19b：Workflows & Tools Web UI（`/workflows` admin 管理页 + `/toolbox` 工具浏览页 + `GET /tools` 暴露 `mutating` 标志）
 - [x] 切片 20：Reflection Agent（异步 worker + `memory_proposals` 表 + admin 审核 + auto-approve 阈值 + WebUI `/admin/memory-proposals`）
 - [x] 切片 21a：Orchestration Router（YAML 规则 + 命中后注入 routing hint system msg + `pca_orchestrator_routes_total` + audit `orchestrator.route`）
-- [ ] 切片 21b：External MCP（mcp_servers 表 + JSON-RPC client + admin 管理页）
+- [x] 切片 21b：External MCP Manager（`mcp_servers` 表 + 2024-11-05 JSON-RPC client + Manager 心跳 + `mcp.<slug>.<tool>` 注册到 ToolBus + `/admin/mcp-servers` REST + WebUI + mock-mcp 容器）
 - [ ] 切片 22：K8s Helm + K8sDriver + 安全深化
 - [ ] 切片 23：N8N 集成（可选）
 
@@ -323,6 +323,43 @@ env override：`PCA_ORCHESTRATOR_ENABLED` / `PCA_ORCHESTRATOR_INJECT_HINT`（规
 **Metric：** `pca_orchestrator_routes_total{outcome=hit|no_match, target_type=tool|workflow|sub_agent|skill|""}`。
 
 **21a 不做**：① 强路由 / bypass ReAct（v2+ 议题）；② ML / embedding-based routing（P2+）；③ 路由器自己 invoke workflow / 强制选 skill（仅注入提示）；④ WebUI 路由器配置页（v1 走 YAML）；⑤ 外部 MCP（拆到 21b）。
+
+## External MCP Manager（Slice 21b）
+
+Slice 21b 让平台能把**外部** MCP（Model Context Protocol）server 注册进 ToolBus：admin 在 `/admin/mcp-servers` 填一个 HTTP MCP URL + 可选 Bearer + 自定义 header，保存后该 server 暴露的所有 tool 立刻以 `mcp.<slug>.<tool>` 出现在 `GET /tools` 列表和 `agent.run` 的 tool_calls 候选中。Agent 调用 `mcp.<slug>.echo` 透明转发到外部 server 的 `tools/call`，结果原样返给 ReAct。
+
+**关键设计：**
+
+- **完全对齐 MCP 官方 2024-11-05 wire spec**：JSON-RPC 2.0，每次 invoke 走 `initialize → tools/call` 短连接（stateless，简化错误恢复）；`tools/list` 只在显式 refresh 时调，启动期靠 `tools_cache` JSONB 列直接 republish（远端宕机不阻塞启动）。
+- **HTTP-only**：stdio transport 推到 P2（需要进程管理 + 重启策略）。本地 stdio MCP server 可用社区 `mcp-proxy` 转 HTTP 后接入。
+- **静态 Bearer + 自定义 header**：v1 不做 OAuth flow / token 自动旋转；与 `providers.api_key` 同档明文存 DB，API 响应统一 redact 为 `"***"`，audit metadata 只保留 `sha256[:8]` 指纹。
+- **租户隔离 + 防 slug 冲突**：每条 `mcp_servers` 行绑定一个 tenant；`mcpTool.Invoke` 在调用时检查 `runCtx.TenantID == server.TenantID`，跨租户调用直接拒绝（防御性二保险，与 workflow 同款 Unregister-then-Register 占位竞争）。
+- **destructiveHint → IsMutating**：从 `tools/list` 的 `annotations.destructiveHint` 读取；缺省保守为 `true`，前端可显示红色徽标提醒。
+- **心跳与 cache 解耦**：60s 一次 `Ping`（即 initialize）更新 `last_seen_at` / `last_error`，不刷工具列表；admin 点 refresh 才真正 `tools/list` 并重建 Bus prefix `mcp.<slug>.`。
+
+**Admin REST `/admin/mcp-servers`**（admin role + tenant scope）：
+
+| Method | Path | 说明 |
+|--------|------|------|
+| POST | `/admin/mcp-servers` | 创建 + 立即 `Initialize+ListTools+Register` |
+| GET | `/admin/mcp-servers` | 列出（auth_token redact 为 `"***"`） |
+| GET | `/admin/mcp-servers/:id` | 详情 |
+| PUT | `/admin/mcp-servers/:id` | 更新（url/auth 改了 → 重新 Initialize+Register） |
+| DELETE | `/admin/mcp-servers/:id` | 删除 + Bus.Unregister |
+| POST | `/admin/mcp-servers/:id/refresh` | 显式刷新工具 |
+| POST | `/admin/mcp-servers/:id/test` | 仅 Initialize（不写库不动 Bus），body 可覆盖 DB 行用来探测候选 URL |
+| POST | `/admin/mcp-servers/:id/enable` / `/disable` | 切换 enabled + Register/Unregister |
+
+`cfg.MCP.Enabled=false` 时 Manager 不构造，但 AdminHandler 仍挂载（每条路由返回 `503 mcp_disabled`，让 WebUI 区分"关闭"与"故障"）。
+
+**Audit / Metric：**
+
+- 6 个 action：`mcp.admin.{create,update,delete,refresh,enable,disable}` + `mcp.tool.invoke`（target=`mcp.<slug>.<tool>`，metadata `{server_id,latency_ms,error?}`）
+- 3 个 metric：`pca_mcp_invocations_total{server,tool,outcome=success|error|tenant_mismatch}`、`pca_mcp_invocation_duration_seconds{server,tool}`、`pca_mcp_heartbeat_total{server,outcome=success|fail}`
+
+env override：`PCA_MCP_ENABLED` / `PCA_MCP_HEARTBEAT_INTERVAL` / `PCA_MCP_INVOKE_TIMEOUT` / `PCA_MCP_LIST_TOOLS_TIMEOUT`。compose 同时跑 `mock-mcp:8083`（`internal/mcp/mockserver`，单工具 `echo`），E2E 步 63 走完整 register → tools/list → invoke 链路。
+
+**21b 不做**：① stdio transport（推 P2）；② OAuth flow / token 自动旋转；③ MCP `prompts/list` / `resources/list` / `sampling`（只做 tools）；④ WebSocket / 长连接 session（每次 invoke 都重新 initialize）；⑤ 工具粒度授权（v1 = server 级 enabled 开关 + tenant 隔离 + admin only）；⑥ 跨租户共享 server（每条行强绑 tenant）。
 
 ## Agent Skills
 

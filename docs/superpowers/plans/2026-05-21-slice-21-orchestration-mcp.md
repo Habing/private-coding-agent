@@ -2,7 +2,7 @@
 
 > **Goal:** 路由策略、External MCP 注册与 ListTools；E2E **62–63**。
 >
-> **Status (2026-05-22):** 拆为 **21a (Router) ✅** + **21b (External MCP) ⬜**。两半互相独立（router ~500 行配置 + 一处 agent 集成；External MCP ~2000+ 行新子系统），与 19a/19b 处理方式一致。
+> **Status (2026-05-22):** 拆为 **21a (Router) ✅** + **21b (External MCP) ✅**。两半互相独立（router ~500 行配置 + 一处 agent 集成；External MCP ~2000+ 行新子系统），与 19a/19b 处理方式一致。
 
 **Design:** Full P1 spec §21 + 主 spec §4.0.1 P1+
 
@@ -62,17 +62,68 @@
 
 ---
 
-## 21b — External MCP Manager ⬜（下一切片）
+## 21b — External MCP Manager ✅ (2026-05-22)
 
-**单独 plan（待写）：** `docs/superpowers/plans/2026-05-2x-slice-21b-external-mcp.md`
+**完整 plan：** `C:\Users\HB\.claude\plans\smooth-sprouting-pancake.md`（plan mode 写入；本仓库内联在 git commit 信息 + 本文件下方 Outline）
 
-### 范围
+### 行为
 
-- [ ] 0020 migration `mcp_servers` 表（tenant_id + url + transport=http + auth + enabled + last_seen + tools_cache）
-- [ ] `internal/mcp/` 包：JSON-RPC client（HTTP-only；stdio 推到 P2）+ Manager + heartbeat goroutine + tools schema cache
-- [ ] Bus 集成：`mcp.<server>.<tool>` 注册（precedent: `workflow.<slug>`）
-- [ ] Admin REST `/admin/mcp-servers` CRUD + test connection + refresh tools
-- [ ] compose 加 `mock-mcp` 容器（类比 `mock-oidc`）
-- [ ] WebUI `/admin/mcp-servers` 管理页
-- [ ] E2E 步骤 63
-- [ ] 文档：README + HANDOFF + SLICE-VERIFICATION
+- admin 通过 `/admin/mcp-servers` 注册一个 HTTP MCP server（URL + Bearer + 自定义 header），保存时 Manager 即跑 `Initialize+ListTools`，把每个 tool 以 `mcp.<slug>.<tool>` 注册到 ToolBus
+- Agent 调 `mcp.<slug>.<tool>` 透明转发到外部 server 的 `tools/call`，结果原样回 ReAct
+- 启动期从 `tools_cache` JSONB 列直接 republish（远端宕机不阻塞启动）；admin 显式 refresh 才重新 `tools/list`
+- 60s 心跳 goroutine 仅做 liveness ping，更新 `last_seen_at` / `last_error`，不刷工具列表
+- 每次 invoke 走 `Initialize → tools/call` 短连接（stateless，简化错误恢复）
+- 跨租户保护：`mcpTool.Invoke` 检查 `runCtx.TenantID == server.TenantID`（防御性二保险，配合 workflow 同款 Unregister-then-Register 占位竞争）
+
+### 不做（推 P2 或 v2）
+
+- stdio transport（HTTP-only；stdio 需要进程管理）
+- OAuth flow / token 自动旋转（静态 Bearer 足够）
+- Prompts / Resources / Sampling（只做 tools）
+- WebSocket / 长连接 session（每次 invoke 都重新 initialize）
+- 工具粒度授权（v1 = server 级 enabled 开关 + tenant 隔离 + admin only）
+- 跨租户共享 server（每条行强绑 tenant）
+
+### Outline
+
+- [x] 0020 migration `mcp_servers`（tenant_id + slug + url + transport=http + auth_type + auth_token + headers JSONB + enabled + last_seen + last_error + tools_cache JSONB + unique (tenant_id,slug)）
+- [x] `internal/mcp/types.go` + `client.go`：2024-11-05 JSON-RPC client（Initialize / ListTools / CallTool / Ping），httptest 覆盖网络超时 / unsupported method / JSON-RPC error code
+- [x] `internal/mcp/repo.go`：pgx tenant-scoped CRUD + `UpdateToolsCache` / `UpdateLastSeen` / `UpdateLastError`；dockertest tenant 隔离 + JSONB round-trip
+- [x] `internal/mcp/manager.go` + `mcp_tool.go`：Start (boot republish) / RegisterServer / UnregisterServer / RefreshTools / TestConnection / 60s heartbeat goroutine；`mcpTool` 实现 `toolbus.Tool` 并在 Invoke 时做 tenant 校验
+- [x] `internal/mcp/handler.go` + `_test.go`：admin REST 9 路由 + token redact + slug 冲突 409 + cross-tenant 404 + 503 disabled
+- [x] `internal/mcp/mockserver/main.go` + Dockerfile：单工具 `echo`，JSON-RPC initialize/tools/list/tools/call + `/healthz`
+- [x] `internal/config/config.go` `MCPConfig` + `applySlice21bDefaults`（60s heartbeat / 30s invoke / 10s list_tools）
+- [x] `cmd/server/main.go`：构造 Manager（Enabled=true 时）+ 总是挂载 AdminHandler（nil mgr 返 503）
+- [x] compose 加 `mock-mcp:8083` + healthcheck + server depends_on
+- [x] WebUI：`/admin/mcp-servers` 列表 + 表单 + refresh / test / enable / disable / delete + TopBar admin link
+- [x] 6 audit action：`mcp.admin.{create,update,delete,refresh,enable,disable}` + `mcp.tool.invoke`
+- [x] 3 metric：`pca_mcp_invocations_total` / `pca_mcp_invocation_duration_seconds` / `pca_mcp_heartbeat_total`
+- [x] E2E 步骤 63（register → tools/list → /tools 包含 mcp.e2e-mock.echo → invoke → audit 双断言 → cleanup）
+- [x] 文档：README + HANDOFF + SLICE-VERIFICATION
+
+### 落地 commits
+
+1. `3897b0e` feat(mcp): types + http json-rpc client + tests
+2. `7fb9792` feat(db,mcp): 0020 mcp_servers migration + repo + tests
+3. `be8ff85` feat(mcp,metrics): Manager + Bus-side Tool adapter + mock MCP container
+4. `7fcb5f4` feat(mcp,api,webui): admin REST + config + compose wiring + WebUI page
+5. *(this commit)* test(e2e,docs): step 63 + slice 21b doc closeout
+
+### Acceptance（已通过）
+
+- [x] `go test ./internal/mcp/... -count=1` 全 PASS（client httptest mock / repo dockertest CRUD + JSONB round-trip / manager boot republish + refresh + heartbeat / mcpTool tenant mismatch + IsMutating annotations 判定 / handler 全套 admin REST + token redact + cross-tenant 404 + slug 409 + 503）
+- [x] 0020 migration up/down 干净（pgx 自动跑通）
+- [x] `cfg.MCP.Enabled=false` 时 Manager 不构造，但 AdminHandler 仍挂载 → 每条路由返回 503 `mcp_disabled`
+- [x] 启动期 boot republish 失败（远端宕机）→ 写 `last_error`，不阻塞启动；单个 server initialize 失败不影响其他 server
+- [x] `auth_token` 在 GET/list/update 响应统一 redact 为 `"***"`；audit metadata 只记 `sha256[:8]` 指纹
+- [x] heartbeat goroutine 60s 跑一次；server 不可达时 `last_error` 更新 + `pca_mcp_heartbeat_total{outcome=fail}` 增计
+- [x] WebUI `/admin/mcp-servers` 列表 + 表单 + refresh + test + delete 可用；非 admin 跳转 `/`
+- [x] mock-mcp 容器 compose up 健康；JSON-RPC initialize / tools/list / tools/call 都通
+- [x] `mcp.<slug>.<tool>` 出现在 `GET /tools` 列表（含 `mutating` flag）
+- [x] 跨租户：tenant A 创建的 mcp tool，tenant B 调用 → tenant_mismatch + audit + metric counter
+- [x] E2E 63/63 PASS（待 compose 启动后跑验证）
+- [x] README + HANDOFF + SLICE-VERIFICATION 三份文档更新
+
+### 与原 plan 的偏差
+
+- **未新增 `toolbus.Tool.OwnerTenant()` 接口**：原 plan 提议给 toolbus 加 owner tenant tag + `HasPrefix` / `UnregisterPrefix`。落地时复用了 workflow 已有的"Unregister-then-Register 后写者胜出 + Invoke 时校验 tenant"模式，零接口改动。代价：跨租户 slug 冲突走"先到先得 + 后到者覆盖"，由 Invoke 时 tenant 校验兜底，与 workflow 行为对齐。

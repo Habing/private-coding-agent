@@ -241,11 +241,16 @@ cd deploy/compose
 | 审计 | 1 个 action：`orchestrator.route`（target=命中规则的 `suggest.target` 或 `""`，metadata `{matched, rule_name, type, matched_on, profile}`）；metric `pca_orchestrator_routes_total{outcome=hit\|no_match\|disabled\|error, target_type=tool\|workflow\|sub_agent\|skill\|""}` |
 | Mock 协议 | mock-provider chat + stream 两路看到任意 system message 含 `ORCHESTRATOR_E2E_HINT_DELIVERED` → 直接返回 final `"orchestrator-hint-ok"`，优先级 0a（早于 reflection 0b）；marker 必须在 system message（user message 不触发） |
 
-### 切片 21b — External MCP Manager（待启动）
+### 切片 21b — External MCP Manager
 
 | 项 | 验证 |
 |----|------|
-| L3 增量 | E2E **[63]** |
+| L1 | `go test ./internal/mcp/... ./internal/config/... -count=1`（含 client httptest mock、repo dockertest CRUD + tenant 隔离 + tools_cache JSONB round-trip、manager boot republish/refresh/heartbeat/test、mcpTool tenant mismatch + IsMutating annotations 判定、handler 全套 admin REST + token redact + cross-tenant 404 + slug 409 + 503 disabled） |
+| L2 | `go build ./...`；`go vet ./...` 干净；`docker build -f internal/mcp/mockserver/Dockerfile .` 通；`cd internal/webui && npm run build` 干净 |
+| L3 增量 | E2E **[63]**：admin POST `/admin/mcp-servers` slug=`e2e-mock` url=`http://mock-mcp:8083` → `tools_cache>=1`；GET `/tools` 含 `mcp.e2e-mock.echo`；POST `/tools/invoke` tool=`mcp.e2e-mock.echo` input=`{text:"hi"}` → `output.content[0].text == "echo: hi"`；`/audit?action=mcp.admin.create`、`mcp.tool.invoke` 各 ≥1 行；DELETE 收尾保持幂等 |
+| 不变量 | (a) `cfg.MCP.Enabled=false` 时 main.go 不构造 `mcp.NewManager`，但 `AdminHandler` 仍挂载（每条路由返回 503 `mcp_disabled`）；(b) `Manager.Start` boot 期从 `tools_cache` 直接 republish，不调远端 `tools/list`（启动快、远端宕机不阻塞）；(c) 每个 `mcpTool.Invoke` 检查 `runCtx.TenantID == t.tenantID`，跨租户调用直接拒绝（防御性二保险，配合 workflow 同款 Unregister-then-Register 占位竞争）；(d) `auth_token` 在 GET/list/update 响应统一 redact 为 `"***"`；audit metadata 只记 `sha256[:8]` 指纹；(e) `IsMutating()` 读 `Annotations["destructiveHint"]`，缺省保守为 `true`（前端可显示红色徽标）；(f) heartbeat goroutine 60s 一次 `Ping`（即 initialize），失败仅写 `last_error` + counter，不阻塞其他 server；(g) `RefreshTools` 显式触发，更新 `tools_cache` 并重建 Bus prefix `mcp.<slug>.`；`enabled=false` server `RefreshTools` 拒绝 |
+| 审计 | 6 个 action：`mcp.admin.{create,update,delete,refresh,enable,disable}` + `mcp.tool.invoke`；3 个 metric：`pca_mcp_invocations_total{server,tool,outcome}`、`pca_mcp_invocation_duration_seconds{server,tool}`、`pca_mcp_heartbeat_total{server,outcome}` |
+| Mock 协议 | `internal/mcp/mockserver/main.go` 监听 `:8083`，JSON-RPC 接 `initialize`（返回 `protocolVersion=2024-11-05` + 单工具 `echo` 元信息）/ `tools/list`（返 `[{name:"echo",inputSchema:{type:"object",properties:{text:{type:"string"}},required:["text"]}}]`）/ `tools/call`（参数 `arguments.text="hi"` → `{content:[{type:"text",text:"echo: hi"}]}`）；`/healthz` 供 compose `service_healthy` 等待 |
 
 ### 切片 22 — K8s + 生产安全
 
@@ -274,6 +279,7 @@ cd deploy/compose
 | Full P1（含 19a） | `./test-e2e.sh` | 1–60（slice 19a 完成后） |
 | Full P1（含 20） | `./test-e2e.sh` | 1–61（slice 20 完成后） |
 | Full P1（含 21a） | `./test-e2e.sh` | 1–62（slice 21a 完成后） |
+| Full P1（含 21b） | `./test-e2e.sh` | 1–63（slice 21b 完成后） |
 
 ```powershell
 go test ./... -count=1
