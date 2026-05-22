@@ -6,7 +6,7 @@
 | 项目根 | `F:\project\private-coding-agent` |
 | Git module | `github.com/yourorg/private-coding-agent` |
 | 当前日期 | 2026-05-22 |
-| 当前 HEAD | `bd21e6d` *(Slice 18 commits 待 push — 提交后回填)* |
+| 当前 HEAD | `6688b57` *(Slice 18 4 commits 已落地，待 push)* |
 | P1 规划 | **已落盘** — [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md) |
 | 工作区状态 | Slice 18 已实现待 commit；MVP-P1 17 ✅；Full-P1 18 ✅ |
 | 下一阶段 | **Full P1 切片 19–23**（19 Workflow Engine 起步） |
