@@ -859,13 +859,13 @@ REASON=$(echo "$V2" | jq -r .reason)
 [[ "$OK2" == "false" && "$BID" == "$TARGET_ID" && "$REASON" == "entry_hash_mismatch" ]] \
   || { echo "expected broken_id=$TARGET_ID reason=entry_hash_mismatch, got: $V2"; exit 1; }
 
-# (e) restore the original metadata so reruns stay idempotent. We need to
-#     escape single quotes that may appear inside ORIG_META by closing the
-#     outer quoting (postgres tolerates concatenated strings via $$ delim).
-docker compose exec -T postgres psql -U app -d app -v ON_ERROR_STOP=1 \
-  -v meta="$ORIG_META" \
-  -c "UPDATE audit_log SET metadata=:'meta'::jsonb WHERE id=$TARGET_ID" \
-  >/dev/null
+# (e) restore the original metadata so reruns stay idempotent. psql -c does
+#     not expand :'var' variables, so feed the UPDATE via stdin with a
+#     dollar-quoted JSON literal ($e2e$...$e2e$) — JSON never contains the
+#     "$e2e$" marker so no escaping of inner quotes is needed.
+docker compose exec -T postgres psql -U app -d app -v ON_ERROR_STOP=1 >/dev/null <<SQL
+UPDATE audit_log SET metadata=\$e2e\$${ORIG_META}\$e2e\$::jsonb WHERE id=$TARGET_ID;
+SQL
 
 # (f) verify is clean again — confirms the restore matched byte-for-byte and
 #     leaves the chain in a state where subsequent reruns start clean.
