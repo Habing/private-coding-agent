@@ -6,7 +6,7 @@
 | 项目根 | `F:\project\private-coding-agent` |
 | Git module | `github.com/yourorg/private-coding-agent` |
 | 当前日期 | 2026-05-22 |
-| 当前 HEAD | `5462b20` *(Slice 21a Orchestration Router 全量 push；E2E 62/62 PASS)* |
+| 当前 HEAD | `f6ac236` *(Slice 21a Orchestration Router 全量 push；E2E 62/62 PASS)* |
 | P1 规划 | **已落盘** — [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md) |
 | 工作区状态 | MVP-P1 17 ✅；Full-P1 18 ✅, 19a ✅, 19b ✅, 20 ✅, 21a ✅；E2E 62/62 PASS（2026-05-22） |
 | 下一阶段 | **Full P1 切片 21b–23**（21b External MCP Manager 起步） |
