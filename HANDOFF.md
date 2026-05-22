@@ -6,10 +6,10 @@
 | 项目根 | `F:\project\private-coding-agent` |
 | Git module | `github.com/yourorg/private-coding-agent` |
 | 当前日期 | 2026-05-22 |
-| 当前 HEAD | `7fcb5f4` *(Slice 21b commits 1–4 落地：mcp types + client + repo + manager + mockserver + admin REST + WebUI + compose；E2E step 63 + 文档收口待 push)* |
+| 当前 HEAD | `7968a77` *(Slice 22a commits 1–3 落地：audit/hash.go 链式 canonical + sha256；migration 0021 加 prev_hash/entry_hash；Repo.Append 走 BeginTx + pg_advisory_xact_lock 串行化；admin `GET /audit/verify` 全表 + suffix 校验 + 篡改定位；E2E step 64 + 文档收口待 push)* |
 | P1 规划 | **已落盘** — [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md) |
-| 工作区状态 | MVP-P1 17 ✅；Full-P1 18 ✅, 19a ✅, 19b ✅, 20 ✅, 21a ✅, 21b ✅；E2E 63/63（待跑） |
-| 下一阶段 | **Full P1 切片 22–23**（22 K8s + 生产安全 / 23 N8N 可选） |
+| 工作区状态 | MVP-P1 17 ✅；Full-P1 18 ✅, 19a ✅, 19b ✅, 20 ✅, 21a ✅, 21b ✅, 22a ✅；E2E 64/64（待跑） |
+| 下一阶段 | **Full P1 切片 22b/c/d + 23**（22b Snapshot→MinIO / 22c seccomp + trivy CI / 22d K8sDriver + Helm / 23 N8N 可选） |
 
 ---
 
@@ -46,7 +46,7 @@
 | `go test ./...` | 预期全 PASS |
 | `go vet ./...` | 干净 |
 | `go build ./...` | 干净 |
-| E2E `test-e2e.sh` | 全量 **63 步**（发版 / Gate 前必跑；P0 1–42 + MVP-P1 43–49 + Slice 18 50 + Slice 19a 57–60 + Slice 20 61 + Slice 21a 62 + Slice 21b 63） |
+| E2E `test-e2e.sh` | 全量 **64 步**（发版 / Gate 前必跑；P0 1–42 + MVP-P1 43–49 + Slice 18 50 + Slice 19a 57–60 + Slice 20 61 + Slice 21a 62 + Slice 21b 63 + Slice 22a 64） |
 
 ### 1.4 Gate G1 收口（2026-05-21）
 
@@ -166,7 +166,10 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 | 20 Reflection | ✅ | 61 | `session.archive` → in-process worker → Reflector LLM 抽取 → `memory_proposals`（pending/auto_approved）→ admin `/admin/memory-proposals` 审核 → `memory.Service.Create`（0.92 dedup 复用）；mock-provider `REFLECTION_TASK_V1` canned JSON；5 个 audit action + `pca_reflection_proposals_total{outcome=…}`；WebUI `/admin/memory-proposals` |
 | 21a Orchestration Router | ✅ | 62 | `internal/orchestrator` 规则引擎 + `agent.Engine.WithRouter` Shadow + Hint 注入；YAML 规则 `match{profile,content_regex,content_contains}` + `suggest{type,target,hint}`；audit `orchestrator.route` + `pca_orchestrator_routes_total{outcome,target_type}`；mock-provider `ORCHESTRATOR_E2E_HINT_DELIVERED` canned → `"orchestrator-hint-ok"` |
 | 21b External MCP Manager | ✅ | 63 | 0020 `mcp_servers` 表 + `internal/mcp` HTTP JSON-RPC client (2024-11-05) + Manager 心跳 + `mcp.<slug>.<tool>` Bus 注册 + `/admin/mcp-servers` CRUD + `mock-mcp:8083` 容器 + WebUI `/admin/mcp-servers`；6 audit + 3 metric |
-| 22 K8s + 安全深化 | ⬜ | 64+ | seccomp、trivy、Snapshot |
+| 22a Audit Hash Chain | ✅ | 64 | 0021 `audit_log` 加 `prev_hash/entry_hash BYTEA NOT NULL` + `internal/audit/hash.go` SHA-256 canonical（RS=0x1E 分隔，map[string]any 自然有序）+ `Repo.Append` 走 `BeginTx → pg_advisory_xact_lock(hashtext('audit_log')) → SELECT prev → INSERT`（跨 goroutine/副本不分叉）+ `Repo.Verify(ctx, fromID)` 流式 prev/entry 双校验 + `GET /audit/verify` admin-only；E2E 64 篡改后定位 first_broken_id |
+| 22b Snapshot → MinIO | ⬜ | 65+ | DockerDriver.Snapshot + sandbox_snapshots 表 + compose minio service |
+| 22c seccomp + trivy CI | ⬜ | 65+ | 沙箱 seccomp profile + GitHub Actions 镜像扫描 |
+| 22d K8sDriver + Helm | ⬜ | 65+ | Pod = sandbox + deploy/helm/pca + kind nightly |
 | 23 N8N（可选） | ⬜ | 65+ | 需法务确认 |
 
 ### 3.3 技术债 ↔ 切片映射
@@ -177,7 +180,10 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 | session 自动建沙箱 | **14** |
 | Memory 自动注入、Memory UI、沙箱文件浏览 | **16** |
 | Tenant Skills DB | **17** |
-| seccomp、trivy、Snapshot、Helm、audit hash chain | **22** |
+| audit hash chain | **22a** ✅ |
+| Snapshot → MinIO | **22b** |
+| seccomp、trivy | **22c** |
+| K8sDriver、Helm | **22d** |
 | Reflection、Workflow、delegate、N8N | **18–23** |
 | Hybrid 检索、Project/Tenant memory | **P2** /  backlog |
 | 历史 re-embed admin | backlog |
@@ -188,7 +194,8 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 
 ### 4.1 阻塞性问题
 
-- **Slice 21b** 已交付（`internal/mcp` 2024-11-05 JSON-RPC client + Manager 心跳 + `mcp.<slug>.<tool>` Bus 注册 + `/admin/mcp-servers` CRUD + WebUI + `mock-mcp` 容器 + E2E 63）。Full P1 剩 22 / 23。
+- **Slice 22a** 已交付（`internal/audit/hash.go` SHA-256 canonical + 0021 `audit_log` 加 `prev_hash/entry_hash` + `Repo.Append` 走 `pg_advisory_xact_lock` 串行化 + `GET /audit/verify` admin 防篡改校验，E2E 64 篡改 metadata → `entry_hash_mismatch` 定位 + 还原幂等）。Full P1 剩 22b/c/d + 23。
+- **Slice 21b** 已交付（`internal/mcp` 2024-11-05 JSON-RPC client + Manager 心跳 + `mcp.<slug>.<tool>` Bus 注册 + `/admin/mcp-servers` CRUD + WebUI + `mock-mcp` 容器 + E2E 63）。
 - **Slice 21a** 已交付（`internal/orchestrator` 规则引擎 + `agent.Engine.WithRouter` Shadow + Hint 注入 + audit `orchestrator.route` + counter + mock-provider canned + E2E 62）。
 - **Slice 17** 已交付（租户 Skill `skills`/`tenant_profile_skills` 表 + `DBRepo` + `/admin/skills` CRUD + `/admin/profiles/:name/skills` 绑定 + Resolver 合并 FS/DB + `/admin/skills` Web UI + E2E 49）。MVP-P1 完成。
 - WebUI 仍无独立沙箱入口；聊天经会话绑定沙箱，工具可继续显式传 `sandbox_id` 覆盖。
@@ -218,19 +225,19 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 - 首次跑 dockertest 启 PG ~10-20s（pgvector 镜像比 postgres:16-alpine 大 ~130MB，首次 pull 慢一些）
 - 全包测试（不带 docker_integration tag）~25-60s
 - 全包测试 + docker_integration ~3-5 分钟
-- E2E（63 步含切片 13–21b；Full-P1 进行中）~3-8 分钟（首次 build 镜像更久）
+- E2E（64 步含切片 13–22a；Full-P1 进行中）~3-8 分钟（首次 build 镜像更久）
 
 ---
 
 ## 5. 下一步建议
 
-### 5.1 立即（Slice 22 启动前自检）
+### 5.1 立即（Slice 22b 启动前自检）
 
 ```bash
 cd F:/project/private-coding-agent
 go test ./... -count=1
 go vet ./...
-cd deploy/compose && ./test-e2e.sh   # 期望 63/63 E2E PASS（含切片 21b mcp register → invoke 链路）
+cd deploy/compose && ./test-e2e.sh   # 期望 64/64 E2E PASS（含切片 22a audit hash chain verify 步骤）
 ```
 
 ### 5.2 已完成
@@ -246,12 +253,13 @@ cd deploy/compose && ./test-e2e.sh   # 期望 63/63 E2E PASS（含切片 21b mcp
 9. ~~**Slice 20** — Reflection~~ ✅（异步 Reflector worker + `memory_proposals` 表 + admin 审核 + auto-approve 阈值 + 5 audit + mock-provider canned JSON + WebUI `/admin/memory-proposals`）
 10. ~~**Slice 21a** — Orchestration Router~~ ✅（`internal/orchestrator` 规则引擎 + `agent.Engine.WithRouter` Shadow + Hint 注入 + `orchestrator.route` audit + `pca_orchestrator_routes_total` counter + mock-provider `ORCHESTRATOR_E2E_HINT_DELIVERED` canned）
 11. ~~**Slice 21b** — External MCP Manager~~ ✅（`internal/mcp` 2024-11-05 JSON-RPC client + 0020 `mcp_servers` 表 + Manager 心跳 + `mcp.<slug>.<tool>` Bus 注册 + `/admin/mcp-servers` REST + WebUI + `mock-mcp` 容器 + 6 audit + 3 metric + E2E 63）
+12. ~~**Slice 22a** — Audit Hash Chain~~ ✅（`internal/audit/hash.go` SHA-256 canonical RS=0x1E 分隔 + 0021 `audit_log.prev_hash/entry_hash` BYTEA + `Repo.Append` 走 `BeginTx + pg_advisory_xact_lock(hashtext('audit_log'))` 跨副本串行化 + `Repo.Verify(ctx, fromID)` 流式 prev/entry 双校验 + `GET /audit/verify` admin-only + E2E 64 篡改 metadata → `entry_hash_mismatch` 定位 + 还原幂等）
 
 每切片：读 plan → 实现 → 更新 `SLICE-VERIFICATION.md` + E2E 步号 → README 勾选。
 
 ### 5.3 Full P1 剩余
 
-按 [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md)：**22**（K8s + 生产安全，含 seccomp / trivy / Helm / Snapshot / audit hash chain）；**23** 可选。Slice 20 reflection proposals 已经在审核流中沉淀；Slice 21a Orchestration Router 已用 YAML 规则跑通 Shadow + Hint；Slice 21b External MCP Manager 已让外部 HTTP MCP server 作为 `mcp.<slug>.<tool>` 进入 Bus。
+按 [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md)：**22a** audit hash chain 已落地（SHA-256 链 + `GET /audit/verify` + E2E 64）；剩 **22b** Snapshot → MinIO、**22c** seccomp + trivy CI、**22d** K8sDriver + Helm chart；**23** 可选。Slice 20 reflection proposals 已经在审核流中沉淀；Slice 21a Orchestration Router 已用 YAML 规则跑通 Shadow + Hint；Slice 21b External MCP Manager 已让外部 HTTP MCP server 作为 `mcp.<slug>.<tool>` 进入 Bus。
 
 ### 5.3 已知"未做"的设计决策（留给后续）
 

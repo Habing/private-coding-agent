@@ -252,12 +252,32 @@ cd deploy/compose
 | 审计 | 6 个 action：`mcp.admin.{create,update,delete,refresh,enable,disable}` + `mcp.tool.invoke`；3 个 metric：`pca_mcp_invocations_total{server,tool,outcome}`、`pca_mcp_invocation_duration_seconds{server,tool}`、`pca_mcp_heartbeat_total{server,outcome}` |
 | Mock 协议 | `internal/mcp/mockserver/main.go` 监听 `:8083`，JSON-RPC 接 `initialize`（返回 `protocolVersion=2024-11-05` + 单工具 `echo` 元信息）/ `tools/list`（返 `[{name:"echo",inputSchema:{type:"object",properties:{text:{type:"string"}},required:["text"]}}]`）/ `tools/call`（参数 `arguments.text="hi"` → `{content:[{type:"text",text:"echo: hi"}]}`）；`/healthz` 供 compose `service_healthy` 等待 |
 
-### 切片 22 — K8s + 生产安全
+### 切片 22a — Audit Hash Chain
 
 | 项 | 验证 |
 |----|------|
-| L3 | E2E **[64+]** 或 kind nightly |
-| 手工 | `helm install` 烟测 |
+| L1 | `go test ./internal/audit/... -count=1`（含 hash.go 决定性/key-order/RS 分隔/字段敏感/nil UUID/empty metadata/prev_hash 长度兜底 9 测；repo dockertest genesis/chain/concurrent 20×10；verify dockertest clean/tampered metadata/tampered prev_hash/from_id suffix/pre-chain skip/empty table 6 测；handler httptest ok/from_id/bad input/tampered passthrough/member 403/anonymous 401/repo 500 7 测） |
+| L2 | `go build ./...`；`go vet ./...` 干净；migration 0021 up/down 通过 dockertest 启动期自动跑通 |
+| L3 增量 | E2E **[64]**：`GET /audit/verify` 返回 `ok=true`；`UPDATE audit_log SET metadata` 篡改任意行 → 再 verify → `ok=false, first_broken_id=<id>, reason=entry_hash_mismatch`；恢复原 metadata → verify 再次 `ok=true`；无 token 调 `/audit/verify` → 401 |
+| 不变量 | (a) `Repo.Append` 在 `BeginTx → pg_advisory_xact_lock(hashtext('audit_log')) → SELECT prev → INSERT → COMMIT` 序列内完成，跨 goroutine / 跨副本（K8s 多 pod）链不分叉；(b) `occurred_at` 写入前 `Truncate(time.Microsecond)`，确保 hash 输入与 PG timestamptz 存储字节一致；(c) Genesis 行 `prev_hash = 32 零字节`；pre-chain 行（迁移前已存在）`prev_hash + entry_hash` 都是零字节，verify 跳过它们并把首个非零行设为 `chain_start_id`；(d) `Verify(fromID=0)` 强制首链行 prev_hash 必须等于 ZeroHash；`Verify(fromID>0)` 信任首行 prev_hash 做种子，只校验 suffix 内部一致性；(e) `/audit/verify` 自身不入 audit_log，避免递归；admin-only（`auth.Middleware + RequireAdmin`），member→403、无 token→401；(f) 哈希算法硬编码 SHA-256，canonical 编码 = `prev || RS || occurred_at_rfc3339nano_utc || RS || tenant_id || RS || user_id || RS || action || RS || target || RS || method || RS || path || RS || status || RS || duration_ms || RS || canonical_metadata_json`（map[string]any json.Marshal 按 key 升序，nil UUID 编码为空串） |
+
+### 切片 22b — Snapshot → MinIO（待办）
+
+| 项 | 验证 |
+|----|------|
+| L3 | E2E **[65+]** + compose 加 minio service |
+
+### 切片 22c — seccomp + trivy CI（待办）
+
+| 项 | 验证 |
+|----|------|
+| L3 | GitHub Actions trivy scan + sandbox seccomp profile |
+
+### 切片 22d — K8sDriver + Helm（待办）
+
+| 项 | 验证 |
+|----|------|
+| L3 | kind 集群 e2e + `helm install` 烟测 |
 
 ### 切片 23 — N8N（可选）
 
@@ -280,6 +300,7 @@ cd deploy/compose
 | Full P1（含 20） | `./test-e2e.sh` | 1–61（slice 20 完成后） |
 | Full P1（含 21a） | `./test-e2e.sh` | 1–62（slice 21a 完成后） |
 | Full P1（含 21b） | `./test-e2e.sh` | 1–63（slice 21b 完成后） |
+| Full P1（含 22a） | `./test-e2e.sh` | 1–64（slice 22a 完成后） |
 
 ```powershell
 go test ./... -count=1

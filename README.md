@@ -38,7 +38,10 @@
 - [x] 切片 20：Reflection Agent（异步 worker + `memory_proposals` 表 + admin 审核 + auto-approve 阈值 + WebUI `/admin/memory-proposals`）
 - [x] 切片 21a：Orchestration Router（YAML 规则 + 命中后注入 routing hint system msg + `pca_orchestrator_routes_total` + audit `orchestrator.route`）
 - [x] 切片 21b：External MCP Manager（`mcp_servers` 表 + 2024-11-05 JSON-RPC client + Manager 心跳 + `mcp.<slug>.<tool>` 注册到 ToolBus + `/admin/mcp-servers` REST + WebUI + mock-mcp 容器）
-- [ ] 切片 22：K8s Helm + K8sDriver + 安全深化
+- [x] 切片 22a：Audit Hash Chain（SHA-256 链式 `audit_log.prev_hash/entry_hash` + `pg_advisory_xact_lock` 序列化 + `GET /audit/verify` admin 防篡改校验）
+- [ ] 切片 22b：Snapshot → MinIO（compose 加 minio service + `DockerDriver.Snapshot` 落地）
+- [ ] 切片 22c：seccomp + trivy CI（沙箱 seccomp profile + GitHub Actions 镜像扫描）
+- [ ] 切片 22d：K8sDriver + Helm chart（Pod = sandbox + kind nightly）
 - [ ] 切片 23：N8N 集成（可选）
 
 ## 本地开发
@@ -360,6 +363,54 @@ Slice 21b 让平台能把**外部** MCP（Model Context Protocol）server 注册
 env override：`PCA_MCP_ENABLED` / `PCA_MCP_HEARTBEAT_INTERVAL` / `PCA_MCP_INVOKE_TIMEOUT` / `PCA_MCP_LIST_TOOLS_TIMEOUT`。compose 同时跑 `mock-mcp:8083`（`internal/mcp/mockserver`，单工具 `echo`），E2E 步 63 走完整 register → tools/list → invoke 链路。
 
 **21b 不做**：① stdio transport（推 P2）；② OAuth flow / token 自动旋转；③ MCP `prompts/list` / `resources/list` / `sampling`（只做 tools）；④ WebSocket / 长连接 session（每次 invoke 都重新 initialize）；⑤ 工具粒度授权（v1 = server 级 enabled 开关 + tenant 隔离 + admin only）；⑥ 跨租户共享 server（每条行强绑 tenant）。
+
+## Audit Hash Chain（Slice 22a）
+
+Slice 22a 把 `audit_log` 改造为防篡改：每行写入时计算 `entry_hash = SHA-256(prev_hash ‖ canonical(entry))`，下一行的 `prev_hash` 指向上一行的 `entry_hash`，整张表形成一条 SHA-256 链。任何 DBA 或入侵者 `UPDATE` 任意一行后，该行及其后所有行的链校验都会失败。
+
+写入路径（`internal/audit/repo.go::Append`）在 `BeginTx → pg_advisory_xact_lock(hashtext('audit_log')) → SELECT 上一行 entry_hash → INSERT 含 prev/entry → COMMIT` 序列内完成。`pg_advisory_xact_lock` 跨 goroutine、跨副本（22d K8s 多 pod 时）串行化所有 Append，保证链不分叉。`occurred_at` 在哈希前截到 microsecond 精度，与 PG `timestamptz` 实际存储字节对齐，避免 verify 时哈希输入与存储不一致。
+
+Canonical 编码用 ASCII Record Separator（0x1E）分隔字段：
+
+```
+prev (32B raw bytes)
+  || RS || occurred_at_rfc3339nano_utc
+  || RS || tenant_id_or_empty
+  || RS || user_id_or_empty
+  || RS || action
+  || RS || target
+  || RS || method
+  || RS || path
+  || RS || status
+  || RS || duration_ms
+  || RS || canonical_metadata_json
+```
+
+`json.Marshal(map[string]any)` 对 key 升序排列，所以 metadata 天然 canonical。nil UUID 编码为空串，与 `*uuid.UUID(uuid.Nil)` 区分。
+
+验证端点 `GET /audit/verify`（admin-only，挂在 `auth.Middleware + RequireAdmin` 组）流式遍历 audit_log，对每行重算 `Hash(running_prev, entry)` 与存储值比对，首个不匹配立刻返回：
+
+```json
+{
+  "ok": false,
+  "rows_checked": 233,
+  "chain_start_id": 1,
+  "first_broken_id": 234,
+  "reason": "entry_hash_mismatch",
+  "expected_hash": "abc...",
+  "actual_hash": "def..."
+}
+```
+
+`reason` 取值为 `prev_hash_mismatch`（链指针被改，常见于 DELETE 中间行）或 `entry_hash_mismatch`（行字段被改）。
+
+`from_id` query 参数（≥0）有两种语义：
+- `from_id=0`（默认）：全表 verify，首链行 `prev_hash` 必须等于 32 零字节（genesis）
+- `from_id>0`：suffix verify，信任首行 prev_hash 做种子，只校验从该 id 之后的链内部一致性。用于跳过已知断点确认后续没继续被动
+
+迁移 `0021_audit_hash_chain` 给 `prev_hash` / `entry_hash` 都设了 32 零字节的 DEFAULT，所以迁移前已存在的行（pre-chain）两列都是零；verify 把这些行计入 `pre_chain_rows` 跳过，从首个非零 entry_hash 行开始走链。链保护从 22a 部署后的第一次 Append 起算，pre-chain 段不在 22a 范围内。
+
+**22a 不做**：① Merkle tree / Notary 外部 anchoring（v2+，当前线性链对单租户够用）；② 跨租户独立子链（v1 全局单链，租户隔离靠 List 过滤）；③ 哈希算法可配置（v1 硬编码 SHA-256）；④ 自动 verify 定时任务 + 报警（v1 admin 显式调用）；⑤ 链断点修复 / 重置工具（v1 检测出篡改后人工介入）；⑥ KMS / HSM 数字签名（v2+）。
 
 ## Agent Skills
 
