@@ -3,11 +3,13 @@ package audit
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -17,19 +19,56 @@ type Repo struct{ pool *pgxpool.Pool }
 // NewRepo constructs a Repo backed by the given pgx pool.
 func NewRepo(p *pgxpool.Pool) *Repo { return &Repo{pool: p} }
 
-// Append inserts a single audit Entry into audit_log. A nil or unmarshalable
-// Metadata is persisted as an empty JSON object.
+// Append inserts a single audit Entry into audit_log, chaining its SHA-256
+// hash to the previous row's entry_hash to make the table tamper-evident
+// (Slice 22a). All writers across goroutines and replicas serialize on a
+// transaction-scoped advisory lock so the chain cannot fork under concurrent
+// load. OccurredAt is truncated to microsecond precision so the value the
+// hash is computed over matches what PostgreSQL's timestamptz stores.
 func (r *Repo) Append(ctx context.Context, e Entry) error {
+	if e.OccurredAt.IsZero() {
+		e.OccurredAt = time.Now()
+	}
+	e.OccurredAt = e.OccurredAt.Truncate(time.Microsecond)
+
 	meta, err := json.Marshal(e.Metadata)
 	if err != nil {
 		meta = []byte("{}")
+		e.Metadata = map[string]any{}
 	}
-	_, err = r.pool.Exec(ctx, `
-INSERT INTO audit_log (tenant_id, user_id, action, target, method, path, status, duration_ms, metadata)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-		e.TenantID, e.UserID, e.Action, e.Target, e.Method, e.Path, e.Status, e.DurationMS, meta)
+
+	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx,
+		`SELECT pg_advisory_xact_lock(hashtext('audit_log'))`); err != nil {
+		return fmt.Errorf("advisory lock: %w", err)
+	}
+
+	var prev []byte
+	err = tx.QueryRow(ctx,
+		`SELECT entry_hash FROM audit_log ORDER BY id DESC LIMIT 1`).Scan(&prev)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("read prev hash: %w", err)
+	}
+	if len(prev) != HashSize {
+		prev = ZeroHash()
+	}
+	h := Hash(prev, e)
+
+	if _, err := tx.Exec(ctx, `
+INSERT INTO audit_log (occurred_at, tenant_id, user_id, action, target, method, path, status, duration_ms, metadata, prev_hash, entry_hash)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+		e.OccurredAt, e.TenantID, e.UserID, e.Action, e.Target, e.Method, e.Path,
+		e.Status, e.DurationMS, meta, prev, h[:]); err != nil {
 		return fmt.Errorf("insert audit: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit: %w", err)
 	}
 	return nil
 }
