@@ -30,6 +30,9 @@ fi
 jq() { docker run --rm -i "$JQ_IMG" "$@"; }
 
 echo "[1/60] starting compose ..."
+# Step 43 (sandbox quota exceeded) requires cap=1. The .env may have a higher
+# override for manual dev; force =1 here so this script is self-contained.
+export PCA_QUOTA_SANDBOX_MAX_ACTIVE=1
 docker compose up -d --build >/dev/null
 sleep 20
 
@@ -117,7 +120,7 @@ docker compose exec -T postgres psql -U app -d app -t -c \
 echo "[13/60] list tools ..."
 TOOLS=$(curl -fsS http://localhost:8080/tools -H "Authorization: Bearer $TOK")
 NAMES=$(echo "$TOOLS" | jq -r '.tools[].name' | sort | tr '\n' ',')
-[[ "$NAMES" == "agent.delegate,fs.glob,fs.list,fs.read,fs.write,grep,llm.chat,llm.embed,memory.delete,memory.list,memory.save,memory.search,shell.exec," ]] \
+[[ "$NAMES" == "agent.delegate,fs.glob,fs.list,fs.read,fs.write,grep,llm.chat,llm.embed,memory.delete,memory.list,memory.save,memory.search,shell.exec,workflow.create,workflow.get,workflow.list,workflow.update," ]] \
   || { echo "tools list mismatch: $NAMES"; exit 1; }
 
 echo "[14/60] fs.write + fs.read round-trip ..."
