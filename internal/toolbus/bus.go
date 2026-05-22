@@ -64,6 +64,22 @@ func NewBus(reg *Registry, recorder *InvocationRecorder) (*Bus, error) {
 	return &Bus{reg: reg, recorder: recorder, schemas: schemas}, nil
 }
 
+// Register adds a tool to the underlying registry and compiles its schema so
+// Invoke can validate inputs without restarting the bus. Used by main.go to
+// late-register the agent.delegate tool, which depends on *Engine (only built
+// after NewBus). Errors mirror Registry.Register / CompileSchema.
+func (b *Bus) Register(t Tool) error {
+	if err := b.reg.Register(t); err != nil {
+		return err
+	}
+	s, err := CompileSchema(t.Schema())
+	if err != nil {
+		return fmt.Errorf("toolbus: compile schema for %q: %w", t.Name(), err)
+	}
+	b.schemas[t.Name()] = s
+	return nil
+}
+
 // ListTools returns all registered tools as OpenAI-tool-calling-compatible defs.
 func (b *Bus) ListTools(_ context.Context, _ uuid.UUID) []ToolDef {
 	tools := b.reg.List()
