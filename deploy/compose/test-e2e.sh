@@ -758,7 +758,10 @@ ORUN=$(curl -fsS -X POST http://localhost:8080/agent/run \
     "messages":[{"role":"user","content":"please test E2E_ORCHESTRATOR_HINT_V1 path"}],
     "max_steps":2
   }')
-OFINAL=$(echo "$ORUN" | jq -r '.final // empty')
+OLAST_KIND=$(echo "$ORUN" | jq -r '.events[-1].kind')
+[[ "$OLAST_KIND" == "final" ]] \
+  || { echo "expected last event kind=final, got $OLAST_KIND: $ORUN"; exit 1; }
+OFINAL=$(echo "$ORUN" | jq -r '.events[-1].text')
 [[ "$OFINAL" == "orchestrator-hint-ok" ]] \
   || { echo "router hint not delivered to mock: $ORUN"; exit 1; }
 
