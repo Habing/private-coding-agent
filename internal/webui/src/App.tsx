@@ -10,6 +10,8 @@ import { Home } from '@/pages/Home'
 import { Login } from '@/pages/Login'
 import { NotFound } from '@/pages/NotFound'
 import { SkillsAdmin } from '@/pages/SkillsAdmin'
+import { Toolbox } from '@/pages/Toolbox'
+import { Workflows } from '@/pages/Workflows'
 import { queryClient } from '@/queryClient'
 
 export function App() {
@@ -35,6 +37,15 @@ export function App() {
               element={
                 <AdminGuard>
                   <SkillsAdmin />
+                </AdminGuard>
+              }
+            />
+            <Route path="/toolbox" element={<Toolbox />} />
+            <Route
+              path="/workflows"
+              element={
+                <AdminGuard>
+                  <Workflows />
                 </AdminGuard>
               }
             />

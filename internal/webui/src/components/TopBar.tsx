@@ -26,6 +26,12 @@ export function TopBar() {
         >
           记忆
         </Link>
+        <Link
+          to="/toolbox"
+          className="text-muted-foreground hover:text-foreground"
+        >
+          工具箱
+        </Link>
         {isAdmin(user) && (
           <>
             <Link
@@ -39,6 +45,12 @@ export function TopBar() {
               className="text-muted-foreground hover:text-foreground"
             >
               Skills
+            </Link>
+            <Link
+              to="/workflows"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              工作流
             </Link>
           </>
         )}

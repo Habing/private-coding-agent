@@ -209,3 +209,88 @@ export interface ProfileInfo {
 export interface ProfileListResponse {
   profiles: ProfileInfo[]
 }
+
+export interface ToolDef {
+  name: string
+  description: string
+  parameters: unknown
+  mutating: boolean
+}
+
+export interface ToolListResponse {
+  tools: ToolDef[]
+}
+
+export interface Workflow {
+  id: string
+  tenant_id: string
+  slug: string
+  name: string
+  description: string
+  dsl_yaml?: string
+  version: number
+  published: boolean
+  published_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowListResponse {
+  workflows: Workflow[]
+}
+
+export type WorkflowRunStatus =
+  | 'ok'
+  | 'failed'
+  | 'max_steps'
+  | 'timeout'
+  | 'cancelled'
+
+export interface WorkflowRun {
+  id: string
+  tenant_id: string
+  user_id: string
+  workflow_id: string
+  version_at_run: number
+  dry_run: boolean
+  status: WorkflowRunStatus
+  inputs_json?: string
+  outputs_json?: string
+  error_text?: string
+  duration_ms: number
+  started_at: string
+  finished_at?: string
+}
+
+export interface WorkflowRunListResponse {
+  runs: WorkflowRun[]
+}
+
+export interface CreateWorkflowRequest {
+  slug: string
+  name: string
+  description?: string
+  dsl_yaml: string
+}
+
+export interface UpdateWorkflowRequest {
+  name: string
+  description?: string
+  dsl_yaml: string
+}
+
+export interface InvokeWorkflowRequest {
+  inputs?: Record<string, unknown>
+  dry_run?: boolean
+}
+
+export interface WorkflowInvokeResult {
+  run_id: string
+  status: WorkflowRunStatus
+  outputs?: Record<string, unknown>
+  error?: string
+  steps: number
+  dry_run: boolean
+  started_at: string
+  duration_ms: number
+}
