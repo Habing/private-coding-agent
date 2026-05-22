@@ -8,17 +8,30 @@ import "context"
 // natural seam if we later add caching, redaction, or fan-out without changing
 // callers.
 type Service struct {
-	repo Lister
+	repo repoIface
 }
 
-// Lister is the slice of Repo behavior Service needs. Satisfied by *Repo in
-// production and by fakes in tests.
+// Lister is the slice of Repo behavior Service needs for /audit. Kept as a
+// separate interface so callers that only need read access can pass a narrower
+// fake. Production *Repo satisfies both Lister and repoIface.
 type Lister interface {
 	List(ctx context.Context, f ListFilter) ([]Entry, int, error)
 }
 
-func NewService(repo Lister) *Service { return &Service{repo: repo} }
+// repoIface is the full Service ↔ Repo contract (List + Verify). Service
+// accepts this so the verify handler can route through the same Service mock
+// already used in handler tests.
+type repoIface interface {
+	List(ctx context.Context, f ListFilter) ([]Entry, int, error)
+	Verify(ctx context.Context, fromID int64) (*VerifyResult, error)
+}
+
+func NewService(repo repoIface) *Service { return &Service{repo: repo} }
 
 func (s *Service) List(ctx context.Context, f ListFilter) ([]Entry, int, error) {
 	return s.repo.List(ctx, f)
+}
+
+func (s *Service) Verify(ctx context.Context, fromID int64) (*VerifyResult, error) {
+	return s.repo.Verify(ctx, fromID)
 }

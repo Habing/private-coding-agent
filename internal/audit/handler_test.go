@@ -17,15 +17,25 @@ import (
 )
 
 type mockHandlerSvc struct {
-	captured audit.ListFilter
-	entries  []audit.Entry
-	total    int
-	err      error
+	captured       audit.ListFilter
+	entries        []audit.Entry
+	total          int
+	err            error
+	verifyFromID   int64
+	verifyResult   *audit.VerifyResult
+	verifyErr      error
+	verifyCalls    int
 }
 
 func (m *mockHandlerSvc) List(_ context.Context, f audit.ListFilter) ([]audit.Entry, int, error) {
 	m.captured = f
 	return m.entries, m.total, m.err
+}
+
+func (m *mockHandlerSvc) Verify(_ context.Context, fromID int64) (*audit.VerifyResult, error) {
+	m.verifyFromID = fromID
+	m.verifyCalls++
+	return m.verifyResult, m.verifyErr
 }
 
 func newAuditHandlerRouter(t *testing.T, svc audit.HandlerService, role string) (*gin.Engine, string, uuid.UUID) {
@@ -140,6 +150,99 @@ func TestAuditHandler_List_RepoError500(t *testing.T) {
 	svc := &mockHandlerSvc{err: context.Canceled}
 	r, tok, _ := newAuditHandlerRouter(t, svc, "admin")
 	req := httptest.NewRequest(http.MethodGet, "/audit", nil)
+	req.Header.Set("Authorization", tok)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestAuditHandler_Verify_OK(t *testing.T) {
+	svc := &mockHandlerSvc{verifyResult: &audit.VerifyResult{
+		OK: true, RowsChecked: 7, ChainStartID: 1, ChainEndID: 7,
+	}}
+	r, tok, _ := newAuditHandlerRouter(t, svc, "admin")
+	req := httptest.NewRequest(http.MethodGet, "/audit/verify", nil)
+	req.Header.Set("Authorization", tok)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, 1, svc.verifyCalls)
+	require.Equal(t, int64(0), svc.verifyFromID)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Equal(t, true, resp["ok"])
+	require.EqualValues(t, 7, resp["rows_checked"])
+}
+
+func TestAuditHandler_Verify_FromIDPassedThrough(t *testing.T) {
+	svc := &mockHandlerSvc{verifyResult: &audit.VerifyResult{OK: true}}
+	r, tok, _ := newAuditHandlerRouter(t, svc, "admin")
+	req := httptest.NewRequest(http.MethodGet, "/audit/verify?from_id=42", nil)
+	req.Header.Set("Authorization", tok)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, int64(42), svc.verifyFromID)
+}
+
+func TestAuditHandler_Verify_BadFromID(t *testing.T) {
+	svc := &mockHandlerSvc{verifyResult: &audit.VerifyResult{OK: true}}
+	r, tok, _ := newAuditHandlerRouter(t, svc, "admin")
+	req := httptest.NewRequest(http.MethodGet, "/audit/verify?from_id=not-an-int", nil)
+	req.Header.Set("Authorization", tok)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Zero(t, svc.verifyCalls, "bad input must short-circuit before Service")
+}
+
+func TestAuditHandler_Verify_TamperedSurfacesBrokenRow(t *testing.T) {
+	svc := &mockHandlerSvc{verifyResult: &audit.VerifyResult{
+		OK: false, RowsChecked: 3, ChainStartID: 1, FirstBrokenID: 4,
+		Reason: "entry_hash_mismatch",
+		ExpectedHash: "aa", ActualHash: "bb",
+	}}
+	r, tok, _ := newAuditHandlerRouter(t, svc, "admin")
+	req := httptest.NewRequest(http.MethodGet, "/audit/verify", nil)
+	req.Header.Set("Authorization", tok)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "tampered chain still returns 200")
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Equal(t, false, resp["ok"])
+	require.EqualValues(t, 4, resp["first_broken_id"])
+	require.Equal(t, "entry_hash_mismatch", resp["reason"])
+	require.Equal(t, "aa", resp["expected_hash"])
+	require.Equal(t, "bb", resp["actual_hash"])
+}
+
+func TestAuditHandler_Verify_RejectsMemberWith403(t *testing.T) {
+	svc := &mockHandlerSvc{}
+	r, tok, _ := newAuditHandlerRouter(t, svc, "member")
+	req := httptest.NewRequest(http.MethodGet, "/audit/verify", nil)
+	req.Header.Set("Authorization", tok)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Zero(t, svc.verifyCalls)
+}
+
+func TestAuditHandler_Verify_RejectsUnauthenticatedWith401(t *testing.T) {
+	svc := &mockHandlerSvc{}
+	r, _, _ := newAuditHandlerRouter(t, svc, "admin")
+	req := httptest.NewRequest(http.MethodGet, "/audit/verify", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestAuditHandler_Verify_RepoError500(t *testing.T) {
+	svc := &mockHandlerSvc{verifyErr: context.Canceled}
+	r, tok, _ := newAuditHandlerRouter(t, svc, "admin")
+	req := httptest.NewRequest(http.MethodGet, "/audit/verify", nil)
 	req.Header.Set("Authorization", tok)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)

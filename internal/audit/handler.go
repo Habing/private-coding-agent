@@ -14,6 +14,7 @@ import (
 // Declared locally so handler tests can inject mocks without importing pgxpool.
 type HandlerService interface {
 	List(ctx context.Context, f ListFilter) ([]Entry, int, error)
+	Verify(ctx context.Context, fromID int64) (*VerifyResult, error)
 }
 
 // TenantReader returns the tenant ID for the current request. main.go provides
@@ -40,6 +41,7 @@ func NewHandler(svc HandlerService, tenantOf TenantReader) *Handler {
 
 func (h *Handler) Register(rg *gin.RouterGroup) {
 	rg.GET("/audit", h.list)
+	rg.GET("/audit/verify", h.verify)
 }
 
 type entryDTO struct {
