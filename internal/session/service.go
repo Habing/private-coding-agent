@@ -32,17 +32,24 @@ type AgentEngine interface {
 	Run(ctx context.Context, in agent.RunInput, yield func(agent.Event) error) error
 }
 
+// ReflectionHook is invoked after ArchiveSession persists the archived
+// status. It MUST be non-blocking — typically a buffered-channel enqueue —
+// because the API call is held until it returns. Implementations should
+// drop the job (rather than back-pressure) when overloaded.
+type ReflectionHook func(ctx context.Context, tenantID, userID, sessionID uuid.UUID) bool
+
 // Service is the application-layer orchestrator over SessionRepo, MessageRepo,
 // and the Agent Engine. Handler / WSHandler call into this layer only.
 type Service struct {
-	sessions  *SessionRepo
-	messages  *MessageRepo
-	engine    AgentEngine
-	audit     audit.Sink
-	sandbox   sandboxRuntime
-	quota     *quota.Service
-	activeCnt activeSandboxCounter
-	memLoader *memory.Loader
+	sessions       *SessionRepo
+	messages       *MessageRepo
+	engine         AgentEngine
+	audit          audit.Sink
+	sandbox        sandboxRuntime
+	quota          *quota.Service
+	activeCnt      activeSandboxCounter
+	memLoader      *memory.Loader
+	reflectionHook ReflectionHook
 }
 
 func NewService(sessions *SessionRepo, messages *MessageRepo, engine AgentEngine) *Service {
@@ -74,6 +81,13 @@ func (s *Service) WithAuditSink(sink audit.Sink) *Service {
 // WithMemoryLoader wires auto-injection on the first user turn (slice 16).
 func (s *Service) WithMemoryLoader(l *memory.Loader) *Service {
 	s.memLoader = l
+	return s
+}
+
+// WithReflectionHook wires a non-blocking hook called at the end of
+// ArchiveSession (slice 20). nil keeps reflection off.
+func (s *Service) WithReflectionHook(h ReflectionHook) *Service {
+	s.reflectionHook = h
 	return s
 }
 
@@ -172,6 +186,9 @@ func (s *Service) ArchiveSession(ctx context.Context, tenantID, userID, id uuid.
 		meta = map[string]any{"sandbox_id": sess.SandboxID.String()}
 	}
 	s.auditSessionEvent(start, tenantID, userID, id, "session.archive", meta)
+	if s.reflectionHook != nil {
+		s.reflectionHook(ctx, tenantID, userID, id)
+	}
 	return nil
 }
 

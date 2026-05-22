@@ -157,6 +157,28 @@ func TestService_ArchiveSession(t *testing.T) {
 	sb.mu.Unlock()
 }
 
+func TestService_ArchiveSession_FiresReflectionHook(t *testing.T) {
+	svc, _, _, tid, uid := newService(t)
+	ctx := context.Background()
+	s, err := svc.CreateSession(ctx, tid, uid, session.CreateRequest{Model: "m"})
+	require.NoError(t, err)
+
+	type hookCall struct {
+		tenantID, userID, sessionID uuid.UUID
+	}
+	var calls []hookCall
+	svc.WithReflectionHook(func(_ context.Context, tid2, uid2, sid uuid.UUID) bool {
+		calls = append(calls, hookCall{tid2, uid2, sid})
+		return true
+	})
+
+	require.NoError(t, svc.ArchiveSession(ctx, tid, uid, s.ID))
+	require.Len(t, calls, 1)
+	require.Equal(t, tid, calls[0].tenantID)
+	require.Equal(t, uid, calls[0].userID)
+	require.Equal(t, s.ID, calls[0].sessionID)
+}
+
 func TestService_SendMessage_HappyPath(t *testing.T) {
 	svc, eng, _, tid, uid := newService(t)
 	ctx := context.Background()
