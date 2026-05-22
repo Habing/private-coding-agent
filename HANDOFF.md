@@ -6,9 +6,9 @@
 | 项目根 | `F:\project\private-coding-agent` |
 | Git module | `github.com/yourorg/private-coding-agent` |
 | 当前日期 | 2026-05-22 |
-| 当前 HEAD | `9ba95b6` *(Slice 19a 5 commits 待落地)* |
+| 当前 HEAD | `2ace399` *(Slice 19a + 19b 全量 push；E2E 60/60 PASS)* |
 | P1 规划 | **已落盘** — [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md) |
-| 工作区状态 | Slice 19a/19b 已实现待 commit；MVP-P1 17 ✅；Full-P1 18 ✅, 19a ✅, 19b ✅ |
+| 工作区状态 | MVP-P1 17 ✅；Full-P1 18 ✅, 19a ✅, 19b ✅；E2E 60/60 PASS（2026-05-22） |
 | 下一阶段 | **Full P1 切片 20–23**（20 Reflection 起步） |
 
 ---
