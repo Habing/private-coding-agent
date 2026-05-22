@@ -114,6 +114,10 @@ services:
       PCA_AUTH_OIDC_REDIRECT_URL: ${PCA_AUTH_OIDC_REDIRECT_URL:-http://localhost:8080/auth/oidc/callback}
       PCA_AUTH_OIDC_TENANT_SLUG: ${PCA_AUTH_OIDC_TENANT_SLUG:-default}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-e2e-oidc-secret-change-me}
+      # Slice 20: Reflection Agent. In E2E we point at default-mock so the
+      # worker's LLM call hits the canned REFLECTION_TASK_V1 branch.
+      PCA_REFLECTION_ENABLED: ${PCA_REFLECTION_ENABLED:-true}
+      PCA_REFLECTION_MODEL: ${PCA_REFLECTION_MODEL:-default-mock:gpt-4o}
       DOCKER_HOST: "unix:///var/run/docker.sock"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

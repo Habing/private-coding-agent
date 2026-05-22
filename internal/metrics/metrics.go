@@ -38,6 +38,7 @@ var (
 	SkillLoadTotal         metric.Int64Counter
 	SkillInjectionsTotal   metric.Int64Counter
 	SkillInjectedChars     metric.Int64Histogram
+	ReflectionProposalsTotal metric.Int64Counter
 )
 
 // Init creates all instrument handles against the current global MeterProvider.
@@ -132,6 +133,12 @@ func build(m metric.Meter) error {
 		metric.WithDescription("Characters of Skill content injected into an agent run."),
 	); err != nil {
 		return wrap("pca_skill_injected_chars", err)
+	}
+	if ReflectionProposalsTotal, err = m.Int64Counter(
+		"pca_reflection_proposals_total",
+		metric.WithDescription("Memory proposals emitted by the Reflection worker, by outcome (created|auto_approved|approved|rejected|dropped|llm_failed)."),
+	); err != nil {
+		return wrap("pca_reflection_proposals_total", err)
 	}
 	return nil
 }

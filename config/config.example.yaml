@@ -87,3 +87,22 @@ memory:
   # Slice 16: auto-inject on first user message in a session.
   inject_top_k: 5
   inject_max_chars: 4000
+
+reflection:
+  # Slice 20: Reflection Agent extracts memory candidates from archived sessions
+  # via an async worker pool. enabled=false skips worker construction and admin
+  # routes entirely.
+  enabled: true
+  # Model used by Reflector. For E2E / offline use default-mock:gpt-4o; in
+  # production prefer dashscope:qwen3.6-plus or similar.
+  model: "default-mock:gpt-4o"
+  # Confidence >= threshold → auto-create the memory (subject to vector dedup).
+  # 0 disables auto-approve (all proposals land in admin queue).
+  auto_approve_threshold: 0.85
+  # Truncation knobs for the LLM context. Cap is per-session.
+  max_messages_per_session: 20
+  max_chars_per_message: 500
+  # Worker buffered-channel size; on overflow, Enqueue logs warn and drops.
+  worker_buffer: 256
+  # Per-job timeout (LLM call + persist).
+  worker_timeout: 5m

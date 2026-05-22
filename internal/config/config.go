@@ -24,6 +24,19 @@ type Config struct {
 	Providers     ProvidersConfig     `mapstructure:"providers"`
 	Quota         QuotaConfig         `mapstructure:"quota"`
 	RateLimit     RateLimitConfig     `mapstructure:"rate_limit"`
+	Reflection    ReflectionConfig    `mapstructure:"reflection"`
+}
+
+// ReflectionConfig drives the Reflection Agent (slice 20). Enabled=false skips
+// worker construction and admin route registration entirely.
+type ReflectionConfig struct {
+	Enabled               bool          `mapstructure:"enabled"`
+	Model                 string        `mapstructure:"model"`
+	AutoApproveThreshold  float64       `mapstructure:"auto_approve_threshold"`
+	MaxMessagesPerSession int           `mapstructure:"max_messages_per_session"`
+	MaxCharsPerMessage    int           `mapstructure:"max_chars_per_message"`
+	WorkerBuffer          int           `mapstructure:"worker_buffer"`
+	WorkerTimeout         time.Duration `mapstructure:"worker_timeout"`
 }
 
 // ProvidersConfig controls the model-provider registry (slice 13).
@@ -123,7 +136,31 @@ func Load(path string) (*Config, error) {
 	applySkillsDefaults(&c.Skills)
 	applySlice13Defaults(&c)
 	applySlice15Defaults(&c)
+	applySlice20Defaults(&c)
 	return &c, nil
+}
+
+// applySlice20Defaults fills Reflection defaults. Enabled is intentionally
+// not defaulted to true here — operators must opt-in (or YAML/env sets it).
+func applySlice20Defaults(c *Config) {
+	if c.Reflection.Model == "" {
+		c.Reflection.Model = "default-mock:gpt-4o"
+	}
+	if c.Reflection.AutoApproveThreshold == 0 {
+		c.Reflection.AutoApproveThreshold = 0.85
+	}
+	if c.Reflection.MaxMessagesPerSession <= 0 {
+		c.Reflection.MaxMessagesPerSession = 20
+	}
+	if c.Reflection.MaxCharsPerMessage <= 0 {
+		c.Reflection.MaxCharsPerMessage = 500
+	}
+	if c.Reflection.WorkerBuffer <= 0 {
+		c.Reflection.WorkerBuffer = 256
+	}
+	if c.Reflection.WorkerTimeout <= 0 {
+		c.Reflection.WorkerTimeout = 5 * time.Minute
+	}
 }
 
 func applySlice15Defaults(c *Config) {

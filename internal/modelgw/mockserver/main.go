@@ -81,6 +81,8 @@ type mockResponse struct {
 // and streamChat code paths stay in lockstep.
 //
 // Priority (highest to lowest):
+//  0. reflection marker — set on the Reflector's system prompt; returns a
+//     canned JSON array so the worker has something deterministic to parse.
 //  1. tenant-skill marker — DB-backed skill round-trip.
 //  2. delegate sub marker — set on the review profile's system prompt; signals
 //     "this Run is the child of an agent.delegate". Returns the canonical
@@ -98,6 +100,12 @@ func pickDeterministicResponse(msgs []mockMessage) mockResponse {
 		last = msgs[n-1]
 	}
 
+	if hasReflectionMarker(msgs) {
+		return mockResponse{
+			kind: "final",
+			text: `[{"type":"preference","content":"E2E test prefers golang generics","tags":["golang","e2e"],"confidence":0.5}]`,
+		}
+	}
 	if hasTenantSkillMarker(msgs) {
 		return mockResponse{kind: "final", text: "tenant-skill-marker-ok"}
 	}
@@ -221,6 +229,20 @@ const delegateSubMarker = "E2E_DELEGATE_SUB_V1"
 // First turn emits a tool_call workflow.e2e-demo; second turn (after the tool
 // observation) closes out with the canonical final string.
 const workflowMarker = "E2E_WORKFLOW_V1"
+
+// reflectionMarker is the token Reflector embeds in its system prompt. Kept in
+// sync with reflection.ReflectionMarker (we can't import the package — this
+// is the leaf binary).
+const reflectionMarker = "REFLECTION_TASK_V1"
+
+func hasReflectionMarker(msgs []mockMessage) bool {
+	for _, m := range msgs {
+		if m.Role == "system" && strings.Contains(m.Content, reflectionMarker) {
+			return true
+		}
+	}
+	return false
+}
 
 func hasWorkflowMarker(msgs []mockMessage) bool {
 	for _, m := range msgs {

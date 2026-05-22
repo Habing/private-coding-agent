@@ -32,6 +32,7 @@ import (
 	"github.com/yourorg/private-coding-agent/internal/metrics"
 	"github.com/yourorg/private-coding-agent/internal/modelgw"
 	"github.com/yourorg/private-coding-agent/internal/quota"
+	"github.com/yourorg/private-coding-agent/internal/reflection"
 	"github.com/yourorg/private-coding-agent/internal/sandbox"
 	"github.com/yourorg/private-coding-agent/internal/session"
 	"github.com/yourorg/private-coding-agent/internal/skills"
@@ -292,6 +293,33 @@ func run() error {
 		return cl.TenantID, true
 	})
 
+	// Slice 20 — Reflection Agent. Worker is in-process; on Enabled=false the
+	// hook stays nil so ArchiveSession is a no-op for this subsystem.
+	var reflectionAdmin *reflection.AdminHandler
+	if cfg.Reflection.Enabled {
+		reflRepo := reflection.NewRepo(pool)
+		reflMem := newReflectionMemoryAdapter(memoryService)
+		reflCfg := reflection.Config{
+			Enabled:               true,
+			Model:                 cfg.Reflection.Model,
+			AutoApproveThreshold:  cfg.Reflection.AutoApproveThreshold,
+			MaxMessagesPerSession: cfg.Reflection.MaxMessagesPerSession,
+			MaxCharsPerMessage:    cfg.Reflection.MaxCharsPerMessage,
+			WorkerBuffer:          cfg.Reflection.WorkerBuffer,
+			WorkerTimeout:         cfg.Reflection.WorkerTimeout,
+		}
+		reflector := reflection.NewReflector(modelGateway, reflMem,
+			session.NewMessageRepo(pool), reflRepo, auditRepo, reflCfg)
+		reflWorker := reflection.NewWorker(reflector, reflCfg.WorkerBuffer, reflCfg.WorkerTimeout)
+		go reflWorker.Run(ctx)
+		sessionService.WithReflectionHook(reflWorker.Enqueue)
+		reflectionAdmin = reflection.NewAdminHandler(reflRepo, reflMem).WithAuditSink(auditRepo)
+		slog.Info("reflection enabled",
+			"model", reflCfg.Model,
+			"auto_approve_threshold", reflCfg.AutoApproveThreshold,
+			"worker_buffer", reflCfg.WorkerBuffer)
+	}
+
 	var ready atomic.Bool
 	ready.Store(true)
 
@@ -365,6 +393,9 @@ func run() error {
 			skills.NewAdminHandler(skillDBRepo).WithAuditSink(auditRepo).Register(adminGroup)
 		}
 		workflow.NewAdminHandler(workflowService).Register(adminGroup)
+		if reflectionAdmin != nil {
+			reflectionAdmin.Register(adminGroup)
+		}
 
 		// /metrics — Prometheus exposition. Authenticated via the dual-channel
 		// metrics.Auth middleware: static token bypass (for Prom scrape jobs)
@@ -438,4 +469,32 @@ func run() error {
 		return fmt.Errorf("shutdown: %w", err)
 	}
 	return nil
+}
+
+// reflectionMemoryAdapter wires memory.Service.Create into the
+// reflection.MemoryCreator interface used by both the Reflector
+// (auto-approve) and the admin Approve handler. dedupHit = !Created so
+// auditing can record whether the row was newly inserted or merged.
+type reflectionMemoryAdapter struct {
+	svc *memory.Service
+}
+
+func newReflectionMemoryAdapter(svc *memory.Service) *reflectionMemoryAdapter {
+	return &reflectionMemoryAdapter{svc: svc}
+}
+
+func (a *reflectionMemoryAdapter) CreateForReflection(ctx context.Context,
+	tenantID, userID uuid.UUID, typ, content string, tags []string,
+	sourceMsgID *uuid.UUID) (uuid.UUID, bool, error) {
+	res, err := a.svc.Create(ctx, tenantID, userID, memory.CreateRequest{
+		Type:        typ,
+		Content:     content,
+		Tags:        tags,
+		Source:      memory.SourceReflection,
+		SourceMsgID: sourceMsgID,
+	})
+	if err != nil {
+		return uuid.Nil, false, err
+	}
+	return res.Memory.ID, !res.Created, nil
 }
