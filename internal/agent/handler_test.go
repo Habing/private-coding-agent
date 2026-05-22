@@ -19,9 +19,10 @@ import (
 
 // mockRunner returns scripted events / error from Run.
 type mockRunner struct {
-	events []agent.Event
-	err    error
-	got    agent.RunInput
+	events   []agent.Event
+	err      error
+	got      agent.RunInput
+	profiles []agent.Profile
 }
 
 func (m *mockRunner) Run(_ context.Context, in agent.RunInput, yield func(agent.Event) error) error {
@@ -33,6 +34,8 @@ func (m *mockRunner) Run(_ context.Context, in agent.RunInput, yield func(agent.
 	}
 	return m.err
 }
+
+func (m *mockRunner) Profiles() []agent.Profile { return m.profiles }
 
 func newHandlerRouter(t *testing.T, mr *mockRunner) (*gin.Engine, string) {
 	t.Helper()
@@ -168,4 +171,43 @@ func TestHandler_Run_MaxSteps_Returns200WithError(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), "max_steps_exceeded")
 	require.Contains(t, w.Body.String(), `"events"`)
+}
+
+func TestHandler_ListProfiles_OK(t *testing.T) {
+	mr := &mockRunner{profiles: []agent.Profile{
+		agent.DefaultCodingProfile(),
+		agent.DefaultReviewProfile(),
+		agent.DefaultResearchProfile(),
+		agent.DefaultWorkflowAuthoringProfile(),
+	}}
+	r, tok := newHandlerRouter(t, mr)
+	req := httptest.NewRequest(http.MethodGet, "/agent/profiles", nil)
+	req.Header.Set("Authorization", tok)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp struct {
+		Profiles []agent.ProfileInfo `json:"profiles"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp.Profiles, 4)
+	names := []string{}
+	for _, p := range resp.Profiles {
+		names = append(names, p.Name)
+		require.NotEmpty(t, p.Description, "profile %s missing description", p.Name)
+	}
+	require.Contains(t, names, "coding")
+	require.Contains(t, names, "review")
+	require.Contains(t, names, "research")
+	require.Contains(t, names, "workflow-authoring")
+}
+
+func TestHandler_ListProfiles_NoAuth(t *testing.T) {
+	mr := &mockRunner{}
+	r, _ := newHandlerRouter(t, mr)
+	req := httptest.NewRequest(http.MethodGet, "/agent/profiles", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
 }

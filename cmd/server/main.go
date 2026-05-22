@@ -190,9 +190,15 @@ func run() error {
 	toolBus.WithQuota(quotaSvc)
 	toolHandler := toolbus.NewHandler(toolBus)
 
-	// Agent Engine (slice 5) + Skills subsystem (slice 12)
+	// Agent Engine (slice 5) + Skills subsystem (slice 12) + Sub-Agent
+	// profiles (slice 18). All four profiles are registered up front so the
+	// delegate tool can target any of them; new profiles plug in here without
+	// touching wiring further down.
 	agentProfiles := map[string]agent.Profile{
-		"coding": agent.DefaultCodingProfile(),
+		"coding":             agent.DefaultCodingProfile(),
+		"review":             agent.DefaultReviewProfile(),
+		"research":           agent.DefaultResearchProfile(),
+		"workflow-authoring": agent.DefaultWorkflowAuthoringProfile(),
 	}
 	var skillRegistry *skills.Registry
 	var skillDBRepo *skills.DBRepo
@@ -252,6 +258,14 @@ func run() error {
 	sessionWSHandler.WithAuditSink(auditRepo)
 	toolBus.WithAuditSink(auditRepo)
 	agentEngine.WithAuditSink(auditRepo)
+	// Slice 18: late-register agent.delegate now that both the engine and
+	// the audit sink are available. The tool needs an *Engine reference (for
+	// child Run dispatch) and a sink (for delegate.{start,complete} events),
+	// so it can't be registered alongside the built-in tools above.
+	delegateTool := agent.NewDelegateTool(agentEngine, agentProfiles, auditRepo)
+	if err := toolBus.Register(delegateTool); err != nil {
+		return fmt.Errorf("register agent.delegate: %w", err)
+	}
 	auditSvc := audit.NewService(auditRepo)
 	auditHandler := audit.NewHandler(auditSvc, func(c *gin.Context) (uuid.UUID, bool) {
 		cl := auth.FromCtx(c.Request.Context())

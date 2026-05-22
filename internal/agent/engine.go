@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -72,6 +73,18 @@ func (e *Engine) WithAuditSink(sink audit.Sink) *Engine {
 	return e
 }
 
+// Profiles returns the registered profiles as a name-sorted slice copy. Used
+// by the agent handler to back GET /agent/profiles and by callers wiring
+// agent.delegate.
+func (e *Engine) Profiles() []Profile {
+	out := make([]Profile, 0, len(e.profiles))
+	for _, p := range e.profiles {
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
 // Run drives the ReAct loop. Each event is emitted via yield(); if yield returns
 // an error the loop aborts and returns that error. The final return value is nil
 // on a clean stop, or a sentinel error on max steps / LLM failure.
@@ -94,6 +107,20 @@ func (e *Engine) Run(ctx context.Context, in RunInput, yield func(Event) error) 
 	if maxSteps <= 0 {
 		maxSteps = 16
 	}
+
+	// Propagate per-Run state (sandbox / model / profile / delegate depth) via
+	// ctx so engine-internal tools — currently only agent.delegate — can read
+	// it without needing the *RunInput. DelegateDepth carries over from the
+	// caller's RunCtx; the delegate tool bumps it before invoking Engine.Run
+	// for the child, so a depth-1 RunCtx flowing through here means "this is
+	// the child Run." Sandbox / Model / ProfileName always come from in.
+	parentRC := RunCtxFromCtx(ctx)
+	ctx = WithRunCtx(ctx, RunCtx{
+		SandboxID:     in.SandboxID,
+		Model:         in.Model,
+		ProfileName:   profileName,
+		DelegateDepth: parentRC.DelegateDepth,
+	})
 
 	ctx, runSpan := tracer.Start(ctx, "agent.run",
 		trace.WithAttributes(

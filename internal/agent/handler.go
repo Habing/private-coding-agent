@@ -11,20 +11,45 @@ import (
 	"github.com/yourorg/private-coding-agent/internal/modelgw"
 )
 
-// Runner is the subset of *Engine the handler depends on.
+// Runner is the subset of *Engine the handler depends on. Slice 18 widens
+// it with Profiles() so GET /agent/profiles can ride the same wiring.
 type Runner interface {
 	Run(ctx context.Context, in RunInput, yield func(Event) error) error
+	Profiles() []Profile
 }
 
-// Handler exposes POST /agent/run. The current implementation is non-streaming:
-// events are buffered and returned as a JSON array. Slice 6 will replace this
-// with WebSocket streaming.
+// Handler exposes POST /agent/run and GET /agent/profiles. The Run handler is
+// non-streaming: events are buffered and returned as a JSON array. The
+// streaming variant lives behind the WebSocket route in session.Handler.
 type Handler struct{ engine Runner }
 
 func NewHandler(e Runner) *Handler { return &Handler{engine: e} }
 
 func (h *Handler) Register(rg *gin.RouterGroup) {
 	rg.POST("/agent/run", h.run)
+	rg.GET("/agent/profiles", h.listProfiles)
+}
+
+// ProfileInfo is the public projection of Profile returned by
+// GET /agent/profiles. We deliberately omit the system prompt and allowlist —
+// callers only need to render the picker; the agent enforces capabilities
+// server-side anyway.
+type ProfileInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+func (h *Handler) listProfiles(c *gin.Context) {
+	if auth.FromCtx(c.Request.Context()) == nil {
+		writeAPIError(c, http.StatusUnauthorized, "unauthorized", "auth_error", "missing_token")
+		return
+	}
+	profiles := h.engine.Profiles()
+	out := make([]ProfileInfo, 0, len(profiles))
+	for _, p := range profiles {
+		out = append(out, ProfileInfo{Name: p.Name, Description: p.Description})
+	}
+	c.JSON(http.StatusOK, gin.H{"profiles": out})
 }
 
 type runRequest struct {
