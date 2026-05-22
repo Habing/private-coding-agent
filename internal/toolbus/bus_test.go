@@ -107,3 +107,28 @@ func TestBus_ListTools(t *testing.T) {
 	require.Equal(t, "a", list[0].Name)
 	require.Equal(t, "b", list[1].Name)
 }
+
+// mockMutatingTool implements toolbus.Mutating so ListTools surfaces the flag.
+// We need it to verify GET /tools exposes "mutating":true for side-effecting
+// tools and "mutating":false for non-mutating ones — the WebUI Toolbox page
+// uses this to render the red badge.
+type mockMutatingTool struct{ mockTool }
+
+func (m *mockMutatingTool) IsMutating() bool { return true }
+
+func TestBus_ListTools_MutatingFlag(t *testing.T) {
+	mut := &mockMutatingTool{mockTool: mockTool{
+		name: "writer", schema: json.RawMessage(objSchemaWithX),
+	}}
+	plain := &mockTool{name: "reader", schema: json.RawMessage(objSchemaWithX)}
+	bus, _, _ := busWith(t, mut, plain)
+
+	list := bus.ListTools(context.Background(), uuid.New())
+	require.Len(t, list, 2)
+	byName := map[string]toolbus.ToolDef{}
+	for _, td := range list {
+		byName[td.Name] = td
+	}
+	require.True(t, byName["writer"].Mutating, "Mutating impl must surface as true")
+	require.False(t, byName["reader"].Mutating, "tool without Mutating defaults to false")
+}

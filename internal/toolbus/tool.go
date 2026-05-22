@@ -41,6 +41,7 @@ type ToolDef struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	Parameters  json.RawMessage `json:"parameters"`
+	Mutating    bool            `json:"mutating"`
 }
 
 // Mutating is an optional interface tools implement to flag side-effecting

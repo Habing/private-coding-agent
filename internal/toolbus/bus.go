@@ -96,10 +96,15 @@ func (b *Bus) ListTools(_ context.Context, _ uuid.UUID) []ToolDef {
 	tools := b.reg.List()
 	out := make([]ToolDef, 0, len(tools))
 	for _, t := range tools {
+		mutating := false
+		if m, ok := t.(Mutating); ok {
+			mutating = m.IsMutating()
+		}
 		out = append(out, ToolDef{
 			Name:        t.Name(),
 			Description: t.Description(),
 			Parameters:  t.Schema(),
+			Mutating:    mutating,
 		})
 	}
 	return out
