@@ -199,11 +199,25 @@ cd deploy/compose
 | L3 增量 | E2E **[50]**：`GET /agent/profiles` 4 项；`agent.run` 用 `E2E_DELEGATE_PARENT_V1` 触发 `agent.delegate` → review 子 Run → `delegate-parent-final: delegate-sub-marker-ok`；audit 含 `agent.delegate.start` + `agent.delegate.complete`（含 `sub_profile=review`） |
 | 不变量 | coding profile 工具列表含 `agent.delegate`；review/research/workflow-authoring 都**不含** `agent.delegate`；MaxDelegateDepth=1（ctx 计数 + 子 profile 白名单双保险） |
 
-### 切片 19 — Workflow Engine
+### 切片 19a — Workflow Engine
 
 | 项 | 验证 |
 |----|------|
-| L3 增量 | E2E **[57–60]**：发布 workflow → `workflow.<id>` invoke |
+| L1 | `go test ./internal/workflow/... ./internal/toolbus/... -count=1` |
+| L2 | `go build ./...`；migration 0018 up/down 干净 |
+| L3 增量 | E2E **[57–60]**：57 CRUD + publish → `GET /tools` 含 `workflow.e2e-demo`；58 `/tools/invoke {tool:"workflow.e2e-demo"}` outputs 含 `said:"hello E2E"` + `workflow_runs` 写 ok 行；59 `agent.run` 用 `E2E_WORKFLOW_V1` 触发 tool_call workflow + audit `workflow.invoke.{start,complete}`；60 `?dry_run=true` 时 shell.exec 节点返 mock JSON `{"dry_run":true,"tool":"shell.exec",...}` + `workflow_runs.dry_run=true` |
+| 不变量 | published == 在 Bus 中（startup republish 兜底）；PUT 强制 unpublish；跨租户隔离；MaxSteps=200 / MaxParallelFanout=8 / MaxNestingDepth=8 |
+| 审计 | `workflow.admin.{create,update,delete,publish,unpublish}` + `workflow.invoke.{start,complete}` 共 7 个 action |
+
+### 切片 19b — Workflows & Tools Web UI
+
+| 项 | 验证 |
+|----|------|
+| L1 | `go test ./internal/toolbus/... -count=1`（含 `TestBus_ListTools_MutatingFlag` 断言 mutating bool 字段） |
+| L2 | `cd internal/webui && npm install && npm test && npm run build`（产物 ~290 KB main + Monaco 通过 CDN worker 不进 bundle） |
+| L3 手工 | (a) admin 访问 `/workflows` → 列表见 `e2e-demo`；进编辑 → Monaco YAML 高亮；改 DSL → 保存（version+=1 + 自动 unpublish）→ 重新 publish；点 ▶ invoke（normal 出 outputs，dry_run on 出 mock JSON）；runs 抽屉显示最近 20 次；删除前确认。 (b) 任意登录用户访问 `/toolbox` → 卡片列出全部 internal 工具；`fs.write` / `shell.exec` / `memory.save` / `memory.delete` / `agent.delegate` 有红色 Mutating 徽标；点 "JSON Schema" 折叠面板展开 schema。 (c) 硬刷新 `/workflows` 与 `/toolbox` 返回 200 SPA（不被 backend 401 抢走）。 (d) 非 admin 访问 `/workflows` → AdminGuard 跳转 `/`；`/toolbox` 仍可见。 |
+| 不变量 | `GET /tools` 响应每个 tool 含 `mutating bool`，5 个 mutating 工具值为 true（`fs.write` / `shell.exec` / `memory.save` / `memory.delete` / `agent.delegate`），其余为 false；前端不硬编码工具名清单 |
+| 前端路由 | 避开后端已占的 `/admin/workflows`、`/tools`：前端用 `/workflows` 与 `/toolbox`（empty backend → SPA fallback） |
 
 ### 切片 20 — Reflection
 
@@ -241,6 +255,7 @@ cd deploy/compose
 | P0 / Gate | `./test-e2e.sh` | 1–42 |
 | MVP-P1 | `./test-e2e.sh` | 1–49 |
 | Full P1（含 18） | `./test-e2e.sh` | 1–50（slice 18 完成后） |
+| Full P1（含 19a） | `./test-e2e.sh` | 1–60（slice 19a 完成后） |
 
 ```powershell
 go test ./... -count=1
@@ -286,8 +301,9 @@ cd deploy/compose
 | 16 | 47–48 |
 | 17 | 49 |
 | **MVP-P1 全量** | **1–55** |
-| 18 | 56 |
-| 19 | 57–60 |
+| 18 | 50 |
+| 19a | 57–60 |
+| 19b | — (纯前端 + L1/L2，无 E2E 步号) |
 | 20 | 61 |
 | 21 | 62–63 |
 | 22 | 64+ |
