@@ -294,3 +294,35 @@ export interface WorkflowInvokeResult {
   started_at: string
   duration_ms: number
 }
+
+export type MemoryProposalStatus = 'pending' | 'approved' | 'auto_approved' | 'rejected'
+
+export interface MemoryProposal {
+  id: string
+  tenant_id: string
+  owner_user_id: string
+  session_id?: string
+  type: MemoryType
+  content: string
+  tags: string[]
+  confidence: number
+  status: MemoryProposalStatus
+  memory_id?: string
+  decided_at?: string
+  decided_by?: string
+  created_at: string
+}
+
+export interface MemoryProposalListResponse {
+  proposals: MemoryProposal[]
+}
+
+export interface ApproveMemoryProposalRequest {
+  type?: MemoryType
+  content?: string
+  tags?: string[]
+}
+
+export interface RejectMemoryProposalRequest {
+  reason?: string
+}

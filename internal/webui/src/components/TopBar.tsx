@@ -52,6 +52,12 @@ export function TopBar() {
             >
               工作流
             </Link>
+            <Link
+              to="/admin/memory-proposals"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              提议
+            </Link>
           </>
         )}
       </div>

@@ -6,6 +6,7 @@ import { ProtectedShell } from '@/components/ProtectedShell'
 import { Audit } from '@/pages/Audit'
 import { Chat } from '@/pages/Chat'
 import { Memories } from '@/pages/Memories'
+import { MemoryProposals } from '@/pages/MemoryProposals'
 import { Home } from '@/pages/Home'
 import { Login } from '@/pages/Login'
 import { NotFound } from '@/pages/NotFound'
@@ -37,6 +38,14 @@ export function App() {
               element={
                 <AdminGuard>
                   <SkillsAdmin />
+                </AdminGuard>
+              }
+            />
+            <Route
+              path="/admin/memory-proposals"
+              element={
+                <AdminGuard>
+                  <MemoryProposals />
                 </AdminGuard>
               }
             />
