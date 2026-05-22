@@ -223,7 +223,12 @@ cd deploy/compose
 
 | 项 | 验证 |
 |----|------|
-| L3 增量 | E2E **[61]**：proposal approve → search 命中 |
+| L1 | `go test ./internal/reflection/... ./internal/session/... ./internal/config/... ./internal/modelgw/... -count=1` |
+| L2 | `go build ./...`；migration 0019 up/down 干净；`cd internal/webui && npm test && npm run build`（产物 ~295 KB） |
+| L3 增量 | E2E **[61]**：建会话→WS 发 user message→DELETE 归档触发异步 Reflector→`GET /admin/memory-proposals?status=pending` 5–10s 内出现一行（confidence=0.5，mock canned）→`POST /admin/memory-proposals/{id}/approve` 返回 `status=approved` 且 `memory_id` 非空→`/tools/invoke memory.search query="golang generics"` 命中 ≥1 行 |
+| 不变量 | (a) `cfg.Reflection.Enabled=false` 时 main.go 不构造 worker/admin handler；(b) channel 满 → `outcome=dropped` 计数 + `ArchiveSession` 不阻塞；(c) confidence ≥ `auto_approve_threshold`（默认 0.85）→ `status=auto_approved` + 同步 memory.Service.Create；< 阈值 → `status=pending` 入审核队列；(d) approve 走 `memory.Service.Create(Source=reflection)`，复用既有 0.92 cosine dedup（`dedup_hit=true/false` 入 audit metadata）；reject 时 `memory_id=NULL`；(e) admin handler 所有路径按 `cl.TenantID` 过滤，跨租户返回 404 |
+| 审计 | 5 个 action：`reflection.session.{complete,failed}`、`memory.proposal.{create,approve,reject}`；metric `pca_reflection_proposals_total{outcome=created\|auto_approved\|approved\|rejected\|dropped\|llm_failed}` |
+| Mock 协议 | Reflector 系统 prompt 拼接 `REFLECTION_TASK_V1`；mock-provider 看到该 token 返回固定 JSON 数组 `[{"type":"preference","content":"E2E test prefers golang generics","tags":["golang","e2e"],"confidence":0.5}]`，chat + stream 两路一致 |
 
 ### 切片 21 — Orchestration + External MCP
 
@@ -256,6 +261,7 @@ cd deploy/compose
 | MVP-P1 | `./test-e2e.sh` | 1–49 |
 | Full P1（含 18） | `./test-e2e.sh` | 1–50（slice 18 完成后） |
 | Full P1（含 19a） | `./test-e2e.sh` | 1–60（slice 19a 完成后） |
+| Full P1（含 20） | `./test-e2e.sh` | 1–61（slice 20 完成后） |
 
 ```powershell
 go test ./... -count=1

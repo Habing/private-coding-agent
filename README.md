@@ -35,7 +35,7 @@
 - [x] 切片 18：Sub-Agents + `agent.delegate`（review / research / workflow-authoring profile + 父子 Agent 协作）
 - [x] 切片 19a：Workflow Engine（YAML DSL + DAG executor + `workflow.<slug>` 注册到 ToolBus + Dry-Run mock mutating tools）
 - [x] 切片 19b：Workflows & Tools Web UI（`/workflows` admin 管理页 + `/toolbox` 工具浏览页 + `GET /tools` 暴露 `mutating` 标志）
-- [ ] 切片 20：Reflection Agent
+- [x] 切片 20：Reflection Agent（异步 worker + `memory_proposals` 表 + admin 审核 + auto-approve 阈值 + WebUI `/admin/memory-proposals`）
 - [ ] 切片 21：编排路由 + External MCP
 - [ ] 切片 22：K8s Helm + K8sDriver + 安全深化
 - [ ] 切片 23：N8N 集成（可选）
@@ -76,7 +76,7 @@ curl http://localhost:8080/healthz
 
 ```powershell
 cd deploy\compose
-./test-e2e.sh    # Git Bash / WSL，推荐（50 步全量；含切片 13–18）
+./test-e2e.sh    # Git Bash / WSL，推荐（61 步全量；含切片 13–20）
 # pwsh ./test-e2e.ps1   # 仅覆盖早期切片，完整验收请用 .sh
 ```
 
@@ -118,6 +118,10 @@ P0 Gate：**E2E 1～42**；切片 13 起增量 **43～48**（quota+logout / sess
 | GET  | /memories/{id} | Bearer | 查询单条记忆 |
 | PUT  | /memories/{id} | Bearer | 更新 content / tags / type |
 | DELETE | /memories/{id} | Bearer | 删除一条记忆 |
+| GET | /admin/memory-proposals | Bearer (admin) | 列出 Reflection 候选（`?status=pending\|approved\|auto_approved\|rejected&owner_user_id=&limit=&offset=`） |
+| GET | /admin/memory-proposals/{id} | Bearer (admin) | 查询单条 proposal |
+| POST | /admin/memory-proposals/{id}/approve | Bearer (admin) | 审批通过，body 可选 `{type?,content?,tags?}` 覆盖；走 `memory.Service.Create`，复用 0.92 dedup |
+| POST | /admin/memory-proposals/{id}/reject | Bearer (admin) | 驳回，body 可选 `{reason?}`；`memory_id=NULL` |
 | GET | /audit | Bearer (admin) | 查询审计日志,支持 action/user_id/from/to/min_status/max_status/limit/offset 过滤 |
 | GET | /metrics | Bearer (admin 或 scrape token) | Prometheus exposition,`pca_*` 指标 |
 | GET | / | - | SPA 首页（embed 进二进制） |
@@ -236,6 +240,48 @@ memory:
 
 dev / compose 默认走 mock provider 的 deterministic 1536-d 向量（sha256 → L2-normalize），同 input 必出同向量。切到真实模型后老向量与新向量不可比，需重建。
 
+## Reflection 子系统
+
+Slice 20 把"会话经验沉淀"做成自动闭环：归档会话 → 异步 worker → LLM 抽取候选 → `memory_proposals` 落表 → admin 审核 / 自动通过 → 走 `memory.Service.Create` 复用 0.92 cosine dedup 写入 `memories`。
+
+**流程：**
+
+1. `DELETE /sessions/:id` 走 `session.Service.ArchiveSession`，末尾把 `{tenant, user, session}` 推入 in-process `chan reflection.Job`（buffer 256，best-effort：channel 满即 `outcome=dropped` 计数 + warn，不阻塞归档）。
+2. `reflection.Worker` 主循环抽 job → 起独立 goroutine（5min ctx 超时）→ 调 `reflection.Reflector.Run`。
+3. `Reflector` 拉会话最近 ≤20 条消息（单条截 ≤500 字符），拼上含 `REFLECTION_TASK_V1` 的 system prompt 调 Model Gateway。返回必须是 JSON 数组 `[{type, content, tags, confidence}]`，最多 3 条；解析失败 → audit `reflection.session.failed`，不写任何 proposal。
+4. 解析成功：每条 proposal 写一行 `memory_proposals`。`confidence ≥ reflection.auto_approve_threshold`（默认 0.85）→ 状态直接 `auto_approved` + 同步 `memory.Service.Create(Source=reflection)`，命中 dedup 时 `memory_id` 指向既有行；否则 `pending`。
+5. Admin 通过 `/admin/memory-proposals` 审批：approve 走同一 `memory.Service.Create` 路径（支持 `{type?,content?,tags?}` 覆盖），reject 留 `memory_id=NULL`。
+
+**Admin REST**（`auth.RequireAdmin` + 租户过滤）：
+
+```
+GET    /admin/memory-proposals?status=pending|approved|auto_approved|rejected&owner_user_id=&limit=&offset=
+GET    /admin/memory-proposals/:id
+POST   /admin/memory-proposals/:id/approve   # 可选 body {type?, content?, tags?}
+POST   /admin/memory-proposals/:id/reject    # 可选 body {reason?}
+```
+
+**配置**（`reflection.*`，env 前缀 `PCA_REFLECTION_*`）：
+
+```yaml
+reflection:
+  enabled: true                        # false 时不构造 worker / 不挂 admin handler
+  model: "default-mock:gpt-4o"         # 生产: dashscope:qwen3.6-plus
+  auto_approve_threshold: 0.85         # 0 关闭 auto-approve（全走审核）
+  max_messages_per_session: 20
+  max_chars_per_message: 500
+  worker_buffer: 256
+  worker_timeout: 5m
+```
+
+**审计 5 个 action：** `reflection.session.{complete,failed}` + `memory.proposal.{create,approve,reject}`。  
+**Metric：** `pca_reflection_proposals_total{outcome=created|auto_approved|approved|rejected|dropped|llm_failed}`。  
+**OTel：** `reflection.session` 顶 span + `reflection.llm` / `reflection.persist` 子 span。
+
+**Web 入口：** `/admin/memory-proposals`（admin only）— 4 个状态 tab、表格列出 proposal、点 Approve 弹对话框可覆盖 type/content/tags 后再提交，Reject 直接生效。
+
+**v1 不做**：① 服务重启时 in-flight job 丢失（用户重 archive 一次即可，监控 `outcome=dropped`）；② 失败重试队列；③ proposal TTL 自动 reject；④ 普通用户自审视图（仅 admin）。outbox / Redis stream 是 P2 议题。
+
 ## Agent Skills
 
 Cursor 风格的"程序化知识"子系统：每个 Skill 是一个 `SKILL.md` 文件（YAML frontmatter + Markdown body），启动期由 `internal/skills.Registry` 递归扫描 `skills.dirs` 加载，Engine 在每次 Run 之前把当次选中的 Skill body 合并成一条系统消息注入。
@@ -283,6 +329,7 @@ React + Vite + Tailwind + shadcn/ui SPA，源码在 `internal/webui/`，由 `go:
 | `/audit` | admin | 审计日志查询 |
 | `/admin/skills` | admin | 租户 Skill CRUD + Profile binding（切片 17） |
 | `/workflows` | admin | Workflow DSL CRUD（Monaco YAML 编辑器）+ publish/unpublish + invoke（含 dry_run）+ 最近 runs 抽屉 |
+| `/admin/memory-proposals` | admin | Reflection 候选审核（切片 20）：pending/auto_approved/approved/rejected 4 个 tab + Approve dialog 可覆盖 |
 
 `/workflows` 与 `/toolbox` 是切片 19b 新增。Monaco Editor 通过 `@monaco-editor/react` 走 CDN worker，首屏 bundle 不含编辑器主体；首次进编辑视图时 ~150ms 冷启动。
 

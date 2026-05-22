@@ -6,10 +6,10 @@
 | 项目根 | `F:\project\private-coding-agent` |
 | Git module | `github.com/yourorg/private-coding-agent` |
 | 当前日期 | 2026-05-22 |
-| 当前 HEAD | `2ace399` *(Slice 19a + 19b 全量 push；E2E 60/60 PASS)* |
+| 当前 HEAD | `TBD` *(Slice 20 Reflection 全量 push 后回填；E2E 61/61 PASS 目标)* |
 | P1 规划 | **已落盘** — [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md) |
-| 工作区状态 | MVP-P1 17 ✅；Full-P1 18 ✅, 19a ✅, 19b ✅；E2E 60/60 PASS（2026-05-22） |
-| 下一阶段 | **Full P1 切片 20–23**（20 Reflection 起步） |
+| 工作区状态 | MVP-P1 17 ✅；Full-P1 18 ✅, 19a ✅, 19b ✅, 20 ✅；E2E 61/61 PASS（2026-05-22） |
+| 下一阶段 | **Full P1 切片 21–23**（21 Orchestration + External MCP 起步） |
 
 ---
 
@@ -46,7 +46,7 @@
 | `go test ./...` | 预期全 PASS |
 | `go vet ./...` | 干净 |
 | `go build ./...` | 干净 |
-| E2E `test-e2e.sh` | 全量 **60 步**（发版 / Gate 前必跑；P0 1–42 + MVP-P1 43–49 + Slice 18 50 + Slice 19a 57–60） |
+| E2E `test-e2e.sh` | 全量 **61 步**（发版 / Gate 前必跑；P0 1–42 + MVP-P1 43–49 + Slice 18 50 + Slice 19a 57–60 + Slice 20 61） |
 
 ### 1.4 Gate G1 收口（2026-05-21）
 
@@ -163,7 +163,7 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 | 18 Sub-Agents + delegate | ✅ | 50 | review/research/workflow-authoring profile + `agent.delegate` + ctx-based RunCtx |
 | 19a Workflow Engine | ✅ | 57–60 | YAML DSL + DAG executor (tool/assign/if/foreach/parallel/wait) + `workflow.<slug>` 注册到 ToolBus + Dry-Run mock mutating tools |
 | 19b Workflows & Tools Web UI | ✅ | — | `/workflows` admin（Monaco YAML 编辑器 + CRUD + publish/invoke/dry_run + runs 抽屉）+ `/toolbox`（只读工具列表 + Mutating 徽标）；`GET /tools` 暴露 `mutating bool` |
-| 20 Reflection | ⬜ | 61 | |
+| 20 Reflection | ✅ | 61 | `session.archive` → in-process worker → Reflector LLM 抽取 → `memory_proposals`（pending/auto_approved）→ admin `/admin/memory-proposals` 审核 → `memory.Service.Create`（0.92 dedup 复用）；mock-provider `REFLECTION_TASK_V1` canned JSON；5 个 audit action + `pca_reflection_proposals_total{outcome=…}`；WebUI `/admin/memory-proposals` |
 | 21 Orchestration + External MCP | ⬜ | 62–63 | |
 | 22 K8s + 安全深化 | ⬜ | 64+ | seccomp、trivy、Snapshot |
 | 23 N8N（可选） | ⬜ | 65+ | 需法务确认 |
@@ -215,19 +215,19 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 - 首次跑 dockertest 启 PG ~10-20s（pgvector 镜像比 postgres:16-alpine 大 ~130MB，首次 pull 慢一些）
 - 全包测试（不带 docker_integration tag）~25-60s
 - 全包测试 + docker_integration ~3-5 分钟
-- E2E（60 步含切片 13–19a；Full-P1 进行中）~3-8 分钟（首次 build 镜像更久）
+- E2E（61 步含切片 13–20；Full-P1 进行中）~3-8 分钟（首次 build 镜像更久）
 
 ---
 
 ## 5. 下一步建议
 
-### 5.1 立即（Slice 20 启动前自检）
+### 5.1 立即（Slice 21 启动前自检）
 
 ```bash
 cd F:/project/private-coding-agent
 go test ./... -count=1
 go vet ./...
-cd deploy/compose && ./test-e2e.sh   # 期望 60/60 E2E PASS（含切片 19a workflow 链路）
+cd deploy/compose && ./test-e2e.sh   # 期望 61/61 E2E PASS（含切片 20 reflection 链路）
 ```
 
 ### 5.2 已完成
@@ -240,12 +240,13 @@ cd deploy/compose && ./test-e2e.sh   # 期望 60/60 E2E PASS（含切片 19a wor
 6. ~~**Slice 18** — Sub-Agents + delegate~~ ✅（Full-P1 起步）
 7. ~~**Slice 19a** — Workflow Engine~~ ✅（YAML DSL + Bus.Register workflow.<slug> + Dry-Run）
 8. ~~**Slice 19b** — Workflows & Tools Web UI~~ ✅（`/workflows` Monaco 编辑 + `/toolbox` 工具列表 + `GET /tools` mutating 标志）
+9. ~~**Slice 20** — Reflection~~ ✅（异步 Reflector worker + `memory_proposals` 表 + admin 审核 + auto-approve 阈值 + 5 audit + mock-provider canned JSON + WebUI `/admin/memory-proposals`）
 
 每切片：读 plan → 实现 → 更新 `SLICE-VERIFICATION.md` + E2E 步号 → README 勾选。
 
 ### 5.3 Full P1 剩余
 
-按 [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md)：**20 → 21**；**22** 视交付压力可提前；**23** 可选。Slice 19a workflow_runs `failed` 行已经成为 Slice 20 Reflection worker 的素材；workflow descriptions 列表也供 Slice 21 Orchestration Router 候选用。
+按 [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md)：**21**；**22** 视交付压力可提前；**23** 可选。Slice 20 reflection proposals 已经在审核流中沉淀；workflow descriptions 列表供 Slice 21 Orchestration Router 候选用。
 
 ### 5.3 已知"未做"的设计决策（留给后续）
 
