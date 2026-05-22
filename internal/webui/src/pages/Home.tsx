@@ -37,8 +37,10 @@ export function Home() {
     staleTime: 5 * 60 * 1000,
   })
 
+  const [createErr, setCreateErr] = useState<string | null>(null)
   const createMut = useMutation({
     mutationFn: () => {
+      setCreateErr(null)
       const body: CreateSessionRequest = { model: DEFAULT_MODEL, profile }
       return api<Session>('/sessions', {
         token,
@@ -50,6 +52,7 @@ export function Home() {
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
       navigate(`/sessions/${sess.id}`, { replace: true })
     },
+    onError: (e) => setCreateErr(humanError(e)),
   })
 
   const isUnauthorized =
@@ -104,7 +107,35 @@ export function Home() {
         <Button onClick={() => createMut.mutate()} disabled={!canCreate}>
           {createMut.isPending ? '创建中…' : '新建会话'}
         </Button>
+        {createErr && (
+          <div
+            role="alert"
+            className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+          >
+            {createErr}
+          </div>
+        )}
       </div>
     </div>
   )
+}
+
+function humanError(e: unknown): string {
+  if (e instanceof ApiError) {
+    try {
+      const j = JSON.parse(e.body) as {
+        error?: string
+        kind?: string
+        detail?: string
+      }
+      if (j.error === 'quota_exceeded' && j.kind === 'sandbox.active') {
+        return '沙箱配额已满：每个租户活跃沙箱上限已达。请先归档闲置会话，或调大 PCA_QUOTA_SANDBOX_MAX_ACTIVE。'
+      }
+      if (j.error) return j.detail ? `${j.error}: ${j.detail}` : j.error
+      return e.body || e.message
+    } catch {
+      return e.body || e.message
+    }
+  }
+  return e instanceof Error ? e.message : String(e)
 }

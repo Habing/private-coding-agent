@@ -54,12 +54,14 @@ WHERE id=$1 AND tenant_id=$2 AND owner_user_id=$3`, id, tenantID, ownerUserID)
 	return &s, nil
 }
 
-// List returns sessions owned by ownerUserID under tenantID, newest first.
+// List returns active sessions owned by ownerUserID under tenantID, newest
+// first. Archived sessions are excluded — the UI has no separate "history"
+// view and treats archive as delete (the trash icon vanishes the row).
 func (r *SessionRepo) List(ctx context.Context, tenantID, ownerUserID uuid.UUID) ([]Session, error) {
 	rows, err := r.pool.Query(ctx, `
 SELECT id, tenant_id, owner_user_id, title, model, profile, status, skill_ids, sandbox_id, created_at, updated_at
 FROM sessions
-WHERE tenant_id=$1 AND owner_user_id=$2
+WHERE tenant_id=$1 AND owner_user_id=$2 AND status='active'
 ORDER BY created_at DESC`, tenantID, ownerUserID)
 	if err != nil {
 		return nil, fmt.Errorf("query sessions: %w", err)

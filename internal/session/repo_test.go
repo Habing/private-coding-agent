@@ -149,6 +149,33 @@ func TestSessionRepo_Archive(t *testing.T) {
 	require.ErrorIs(t, err, session.ErrSessionNotFound)
 }
 
+// TestSessionRepo_List_ExcludesArchived locks down that archived rows do not
+// appear in the user-facing list. The trash button in the WebUI calls Archive
+// and expects the row to disappear; without this filter the UI looks broken.
+func TestSessionRepo_List_ExcludesArchived(t *testing.T) {
+	pg := newPool(t)
+	tid, uid := fixtures(t, pg)
+	ctx := context.Background()
+	repo := session.NewSessionRepo(pg)
+
+	active := &session.Session{
+		ID: uuid.New(), TenantID: tid, OwnerUserID: uid,
+		Model: "m", Profile: "coding", Status: session.StatusActive,
+	}
+	archived := &session.Session{
+		ID: uuid.New(), TenantID: tid, OwnerUserID: uid,
+		Model: "m", Profile: "coding", Status: session.StatusActive,
+	}
+	require.NoError(t, repo.Create(ctx, active))
+	require.NoError(t, repo.Create(ctx, archived))
+	require.NoError(t, repo.Archive(ctx, tid, uid, archived.ID))
+
+	list, err := repo.List(ctx, tid, uid)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.Equal(t, active.ID, list[0].ID)
+}
+
 func TestMessageRepo_AppendAndList(t *testing.T) {
 	pg := newPool(t)
 	tid, uid := fixtures(t, pg)
