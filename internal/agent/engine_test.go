@@ -13,6 +13,7 @@ import (
 
 	"github.com/yourorg/private-coding-agent/internal/agent"
 	"github.com/yourorg/private-coding-agent/internal/modelgw"
+	"github.com/yourorg/private-coding-agent/internal/orchestrator"
 	"github.com/yourorg/private-coding-agent/internal/toolbus"
 )
 
@@ -390,4 +391,119 @@ func eventKinds(events []agent.Event) []agent.EventKind {
 		out = append(out, ev.Kind)
 	}
 	return out
+}
+
+// fakeRouter implements orchestrator.Router with a canned Decision. Tests
+// can flip injectHint to verify suppression and assert routeCalled to check
+// the engine actually invoked the router.
+type fakeRouter struct {
+	decision    orchestrator.Decision
+	injectHint  bool
+	routedWith  string // captured UserContent
+	routedProf  string // captured Profile
+	routeCalled bool
+}
+
+func (f *fakeRouter) Route(_ context.Context, in orchestrator.RouteInput) orchestrator.Decision {
+	f.routeCalled = true
+	f.routedWith = in.UserContent
+	f.routedProf = in.Profile
+	return f.decision
+}
+func (f *fakeRouter) InjectHintEnabled() bool { return f.injectHint }
+
+func TestEngine_Router_InjectsHintWhenEnabled(t *testing.T) {
+	router := &fakeRouter{
+		decision: orchestrator.Decision{
+			Matched:   true,
+			RuleName:  "marker",
+			Type:      "tool",
+			Target:    "fs.list",
+			Hint:      "ROUTING_HINT_INJECTED",
+			MatchedOn: "content_contains",
+		},
+		injectHint: true,
+	}
+	gw := &mockGateway{responses: []*modelgw.ChatResponse{chatStop("ok")}}
+	bus := &mockBus{}
+	e := agent.NewEngine(gw, bus, defaultProfileMap(), agent.NoopComposer{}).WithRouter(router)
+	in := newRunInput("please process this")
+	err := e.Run(context.Background(), in, func(_ agent.Event) error { return nil })
+	require.NoError(t, err)
+	require.True(t, router.routeCalled, "router should have been called")
+	require.Equal(t, "please process this", router.routedWith)
+	require.Equal(t, "coding", router.routedProf)
+
+	require.NotEmpty(t, gw.calls)
+	msgs := gw.calls[0].Messages
+	var hintIdx, userIdx int = -1, -1
+	for i, m := range msgs {
+		if m.Role == modelgw.RoleSystem && m.Content == "ROUTING_HINT_INJECTED" {
+			hintIdx = i
+		}
+		if m.Role == modelgw.RoleUser {
+			userIdx = i
+		}
+	}
+	require.NotEqual(t, -1, hintIdx, "hint should be injected as system msg: %+v", msgs)
+	require.NotEqual(t, -1, userIdx, "user msg should remain in payload")
+	require.Less(t, hintIdx, userIdx, "hint should sit before user message")
+}
+
+func TestEngine_Router_HintSuppressedWhenInjectDisabled(t *testing.T) {
+	router := &fakeRouter{
+		decision: orchestrator.Decision{
+			Matched: true, Hint: "SHOULD_NOT_APPEAR",
+		},
+		injectHint: false,
+	}
+	gw := &mockGateway{responses: []*modelgw.ChatResponse{chatStop("ok")}}
+	e := agent.NewEngine(gw, &mockBus{}, defaultProfileMap(), agent.NoopComposer{}).WithRouter(router)
+	err := e.Run(context.Background(), newRunInput("hi"), func(_ agent.Event) error { return nil })
+	require.NoError(t, err)
+	require.True(t, router.routeCalled)
+	for _, m := range gw.calls[0].Messages {
+		require.NotContains(t, m.Content, "SHOULD_NOT_APPEAR")
+	}
+}
+
+func TestEngine_Router_EmptyHintNotInjectedEvenIfEnabled(t *testing.T) {
+	// Baseline: with router=nil we get N system messages (coding profile prompt).
+	baselineGW := &mockGateway{responses: []*modelgw.ChatResponse{chatStop("ok")}}
+	baseEng := agent.NewEngine(baselineGW, &mockBus{}, defaultProfileMap(), agent.NoopComposer{})
+	require.NoError(t, baseEng.Run(context.Background(), newRunInput("hi"),
+		func(_ agent.Event) error { return nil }))
+	baselineSys := 0
+	for _, m := range baselineGW.calls[0].Messages {
+		if m.Role == modelgw.RoleSystem {
+			baselineSys++
+		}
+	}
+
+	// With a no-match router (and inject_hint=true) we should still see the
+	// SAME number of system messages — no extra hint slips through.
+	router := &fakeRouter{
+		decision:   orchestrator.Decision{Matched: false},
+		injectHint: true,
+	}
+	gw := &mockGateway{responses: []*modelgw.ChatResponse{chatStop("ok")}}
+	e := agent.NewEngine(gw, &mockBus{}, defaultProfileMap(), agent.NoopComposer{}).WithRouter(router)
+	require.NoError(t, e.Run(context.Background(), newRunInput("nothing relevant"),
+		func(_ agent.Event) error { return nil }))
+	require.True(t, router.routeCalled)
+	gotSys := 0
+	for _, m := range gw.calls[0].Messages {
+		if m.Role == modelgw.RoleSystem {
+			gotSys++
+		}
+	}
+	require.Equal(t, baselineSys, gotSys, "no extra system message on no-match route")
+}
+
+func TestEngine_Router_NilRouterIsNoop(t *testing.T) {
+	gw := &mockGateway{responses: []*modelgw.ChatResponse{chatStop("ok")}}
+	// Don't call WithRouter at all.
+	e := agent.NewEngine(gw, &mockBus{}, defaultProfileMap(), agent.NoopComposer{})
+	err := e.Run(context.Background(), newRunInput("hi"), func(_ agent.Event) error { return nil })
+	require.NoError(t, err)
 }

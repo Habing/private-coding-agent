@@ -18,6 +18,7 @@ import (
 	"github.com/yourorg/private-coding-agent/internal/audit"
 	pcametrics "github.com/yourorg/private-coding-agent/internal/metrics"
 	"github.com/yourorg/private-coding-agent/internal/modelgw"
+	"github.com/yourorg/private-coding-agent/internal/orchestrator"
 	"github.com/yourorg/private-coding-agent/internal/toolbus"
 )
 
@@ -45,6 +46,7 @@ type Engine struct {
 	profiles       map[string]Profile
 	composer       ContextComposer
 	auditSink      audit.Sink
+	router         orchestrator.Router
 	maxOutputBytes int
 }
 
@@ -70,6 +72,16 @@ func NewEngine(gw Gateway, bus Bus, profiles map[string]Profile, composer Contex
 // for chaining.
 func (e *Engine) WithAuditSink(sink audit.Sink) *Engine {
 	e.auditSink = sink
+	return e
+}
+
+// WithRouter wires the Slice 21a orchestration router. When set, the engine
+// calls Route once per Run before message assembly; a non-empty
+// Decision.Hint is injected as a system message between any skill / memory
+// system messages and the user history (preserving Skill priority). Pass
+// nil (or skip the call) to disable routing.
+func (e *Engine) WithRouter(r orchestrator.Router) *Engine {
+	e.router = r
 	return e
 }
 
@@ -162,7 +174,12 @@ func (e *Engine) Run(ctx context.Context, in RunInput, yield func(Event) error) 
 		)
 		e.recordSkillInject(ctx, in, meta)
 	}
-	messages := make([]modelgw.ChatMessage, 0, len(sysMsgs)+len(in.Messages)+1)
+	// Slice 21a: route the Run through the orchestrator (no-op when nil or
+	// disabled). The Decision is computed unconditionally so callers can later
+	// emit audit / metric even on no_match; only injection is gated by
+	// InjectHintEnabled + non-empty Hint.
+	routeDecision := e.routeIfEnabled(ctx, profileName, in.Messages)
+	messages := make([]modelgw.ChatMessage, 0, len(sysMsgs)+len(in.Messages)+2)
 	if in.SandboxID != uuid.Nil {
 		messages = append(messages, modelgw.ChatMessage{
 			Role:    modelgw.RoleSystem,
@@ -170,6 +187,12 @@ func (e *Engine) Run(ctx context.Context, in RunInput, yield func(Event) error) 
 		})
 	}
 	messages = append(messages, sysMsgs...)
+	if routeDecision.Hint != "" && e.router != nil && e.router.InjectHintEnabled() {
+		messages = append(messages, modelgw.ChatMessage{
+			Role:    modelgw.RoleSystem,
+			Content: routeDecision.Hint,
+		})
+	}
 	messages = append(messages, in.Messages...)
 
 	// Resolve and convert tools once per Run.
@@ -328,6 +351,31 @@ func (e *Engine) runToolCall(ctx context.Context, in RunInput, step int,
 		Name:       name,
 		Content:    string(truncated),
 	}
+}
+
+// routeIfEnabled invokes the orchestrator router (if wired and enabled) and
+// returns its Decision. A nil router or disabled engine yields a zero
+// Decision. The latest user message is extracted from msgs; if the run has
+// no user message yet (delegate sub-Run, recovery flow…), UserContent is "".
+func (e *Engine) routeIfEnabled(ctx context.Context, profileName string, msgs []modelgw.ChatMessage) orchestrator.Decision {
+	if e.router == nil {
+		return orchestrator.Decision{}
+	}
+	return e.router.Route(ctx, orchestrator.RouteInput{
+		Profile:     profileName,
+		UserContent: lastUserContent(msgs),
+	})
+}
+
+// lastUserContent walks msgs in reverse and returns the content of the most
+// recent user message. Returns "" if none.
+func lastUserContent(msgs []modelgw.ChatMessage) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == modelgw.RoleUser {
+			return msgs[i].Content
+		}
+	}
+	return ""
 }
 
 func (e *Engine) recordSkillInject(ctx context.Context, in RunInput, meta ComposeMeta) {
