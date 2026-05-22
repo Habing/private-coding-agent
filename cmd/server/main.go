@@ -28,6 +28,7 @@ import (
 	"github.com/yourorg/private-coding-agent/internal/db"
 	"github.com/yourorg/private-coding-agent/internal/httpx"
 	"github.com/yourorg/private-coding-agent/internal/logx"
+	"github.com/yourorg/private-coding-agent/internal/mcp"
 	"github.com/yourorg/private-coding-agent/internal/memory"
 	"github.com/yourorg/private-coding-agent/internal/metrics"
 	"github.com/yourorg/private-coding-agent/internal/modelgw"
@@ -307,6 +308,28 @@ func run() error {
 		slog.Warn("workflow: republish on boot", "err", err.Error())
 	}
 
+	// Slice 21b — External MCP Manager. cfg.MCP.Enabled=false skips
+	// construction and the admin handler returns 503; boot republish runs
+	// best-effort so a single unreachable server does not abort startup.
+	var mcpManager *mcp.Manager
+	var mcpRepo *mcp.Repo
+	if cfg.MCP.Enabled {
+		mcpRepo = mcp.NewRepo(pool)
+		mcpManager = mcp.NewManager(mcpRepo, toolBus, auditRepo, mcp.Config{
+			Enabled:           true,
+			HeartbeatInterval: cfg.MCP.HeartbeatInterval,
+			InvokeTimeout:     cfg.MCP.InvokeTimeout,
+			ListToolsTimeout:  cfg.MCP.ListToolsTimeout,
+		})
+		if err := mcpManager.Start(ctx); err != nil {
+			return fmt.Errorf("mcp manager start: %w", err)
+		}
+		defer mcpManager.Stop()
+		slog.Info("mcp manager enabled",
+			"heartbeat", cfg.MCP.HeartbeatInterval,
+			"invoke_timeout", cfg.MCP.InvokeTimeout)
+	}
+
 	auditSvc := audit.NewService(auditRepo)
 	auditHandler := audit.NewHandler(auditSvc, func(c *gin.Context) (uuid.UUID, bool) {
 		cl := auth.FromCtx(c.Request.Context())
@@ -419,6 +442,9 @@ func run() error {
 		if reflectionAdmin != nil {
 			reflectionAdmin.Register(adminGroup)
 		}
+		// MCP admin is always mounted so the WebUI sees a deterministic 503
+		// when disabled instead of a 404. NewAdminHandler tolerates nil mgr.
+		mcp.NewAdminHandler(mcpManager, mcpRepo, auditRepo).Register(adminGroup)
 
 		// /metrics — Prometheus exposition. Authenticated via the dual-channel
 		// metrics.Auth middleware: static token bypass (for Prom scrape jobs)

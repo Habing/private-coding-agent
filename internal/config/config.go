@@ -26,6 +26,20 @@ type Config struct {
 	RateLimit     RateLimitConfig     `mapstructure:"rate_limit"`
 	Reflection    ReflectionConfig    `mapstructure:"reflection"`
 	Orchestrator  OrchestratorConfig  `mapstructure:"orchestrator"`
+	MCP           MCPConfig           `mapstructure:"mcp"`
+}
+
+// MCPConfig drives Slice 21b's external MCP Manager. Enabled=false skips
+// Manager construction and admin route registration entirely so single-tenant
+// deploys that do not need external MCP servers pay no overhead.
+//
+// HeartbeatInterval=0 disables the heartbeat goroutine (boot republish still
+// runs); 60s is the default.
+type MCPConfig struct {
+	Enabled           bool          `mapstructure:"enabled"`
+	HeartbeatInterval time.Duration `mapstructure:"heartbeat_interval"`
+	InvokeTimeout     time.Duration `mapstructure:"invoke_timeout"`
+	ListToolsTimeout  time.Duration `mapstructure:"list_tools_timeout"`
 }
 
 // OrchestratorConfig drives Slice 21a's pre-Run routing pass. Enabled=false
@@ -168,7 +182,23 @@ func Load(path string) (*Config, error) {
 	applySlice13Defaults(&c)
 	applySlice15Defaults(&c)
 	applySlice20Defaults(&c)
+	applySlice21bDefaults(&c)
 	return &c, nil
+}
+
+// applySlice21bDefaults fills MCPConfig timeouts. Enabled stays whatever the
+// caller sets (YAML/env); 0 timeouts default to 30s invoke + 10s list/init +
+// 60s heartbeat which matches the plan's tested values.
+func applySlice21bDefaults(c *Config) {
+	if c.MCP.InvokeTimeout <= 0 {
+		c.MCP.InvokeTimeout = 30 * time.Second
+	}
+	if c.MCP.ListToolsTimeout <= 0 {
+		c.MCP.ListToolsTimeout = 10 * time.Second
+	}
+	if c.MCP.Enabled && c.MCP.HeartbeatInterval == 0 {
+		c.MCP.HeartbeatInterval = 60 * time.Second
+	}
 }
 
 // applySlice20Defaults fills Reflection defaults. Enabled is intentionally

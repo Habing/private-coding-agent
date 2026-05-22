@@ -53,6 +53,12 @@ export function TopBar() {
               工作流
             </Link>
             <Link
+              to="/admin/mcp-servers"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              MCP
+            </Link>
+            <Link
               to="/admin/memory-proposals"
               className="text-muted-foreground hover:text-foreground"
             >

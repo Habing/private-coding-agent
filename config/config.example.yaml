@@ -149,3 +149,18 @@ orchestrator:
     #     type: sub_agent
     #     target: research
     #     hint: "Routing hint: research-heavy task — agent.delegate(profile=\"research\", task=...) may help."
+
+mcp:
+  # Slice 21b: External MCP Manager. When true, admins can register HTTP MCP
+  # servers via /admin/mcp-servers and their tools appear on the Bus as
+  # `mcp.<slug>.<tool>`. enabled=false skips manager construction; the admin
+  # endpoint returns 503 so the WebUI can distinguish "off" from "broken".
+  enabled: true
+  # Liveness pings interval. 0 disables the heartbeat goroutine but boot
+  # republish still runs from tools_cache.
+  heartbeat_interval: 60s
+  # Per tools/call HTTP timeout.
+  invoke_timeout: 30s
+  # Per initialize + tools/list HTTP timeout. Used by RegisterServer,
+  # RefreshTools, TestConnection, and each heartbeat tick.
+  list_tools_timeout: 10s

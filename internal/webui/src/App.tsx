@@ -5,6 +5,7 @@ import { AdminGuard } from '@/components/AdminGuard'
 import { ProtectedShell } from '@/components/ProtectedShell'
 import { Audit } from '@/pages/Audit'
 import { Chat } from '@/pages/Chat'
+import { McpServers } from '@/pages/McpServers'
 import { Memories } from '@/pages/Memories'
 import { MemoryProposals } from '@/pages/MemoryProposals'
 import { Home } from '@/pages/Home'
@@ -55,6 +56,14 @@ export function App() {
               element={
                 <AdminGuard>
                   <Workflows />
+                </AdminGuard>
+              }
+            />
+            <Route
+              path="/admin/mcp-servers"
+              element={
+                <AdminGuard>
+                  <McpServers />
                 </AdminGuard>
               }
             />

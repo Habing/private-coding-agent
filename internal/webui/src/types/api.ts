@@ -326,3 +326,65 @@ export interface ApproveMemoryProposalRequest {
 export interface RejectMemoryProposalRequest {
   reason?: string
 }
+
+export interface McpToolSchema {
+  name: string
+  description?: string
+  inputSchema: Record<string, unknown>
+  annotations?: Record<string, unknown>
+}
+
+export interface McpServer {
+  id: string
+  tenant_id: string
+  slug: string
+  name: string
+  description: string
+  url: string
+  transport: string
+  auth_type: string
+  auth_token?: string
+  headers: Record<string, string>
+  enabled: boolean
+  last_seen_at?: string
+  last_error: string
+  tools_cache: McpToolSchema[]
+  created_at: string
+  updated_at: string
+}
+
+export interface McpServerListResponse {
+  servers: McpServer[]
+}
+
+export interface CreateMcpServerRequest {
+  slug: string
+  name: string
+  description?: string
+  url: string
+  auth_type?: string
+  auth_token?: string
+  headers?: Record<string, string>
+  enabled?: boolean
+}
+
+export interface UpdateMcpServerRequest {
+  name?: string
+  description?: string
+  url?: string
+  auth_type?: string
+  auth_token?: string
+  headers?: Record<string, string>
+  enabled?: boolean
+}
+
+export interface TestMcpConnectionRequest {
+  url?: string
+  auth_type?: string
+  auth_token?: string
+  headers?: Record<string, string>
+}
+
+export interface McpRefreshResponse {
+  tools: McpToolSchema[]
+}
