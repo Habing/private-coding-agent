@@ -36,6 +36,7 @@
 - [x] 切片 19a：Workflow Engine（YAML DSL + DAG executor + `workflow.<slug>` 注册到 ToolBus + Dry-Run mock mutating tools）
 - [x] 切片 19b（Web UI）：Workflows & Tools Web UI（`/workflows` admin 管理页 + `/toolbox` 工具浏览页 + `GET /tools` 暴露 `mutating` 标志）
 - [x] 切片 19b（NL Authoring）：自然语言建流 B+C（模板 catalog + `workflow.propose` + 对话确认卡片 + member 审批链 + E2E 70–75）
+- [x] 切片 19d：Workflow Visualization（DSL → 只读流程图；admin graph API + `/workflows` 预览 + Proposal 迷你图）
 - [x] 切片 20：Reflection Agent（异步 worker + `memory_proposals` 表 + admin 审核 + auto-approve 阈值 + WebUI `/admin/memory-proposals`）
 - [x] 切片 21a：Orchestration Router（YAML 规则 + 命中后注入 routing hint system msg + `pca_orchestrator_routes_total` + audit `orchestrator.route`）
 - [x] 切片 21b：External MCP Manager（`mcp_servers` 表 + 2024-11-05 JSON-RPC client + Manager 心跳 + `mcp.<slug>.<tool>` 注册到 ToolBus + `/admin/mcp-servers` REST + WebUI + mock-mcp 容器）
@@ -200,7 +201,11 @@ POST   /admin/workflows/:slug/publish       # 校验 + Bus.Register
 POST   /admin/workflows/:slug/unpublish     # Bus.Unregister
 POST   /admin/workflows/:slug/invoke        # body {inputs, dry_run?}
 GET    /admin/workflows/:slug/runs          # 最近 N 次 run
+POST   /admin/workflows/graph-preview       # body {dsl_yaml} → Graph JSON（Slice 19d）
+GET    /admin/workflows/:slug/graph         # 已保存 workflow 的流程图
 ```
+
+Agent proposal：`GET /agent/workflow/proposals/:id/graph`（对话卡片迷你图，member+）。
 
 **Dry-Run：** `internal/toolbus.Mutating` 可选接口；fs.write / shell.exec / memory.save / memory.delete / agent.delegate 实现并返回 true。Engine 在 `dry_run=true` 时拦截 mutating 节点返回 mock JSON，Run 行 `dry_run=true` 落表但不动副作用。
 
@@ -461,7 +466,7 @@ React + Vite + Tailwind + shadcn/ui SPA，源码在 `internal/webui/`，由 `go:
 | `/toolbox` | 登录用户 | 只读列出全部 internal 工具；mutating 工具有红色徽标 |
 | `/audit` | admin | 审计日志查询 |
 | `/admin/skills` | admin | 租户 Skill CRUD + Profile binding（切片 17） |
-| `/workflows` | admin | Workflow DSL CRUD（Monaco YAML 编辑器）+ publish/unpublish + invoke（含 dry_run）+ 最近 runs 抽屉 |
+| `/workflows` | admin | Workflow DSL CRUD（Monaco YAML + **只读流程图预览** Slice 19d）+ publish/unpublish + invoke（含 dry_run）+ 最近 runs 抽屉 |
 | `/admin/memory-proposals` | admin | Reflection 候选审核（切片 20）：pending/auto_approved/approved/rejected 4 个 tab + Approve dialog 可覆盖 |
 
 `/workflows` 与 `/toolbox` 是切片 19b 新增。Monaco Editor 通过 `@monaco-editor/react` 走 CDN worker，首屏 bundle 不含编辑器主体；首次进编辑视图时 ~150ms 冷启动。

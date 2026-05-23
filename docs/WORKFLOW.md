@@ -134,6 +134,10 @@ outputs:
 | `POST` | `/admin/workflows/:slug/unpublish` | `Bus.Unregister` |
 | `POST` | `/admin/workflows/:slug/invoke` | body `{inputs, dry_run?}` |
 | `GET` | `/admin/workflows/:slug/runs` | 最近 N 次 run |
+| `POST` | `/admin/workflows/graph-preview` | body `{dsl_yaml}` → 只读 Graph JSON（Slice 19d） |
+| `GET` | `/admin/workflows/:slug/graph` | 已保存 workflow 的流程图 |
+
+Agent（member+）：`GET /agent/workflow/proposals/:id/graph` — proposal 卡片迷你图。详见 §9。
 
 错误码：slug 冲突 `409`、未找到 `404`、DSL 校验失败 `400`。
 
@@ -264,7 +268,7 @@ ToolBus 提供 4 个 admin-only 工具供 Agent 在会话里写 DSL 草稿，**p
 
 ## 7. 限制（v1 不做）
 
-- **Web UI（admin）**：`/workflows` CRUD + `/toolbox` 工具浏览（Slice 19b Web UI）；NL 建流对话卡片见 §8
+- **Web UI（admin）**：`/workflows` CRUD + 流程图只读预览（Slice 19d）+ `/toolbox` 工具浏览（Slice 19b Web UI）；NL 建流对话卡片见 §8
 - **NL→DSL**：`workflow.propose` / `workflow.create` + 模板 catalog（Slice 19b NL）；publish 走 confirm / `workflow.publish`
 - **没有 versions 表**：单行 + `version int` 单调递增；历史靠 audit + `workflow_runs.version_at_run` 还原
 - **没有 `wait_event`**：事件挂起节点要等 Slice 20 Reflection 配套
@@ -337,6 +341,48 @@ B+C 混合：**模板填槽（C）** + **自由 DSL（B）** → Dry-Run → 对
 - template classify v1 为关键词规则；embedding 分类推 P2
 - 无 `workflow_proposal` 专用 SSE 事件（Web UI 解析 `tool_result`）
 - Helm values 未同步 `nl-workflow-author` 规则（compose 镜像内置 `config.example.yaml`）
+- 只读流程图见 **Slice 19d**（[`WORKFLOW.md`](../../WORKFLOW.md) §9）；**19c** 仍为可选模板市场
+
+---
+
+## 9. 只读流程图（Slice 19d Visualization ✅）
+
+DSL 解析为 Graph IR，在管理页与 proposal 卡片中以 **只读** React Flow 流程图展示（非可视化编辑器）。
+
+计划：[`docs/superpowers/plans/2026-05-24-slice-19d-workflow-visualization.md`](superpowers/plans/2026-05-24-slice-19d-workflow-visualization.md)
+
+### 9.1 API
+
+| 方法 | 路径 | 鉴权 | 说明 |
+|------|------|------|------|
+| POST | `/admin/workflows/graph-preview` | admin | body `{ "dsl_yaml": "..." }` → Graph JSON |
+| GET | `/admin/workflows/:slug/graph` | admin | 已保存 workflow 的图 |
+| GET | `/agent/workflow/proposals/:id/graph` | member+ | NL 草案卡片迷你图 |
+
+Parse 失败 → 400 `{ "error": "parse", "detail": "..." }`；graph-preview 空 DSL → 400 `dsl_required`。
+
+### 9.2 Web UI
+
+| 位置 | 行为 |
+|------|------|
+| `/workflows` 编辑展开 | 三栏：YAML（Monaco）\| **流程图预览** \| 名称/描述/invoke/runs；DSL 变更防抖 ~400ms 调 graph-preview |
+| 聊天 `WorkflowProposalCard` | `dry_run_ok` 时加载 proposal graph，220px 紧凑图（无 Controls/MiniMap） |
+
+节点按 kind 着色（tool/assign/if/foreach/parallel/wait/start/end）；分支边橙色、并行边动画。
+
+### 9.3 手工冒烟
+
+```bash
+TOK=$(curl -s -X POST http://localhost:8080/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"tenant":"default","email":"demo@example.com","password":"demo123"}' \
+  | jq -r .token)
+
+curl -s -X POST http://localhost:8080/admin/workflows/graph-preview \
+  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"dsl_yaml":"id: x\nname: X\nsteps:\n  - id: a\n    assign:\n      v: \"1\"\n"}' \
+  | jq '.nodes | length'   # 期望 ≥3（start + a + end）
+```
 
 ---
 
@@ -344,5 +390,5 @@ B+C 混合：**模板填槽（C）** + **自由 DSL（B）** → Dry-Run → 对
 
 - 设计 spec：[`docs/superpowers/specs/2026-05-22-slice-19-workflow-engine-design.md`](superpowers/specs/2026-05-22-slice-19-workflow-engine-design.md)
 - 归档 plan：[`docs/superpowers/plans/2026-05-22-slice-19-workflow-engine.md`](superpowers/plans/2026-05-22-slice-19-workflow-engine.md)
-- E2E 用例：`deploy/compose/test-e2e.sh` 步骤 57–60（19a Engine）、**70–75**（19b NL Authoring）
+- E2E 用例：`deploy/compose/test-e2e.sh` 步骤 57–60（19a Engine）、**70–75**（19b NL Authoring）；19d 无增量 E2E（L1/L2 + 手工 §9.3）
 - README Workflow section：[`README.md`](../README.md#workflow-子系统)

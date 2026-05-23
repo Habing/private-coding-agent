@@ -316,6 +316,24 @@ cd deploy/compose
 | L3 | E2E **[70–75]**：templates ≥5；template propose dry_run；admin confirm；member 审批链；`E2E_WF_PROPOSAL_V1` / `E2E_WF_FREEFORM_V1` agent.run；NL orchestrator `E2E_NL_WF_AUTHOR_V1` |
 | 状态 | **Task 1–8 ✅**（2026-05-23）；compose E2E **75/75** PASS |
 
+### 切片 19d — Workflow Visualization（只读流程图 ✅）
+
+| 项 | 验证 |
+|----|------|
+| L1 | `go test ./internal/workflow/... -run Graph -count=1`；`-run Handler_Graph` / `ProposalGraph` handler 单测 PASS |
+| L2 | `cd internal/webui && npm test && npm run build`（含 `workflowGraph.test.ts`；React Flow bundle 增量 ~20 包） |
+| L3 手工 | (a) admin `/workflows` → 展开编辑 → 改 YAML 右侧流程图 ~400ms 内刷新；if/parallel DSL 见分支/并行边。(b) 聊天页 `workflow.propose` 卡片在 dry_run 通过后显示 220px 迷你图。(c) `POST /admin/workflows/graph-preview` + `GET .../:slug/graph` + `GET /agent/workflow/proposals/:id/graph` curl 见 [`WORKFLOW.md`](WORKFLOW.md) §9.3 |
+| 不变量 | 只读（nodes 不可拖拽/连线）；graph 来自 Parse 不要求 Validate；无新 compose E2E 步号 |
+| 计划 | [`superpowers/plans/2026-05-24-slice-19d-workflow-visualization.md`](superpowers/plans/2026-05-24-slice-19d-workflow-visualization.md) |
+| 状态 | **✅**（2026-05-24）；commits `833f110` + `d192a77` |
+
+### 切片 19c — 模板市场（可选，未开工）
+
+| 项 | 验证 |
+|----|------|
+| 范围 | 模板浏览/安装 UI、workflow 版本 diff；与 19d 可视化正交 |
+| 依赖 | 19b NL 模板 catalog 已存在；19d graph API 可复用展示 |
+
 ### 切片 23 — N8N（可选）
 
 | 项 | 验证 |
@@ -409,6 +427,8 @@ cd deploy/compose
 | 19a | 57–60 |
 | 19b-web | —（Workflows/Toolbox Web UI；L1/L2 + 手工冒烟） |
 | 19b-nl | 70–75 |
+| 19d-viz | —（只读流程图；L1/L2 + [`WORKFLOW.md`](WORKFLOW.md) §9.3 手工） |
+| 19c | —（可选：模板市场；未开工） |
 | 20 | 61 |
 | 21a | 62 |
 | 21b | 63 |

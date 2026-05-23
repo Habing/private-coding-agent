@@ -303,6 +303,7 @@ go build ./...
 |------|------|
 | **Slice 24 Triggers** | proposal 卡片展示 cron/webhook；模板加 `triggers:` 段 |
 | **Slice 25 Connectors** | 模板 slot `notify_tool` 默认 `mcp.slack.*` |
+| **Slice 19d Visualization** | ✅ 只读流程图（Graph IR + admin/proposal graph API + `/workflows` + Proposal 迷你图） |
 | **Slice 19c（可选）** | 模板市场、版本 diff |
 
 ---

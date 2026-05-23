@@ -6,10 +6,10 @@
 | 项目根 | `F:\project\private-coding-agent` |
 | Git module | `github.com/yourorg/private-coding-agent` |
 | 当前日期 | 2026-05-23 |
-| 当前 HEAD | `338f99e` *(Slice 19b NL Authoring Task 1–8 ✅ + i18n；compose E2E **75/75**)* |
+| 当前 HEAD | `d192a77` *(Slice 19d Visualization ✅ + 19b NL ✅；compose E2E **75/75**)* |
 | P1 规划 | **已落盘** — [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md) |
-| 工作区状态 | MVP-P1 17 ✅；Full-P1 18–22d2 ✅；Slice 19b NL ✅；Compose Pilot #11–#15 ✅；compose E2E **75/75** + kind nightly 6 步独立 |
-| 下一阶段 | **Slice 24** triggers（cron/webhook）或 **19c** 模板市场（可选）；Helm orchestrator 规则同步 |
+| 工作区状态 | MVP-P1 17 ✅；Full-P1 18–22d2 ✅；Slice 19b NL ✅；**Slice 19d Viz ✅**；Compose Pilot #11–#15 ✅；compose E2E **75/75** + kind nightly 6 步独立 |
+| 下一阶段 | **Slice 24** triggers（cron/webhook）或 **19c** 模板市场（可选）；19d-v2 run overlay；Helm orchestrator 规则同步 |
 
 ---
 
@@ -164,6 +164,7 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 | 19a Workflow Engine | ✅ | 57–60 | YAML DSL + DAG executor (tool/assign/if/foreach/parallel/wait) + `workflow.<slug>` 注册到 ToolBus + Dry-Run mock mutating tools |
 | 19b Workflows & Tools Web UI | ✅ | — | `/workflows` admin（Monaco YAML 编辑器 + CRUD + publish/invoke/dry_run + runs 抽屉）+ `/toolbox`（只读工具列表 + Mutating 徽标）；`GET /tools` 暴露 `mutating bool` |
 | 19b NL Workflow Authoring | ✅ | 70–75 | B+C：`workflow_proposals` + 5 模板 catalog + `workflow.propose`/`publish` + REST confirm/approve + orchestrator `nl-workflow-author` + 聊天 `WorkflowProposalCard` + skill `workflow-template-authoring`；E2E 75/75 PASS |
+| 19d Workflow Visualization | ✅ | — | Graph IR（`graph.go`）+ `graph-preview` / `:slug/graph` / `proposals/:id/graph` + React Flow `/workflows` 预览 + Proposal 迷你图；commits `833f110`/`d192a77` |
 | 20 Reflection | ✅ | 61 | `session.archive` → in-process worker → Reflector LLM 抽取 → `memory_proposals`（pending/auto_approved）→ admin `/admin/memory-proposals` 审核 → `memory.Service.Create`（0.92 dedup 复用）；mock-provider `REFLECTION_TASK_V1` canned JSON；5 个 audit action + `pca_reflection_proposals_total{outcome=…}`；WebUI `/admin/memory-proposals` |
 | 21a Orchestration Router | ✅ | 62 | `internal/orchestrator` 规则引擎 + `agent.Engine.WithRouter` Shadow + Hint 注入；YAML 规则 `match{profile,content_regex,content_contains}` + `suggest{type,target,hint}`；audit `orchestrator.route` + `pca_orchestrator_routes_total{outcome,target_type}`；mock-provider `ORCHESTRATOR_E2E_HINT_DELIVERED` canned → `"orchestrator-hint-ok"` |
 | 21b External MCP Manager | ✅ | 63 | 0020 `mcp_servers` 表 + `internal/mcp` HTTP JSON-RPC client (2024-11-05) + Manager 心跳 + `mcp.<slug>.<tool>` Bus 注册 + `/admin/mcp-servers` CRUD + `mock-mcp:8083` 容器 + WebUI `/admin/mcp-servers`；6 audit + 3 metric |
@@ -268,6 +269,7 @@ cd backup && ./backup.sh
 7. ~~**Slice 19a** — Workflow Engine~~ ✅（YAML DSL + Bus.Register workflow.<slug> + Dry-Run）
 8. ~~**Slice 19b Web UI** — Workflows & Tools Web UI~~ ✅（`/workflows` Monaco 编辑 + `/toolbox` 工具列表 + `GET /tools` mutating 标志）
 9. ~~**Slice 19b NL** — NL Workflow Authoring (B+C)~~ ✅（`workflow.propose` + 模板 catalog + 对话确认卡片 + E2E 70–75）
+10. ~~**Slice 19d** — Workflow Visualization~~ ✅（只读流程图 + graph API + Web UI）
 10. ~~**Slice 20** — Reflection~~ ✅（异步 Reflector worker + `memory_proposals` 表 + admin 审核 + auto-approve 阈值 + 5 audit + mock-provider canned JSON + WebUI `/admin/memory-proposals`）
 11. ~~**Slice 21a** — Orchestration Router~~ ✅（`internal/orchestrator` 规则引擎 + `agent.Engine.WithRouter` Shadow + Hint 注入 + `orchestrator.route` audit + `pca_orchestrator_routes_total` counter + mock-provider `ORCHESTRATOR_E2E_HINT_DELIVERED` canned）
 12. ~~**Slice 21b** — External MCP Manager~~ ✅（`internal/mcp` 2024-11-05 JSON-RPC client + 0020 `mcp_servers` 表 + Manager 心跳 + `mcp.<slug>.<tool>` Bus 注册 + `/admin/mcp-servers` REST + WebUI + `mock-mcp` 容器 + 6 audit + 3 metric + E2E 63）
@@ -281,7 +283,7 @@ cd backup && ./backup.sh
 
 ### 5.3 Full P1 状态
 
-按 [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md)：**切片 18–22d2 + 19b NL 全部落地**；**Slice 23（N8N）跳过** — Full P1 **核心完成**。Compose Pilot #11–#15 已收口；compose E2E **75/75**（`338f99e`）。
+按 [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md)：**切片 18–22d2 + 19b NL + 19d Viz 全部落地**；**Slice 23（N8N）跳过** — Full P1 **核心完成**。Compose Pilot #11–#15 已收口；compose E2E **75/75**（`d192a77`）。
 
 ### 5.4 Compose 试点技术债（P2 运维）
 
