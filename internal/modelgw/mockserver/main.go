@@ -106,6 +106,9 @@ func pickDeterministicResponse(msgs []mockMessage) mockResponse {
 	if hasOrchestratorHint(msgs) {
 		return mockResponse{kind: "final", text: "orchestrator-hint-ok"}
 	}
+	if hasNLWorkflowOrchestratorHint(msgs) {
+		return mockResponse{kind: "final", text: "nl-wf-orchestrator-hint-ok"}
+	}
 	if hasReflectionMarker(msgs) {
 		return mockResponse{
 			kind: "final",
@@ -141,6 +144,20 @@ func pickDeterministicResponse(msgs []mockMessage) mockResponse {
 	}
 	if hasSkillMarker(msgs) {
 		return mockResponse{kind: "final", text: "skill-marker-ok"}
+	}
+	if hasWFProposalMarker(msgs) || hasWFFreeformMarker(msgs) {
+		if hasToolMessage(msgs) {
+			return mockResponse{kind: "final", text: "wf-proposal-marker-ok"}
+		}
+		slug := "e2e-nl-agent"
+		args := fmt.Sprintf(`{"slug":%q,"name":"E2E NL Agent","dsl_yaml":%q}`,
+			slug, e2eNLAgentDSL)
+		return mockResponse{
+			kind:     "tool_call",
+			callID:   "call_wf_propose_1",
+			toolName: "workflow.propose",
+			toolArgs: args,
+		}
 	}
 	if hasWorkflowMarker(msgs) {
 		if hasToolMessage(msgs) {
@@ -245,10 +262,51 @@ const reflectionMarker = "REFLECTION_TASK_V1"
 // embeds in the routing hint system message for E2E step 62. Coupled to the
 // hint text in deploy/compose/docker-compose.yml's orchestrator rules YAML.
 const orchestratorHintMarker = "ORCHESTRATOR_E2E_HINT_DELIVERED"
+const nlWorkflowOrchestratorHintMarker = "ORCHESTRATOR_NL_WF_HINT_DELIVERED"
+const wfProposalMarker = "E2E_WF_PROPOSAL_V1"
+const wfFreeformMarker = "E2E_WF_FREEFORM_V1"
+const nlWorkflowAuthorMarker = "E2E_NL_WF_AUTHOR_V1"
+
+const e2eNLAgentDSL = `id: e2e-nl-agent
+name: E2E NL Agent
+steps:
+  - id: hi
+    assign:
+      msg: hello
+outputs:
+  out: ${vars.msg}
+`
 
 func hasOrchestratorHint(msgs []mockMessage) bool {
 	for _, m := range msgs {
 		if m.Role == "system" && strings.Contains(m.Content, orchestratorHintMarker) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasNLWorkflowOrchestratorHint(msgs []mockMessage) bool {
+	for _, m := range msgs {
+		if m.Role == "system" && strings.Contains(m.Content, nlWorkflowOrchestratorHintMarker) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasWFProposalMarker(msgs []mockMessage) bool {
+	for _, m := range msgs {
+		if m.Role == "user" && strings.Contains(m.Content, wfProposalMarker) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasWFFreeformMarker(msgs []mockMessage) bool {
+	for _, m := range msgs {
+		if m.Role == "user" && strings.Contains(m.Content, wfFreeformMarker) {
 			return true
 		}
 	}

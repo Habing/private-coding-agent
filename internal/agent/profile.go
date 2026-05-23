@@ -103,6 +103,6 @@ func DefaultWorkflowAuthoringProfile() Profile {
 			"workflow.propose",
 		},
 		MaxSteps: 6,
-		SkillIDs: []string{"workflow-dsl-authoring"},
+		SkillIDs: []string{"workflow-dsl-authoring", "workflow-template-authoring"},
 	}
 }

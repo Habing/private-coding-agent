@@ -77,5 +77,5 @@ func TestDefaultWorkflowAuthoringProfile(t *testing.T) {
 	require.NotContains(t, p.ToolAllowlist, "workflow.publish")
 	require.NotContains(t, p.ToolAllowlist, "fs.write")
 	require.NotContains(t, p.ToolAllowlist, "agent.delegate")
-	require.Equal(t, []string{"workflow-dsl-authoring"}, p.SkillIDs)
+	require.Equal(t, []string{"workflow-dsl-authoring", "workflow-template-authoring"}, p.SkillIDs)
 }

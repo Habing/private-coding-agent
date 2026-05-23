@@ -140,6 +140,24 @@ orchestrator:
         type: tool
         target: fs.list
         hint: "ORCHESTRATOR_E2E_HINT_DELIVERED: E2E orchestrator router fired."
+    - name: nl-workflow-author
+      match:
+        profile: ["coding", "workflow-authoring"]
+        content_regex: "(?i)(工作流|自动化|定时|每周|webhook|流程编排|workflow\\.propose)"
+      suggest:
+        type: sub_agent
+        target: workflow-authoring
+        hint: |
+          Routing hint: user may want a reusable workflow. Prefer workflow.propose
+          (template_id + slots or user_message) for common patterns; use
+          workflow.create only for custom DSL. Admin publishes via confirm — not workflow.publish from member runs.
+    - name: e2e-nl-workflow-author
+      match:
+        content_contains: "E2E_NL_WF_AUTHOR_V1"
+      suggest:
+        type: sub_agent
+        target: workflow-authoring
+        hint: "ORCHESTRATOR_NL_WF_HINT_DELIVERED: NL workflow authoring hint injected."
     # Production examples — uncomment / extend as needed.
     # - name: code-review-suggest
     #   match:
