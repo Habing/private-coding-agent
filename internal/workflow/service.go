@@ -51,16 +51,23 @@ type BusRegistrar interface {
 // owns the audit + run-log instrumentation so the admin handler and the
 // workflow.<slug> Bus tool share one execution path.
 type Service struct {
-	repo   *Repo
-	engine *Engine
-	bus    BusRegistrar
-	audit  audit.Sink
+	repo     *Repo
+	triggers *TriggerRepo
+	engine   *Engine
+	bus      BusRegistrar
+	audit    audit.Sink
 }
 
 // NewService wires a Service. bus may be nil for unit tests that exercise only
 // CRUD + Invoke (publishing requires a real bus).
 func NewService(repo *Repo, engine *Engine, bus BusRegistrar, sink audit.Sink) *Service {
-	return &Service{repo: repo, engine: engine, bus: bus, audit: sink}
+	return &Service{
+		repo:     repo,
+		triggers: NewTriggerRepo(repo),
+		engine:   engine,
+		bus:      bus,
+		audit:    sink,
+	}
 }
 
 // WithAuditSink swaps the audit sink after construction. Allows main.go to
@@ -132,6 +139,9 @@ func (s *Service) Update(ctx context.Context, tenantID uuid.UUID, slug, name, de
 		// Repo already flipped published=false; mirror in the Bus.
 		_ = s.bus.Unregister("workflow." + slug)
 	}
+	if err := s.triggers.DisableAllForWorkflow(ctx, tenantID, wf.ID); err != nil {
+		return nil, fmt.Errorf("disable triggers: %w", err)
+	}
 	s.auditAdmin(tenantID, slug, "workflow.admin.update",
 		map[string]any{"version_new": wf.Version, "was_published": prev.Published})
 	return wf, nil
@@ -169,6 +179,9 @@ func (s *Service) Publish(ctx context.Context, tenantID uuid.UUID, slug string) 
 	if err := s.repo.SetPublished(ctx, tenantID, slug, true); err != nil {
 		return err
 	}
+	if err := s.triggers.SyncTriggersFromDoc(ctx, tenantID, wf.ID, doc); err != nil {
+		return fmt.Errorf("sync triggers: %w", err)
+	}
 	s.auditAdmin(tenantID, slug, "workflow.admin.publish",
 		map[string]any{"version": wf.Version})
 	return nil
@@ -187,6 +200,9 @@ func (s *Service) Unpublish(ctx context.Context, tenantID uuid.UUID, slug string
 	}
 	if err := s.repo.SetPublished(ctx, tenantID, slug, false); err != nil {
 		return err
+	}
+	if err := s.triggers.DisableAllForWorkflow(ctx, tenantID, wf.ID); err != nil {
+		return fmt.Errorf("disable triggers: %w", err)
 	}
 	s.auditAdmin(tenantID, slug, "workflow.admin.unpublish",
 		map[string]any{"version": wf.Version})
