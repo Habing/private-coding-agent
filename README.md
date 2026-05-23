@@ -38,11 +38,13 @@
 - [x] 切片 20：Reflection Agent（异步 worker + `memory_proposals` 表 + admin 审核 + auto-approve 阈值 + WebUI `/admin/memory-proposals`）
 - [x] 切片 21a：Orchestration Router（YAML 规则 + 命中后注入 routing hint system msg + `pca_orchestrator_routes_total` + audit `orchestrator.route`）
 - [x] 切片 21b：External MCP Manager（`mcp_servers` 表 + 2024-11-05 JSON-RPC client + Manager 心跳 + `mcp.<slug>.<tool>` 注册到 ToolBus + `/admin/mcp-servers` REST + WebUI + mock-mcp 容器）
-- [x] 切片 22a：Audit Hash Chain（SHA-256 链式 `audit_log.prev_hash/entry_hash` + `pg_advisory_xact_lock` 序列化 + `GET /audit/verify` admin 防篡改校验）
-- [ ] 切片 22b：Snapshot → MinIO（compose 加 minio service + `DockerDriver.Snapshot` 落地）
-- [ ] 切片 22c：seccomp + trivy CI（沙箱 seccomp profile + GitHub Actions 镜像扫描）
-- [ ] 切片 22d：K8sDriver + Helm chart（Pod = sandbox + kind nightly）
-- [ ] 切片 23：N8N 集成（可选）
+- [x] 切片 22a：Audit Hash Chain（SHA-256 链式 `audit_log.prev_hash/entry_hash` + `GET /audit/verify` admin 防篡改校验）
+- [x] 切片 22b：Snapshot → MinIO（compose minio + `DockerDriver.Snapshot` + restore）
+- [x] 切片 22c：seccomp + trivy CI（沙箱 seccomp profile + GitHub Actions 镜像扫描）
+- [x] 切片 22d：K8sDriver + Helm chart（Pod = sandbox + kind nightly）
+- [ ] 切片 23：N8N 集成（**跳过** — 非硬需求；Full P1 核心已完成）
+
+**Compose 试点（P2 运维）**：备份/restore、workflow retention、Reflection 队列、re-embed、snapshot restore — 见 [`docs/P2-COMPOSE-PILOT.md`](docs/P2-COMPOSE-PILOT.md)。生产化演练清单：[`docs/PILOT-RUNBOOK.md`](docs/PILOT-RUNBOOK.md)。
 
 ## 本地开发
 

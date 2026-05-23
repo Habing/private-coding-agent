@@ -28,6 +28,8 @@ coverage.txt
 /deploy/compose/chat.json
 /deploy/compose/embed.json
 /deploy/compose/embed2.json
+/deploy/compose/backups/*
+!/deploy/compose/backups/.gitkeep
 /deploy/compose/login.json
 /deploy/compose/mem.json
 

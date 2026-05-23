@@ -65,7 +65,7 @@ Gate (G1–G4) ──► Slice 13–17 MVP-P1 ──► Slice 18–23 Full P1
 | **20** | Reflection + 记忆合并 | 16, 19（可选） | [`plans/2026-05-21-slice-20-reflection.md`](superpowers/plans/2026-05-21-slice-20-reflection.md) |
 | **21** | 编排路由 + External MCP | 18, 19 | [`plans/2026-05-21-slice-21-orchestration-mcp.md`](superpowers/plans/2026-05-21-slice-21-orchestration-mcp.md) |
 | **22** | K8s + 安全深化 | 14, MVP | [`plans/2026-05-21-slice-22-k8s-production.md`](superpowers/plans/2026-05-21-slice-22-k8s-production.md) |
-| **23** | N8N（可选） | 19 | [`plans/2026-05-21-slice-23-n8n-optional.md`](superpowers/plans/2026-05-21-slice-23-n8n-optional.md) |
+| **23** | N8N（可选） | 19 | [`plans/2026-05-21-slice-23-n8n-optional.md`](superpowers/plans/2026-05-21-slice-23-n8n-optional.md) — **⏭️ 跳过**（2026-05-23，非硬需求） |
 
 **19 可拆**：19a Engine + 19b Authoring Agent/UI。  
 **23 可选**：不做仍可达 Full P1「核心」；需法务确认 N8N 许可证。
@@ -127,4 +127,5 @@ flowchart TD
 4. **16**（依赖 14）
 5. **17**（可与 15/16 并行若人力允许）
 6. 打 tag / 更新 README **MVP-P1 完成**
-7. **18 → 19 → 20 → 21**；**22** 视交付压力提前；**23** 最后且可选
+7. **18 → 19 → 20 → 21**；**22** 视交付压力提前；**23** 最后且可选（**已跳过** → Full P1 核心完成）
+8. **生产化演练** — [`PILOT-RUNBOOK.md`](PILOT-RUNBOOK.md)（备份/restore、re-embed SOP）

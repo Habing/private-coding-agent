@@ -90,7 +90,7 @@ WebUI 若动到前端，额外：`cd internal/webui && npm test -- --run`。
 ### #13 Snapshot restore（Docker）
 
 - `POST /sandbox/snapshots/restore/:id` → 新 running sandbox
-- MinIO tar → `docker load` → 容器启动（无 `/workspace` tmpfs 覆盖）
+- MinIO：`container export` tar → `docker import`；**workspace** 单独 sidecar tar（tmpfs 不在 export 内）→ restore 时 `tar -x` 注入 `/workspace`
 - K8sDriver 返回 `503 snapshot_disabled`
 - Audit：`sandbox.snapshot.restore`
 

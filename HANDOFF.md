@@ -6,10 +6,10 @@
 | 项目根 | `F:\project\private-coding-agent` |
 | Git module | `github.com/yourorg/private-coding-agent` |
 | 当前日期 | 2026-05-23 |
-| 当前 HEAD | `48bf11c` *(Slice 22d2 commits 1–2 落地：`deploy/helm/pca/` Helm chart — Chart.yaml + values.yaml（prod 默认）+ values-kind.yaml（nightly overrides）+ README + 13 模板（_helpers.tpl 含 `pca.assertions` 渲染期硬拦截 jwtSecret ≥32 / namespace 一致 / sandbox.network 合法 / driver 合法、namespace、serviceaccount、rbac（Role scope=`pca-sandboxes` ns，verbs 仅 pods{create,get,list,delete} + pods/exec{create} + pods/log{get}）、configmap（故意省略 db.dsn / redis.addr）、secret（gated by `not .Values.secrets.existing`）、service、deployment（PCA_DB_DSN 走 Pod-spec env `$(PCA_DB_PASSWORD)` 展开 + readOnlyRootFilesystem + runAsNonRoot=65532）、postgres（StatefulSet+PVC）、redis（Deployment+optional PVC）、networkpolicy-server（出站 DNS + kube-apiserver + chart PG/Redis + `allowExternalEgress` 控公网）、networkpolicy-sandbox-internal（podSelector `pca.network=internal`，egress 仅 release ns server pod）、networkpolicy-sandbox-none（deny-all））；`.github/workflows/kind-nightly.yml` cron `17 3 * * *` + workflow_dispatch — kind 单节点 → helm install → `deploy/helm/pca/test/kind-e2e.sh` 6 步（psql exec bootstrap user → port-forward → login+create sandbox 实证 Pod 在 pca-sandboxes ns → PUT files + POST exec via SPDY round-trip → NetworkPolicy=internal 外网 curl 退出 != 0 → DELETE+404）；`docs/DEPLOY-K8S.md` 新增 10 段；`docs/DEPLOY.md` §1 形态表加 K8s 行；`docs/SECURITY-SANDBOX.md` §3.1 注明 K8sDriver+chart RBAC 已替换 docker.sock 妥协)* |
+| 当前 HEAD | `689466a` *(Compose Pilot #11–#15：backup/restore 脚本、workflow retention、Reflection 持久队列、admin re-embed、Docker snapshot restore + workspace sidecar tar；E2E **69/69**)* |
 | P1 规划 | **已落盘** — [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md) |
-| 工作区状态 | MVP-P1 17 ✅；Full-P1 18 ✅, 19a ✅, 19b ✅, 20 ✅, 21a ✅, 21b ✅, 22a ✅, 22b ✅, 22c ✅, 22d1 ✅, 22d2 ✅；compose E2E 67/67（待跑）+ kind nightly 6 步独立 |
-| 下一阶段 | **Full P1 切片 23（可选）** — N8N 集成；22 全段完成 |
+| 工作区状态 | MVP-P1 17 ✅；Full-P1 18–22d2 ✅；Compose Pilot #11–#15 ✅；compose E2E **69/69** + kind nightly 6 步独立 |
+| 下一阶段 | **Full P1 核心完成**（Slice 23 N8N **跳过**）→ **生产化演练** — [`docs/PILOT-RUNBOOK.md`](docs/PILOT-RUNBOOK.md) |
 
 ---
 
@@ -46,7 +46,7 @@
 | `go test ./...` | 预期全 PASS |
 | `go vet ./...` | 干净 |
 | `go build ./...` | 干净 |
-| E2E `test-e2e.sh` | 全量 **67 步**（发版 / Gate 前必跑；P0 1–42 + MVP-P1 43–49 + Slice 18 50 + Slice 19a 57–60 + Slice 20 61 + Slice 21a 62 + Slice 21b 63 + Slice 22a 64 + Slice 22b 65 + Slice 22c 66 + Slice 22d1 67） |
+| E2E `test-e2e.sh` | 全量 **69 步**（P0 1–42 + MVP-P1 43–49 + Full-P1 50–67 + Compose Pilot 68–69） |
 
 ### 1.4 Gate G1 收口（2026-05-21）
 
@@ -171,7 +171,7 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 | 22c seccomp + trivy CI | ✅ | 66 | `internal/sandbox/seccomp.json` 派生自 Docker default profile（v25.0.5），从 allow 名单移除 `mount/umount/umount2/pivot_root/name_to_handle_at/open_by_handle_at/mount_setattr/move_mount/open_tree/fsconfig/fsmount/fsopen/fspick/ptrace/process_vm_readv/process_vm_writev/process_madvise/pidfd_getfd/kcmp/keyctl/add_key/request_key/bpf/init_module/delete_module/finit_module/create_module/kexec_load/kexec_file_load/userfaultfd/perf_event_open/fanotify_init/lookup_dcookie/quotactl/quotactl_fd/setdomainname/sethostname/syslog/iopl/acct` 共 16 类约 40 个危险 syscall；保留 `setns/unshare/clone3` 满足现代 glibc / Node.js；`//go:embed seccomp.json` + `LoadSeccompProfile` 启动期解析校验 `defaultAction==SCMP_ACT_ERRNO`；`DockerDriverConfig.SeccompProfile` 注入 `SecurityOpt: seccomp=<json>`（helper `securityOpts(profile)` 保留 no-new-privileges:true）；`SandboxConfig.SeccompEnabled` 默认 true、`PCA_SANDBOX_SECCOMP_ENABLED=false` 应急回退到 Docker 默认 profile；GitHub Actions `.github/workflows/security.yml` 在 PR + push to main 触发 sandbox/image/** 路径变更，trivy `aquasecurity/trivy-action@master` 双 job — CRITICAL exit-code=1 阻塞 merge / HIGH exit-code=0 仅 table；`.trivyignore` placeholder；SECURITY-SANDBOX.md §1 适用范围 + §2 SecurityOpt 表 + §9 已知未做表（seccomp/trivy/audit hash chain 标 ✅）+ §11 验证（SecurityOpt inspect + mount 拒绝实证）；E2E 66 mount → EPERM + sh+echo+cat 回归 |
 | 22d1 K8sDriver Runtime | ✅ | 67 | `internal/sandbox/k8s_driver{,_exec,_fs}.go` 实现 Runtime（Pod=sandbox，硬化全对齐 DockerDriver；SPDY exec；tar-pipe FS；Snapshot=`ErrSnapshotDisabled`）+ fake-clientset 13 L1 单测 / `SandboxConfig.Driver` 默认 docker + K8sConfig + `Load()` 非法 driver fail-fast / main.go boot switch（docker→DockerDriver+reconciler、k8s→buildK8sRestConfig→clientset→K8sDriver、skip reconciler）+ `SetSnapshotDeps` 类型断言保护 / `httpx.Deps.Info` + /healthz 暴露 `sandbox.driver` / `k8s.io/{api,apimachinery,client-go} v0.32.0` |
 | 22d2 Helm chart + kind nightly | ✅ | — | `deploy/helm/pca` chart（Chart.yaml + values.yaml prod 默认 + values-kind.yaml + README + 13 模板：_helpers/namespace/serviceaccount/rbac scope=pca-sandboxes + Role pods{create,get,list,delete}+pods/exec{create}+pods/log{get} + configmap 故意省略 db.dsn/redis.addr + secret + service + deployment（PCA_DB_DSN 走 Pod env `$(PCA_DB_PASSWORD)`，readOnlyRootFilesystem+runAsNonRoot=65532）+ postgres StatefulSet+PVC + redis Deployment+PVC + 3 张 NetworkPolicy 模板（server 出站 allowlist；sandbox-internal podSelector pca.network=internal 仅出 release ns；sandbox-none deny-all））+ `.github/workflows/kind-nightly.yml` cron 17 3 UTC + workflow_dispatch（kind 单节点 → helm install → port-forward → 6 步 kind-e2e.sh：psql bootstrap user / login+create→Pod 在 pca-sandboxes ns / PUT files+POST exec via SPDY round-trip / NP=internal curl 外网拒 / DELETE+404）+ `docs/DEPLOY-K8S.md` 10 段 + `docs/DEPLOY.md` §1 加 K8s 行 + `docs/SECURITY-SANDBOX.md` §3.1 注 docker.sock 妥协对照消除 |
-| 23 N8N（可选） | ⬜ | 68+ | 需法务确认 |
+| 23 N8N（可选） | ⏭️ **跳过** | — | 非硬需求；Full P1 核心已完成 |
 
 ### 3.3 技术债 ↔ 切片映射
 
@@ -241,19 +241,19 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 
 ## 5. 下一步建议
 
-### 5.1 立即（Slice 23 启动前 / Full-P1 22 收口自检）
+### 5.1 生产化演练（当前）
+
+Full P1 核心 + Compose Pilot 已交付。按 [`docs/PILOT-RUNBOOK.md`](docs/PILOT-RUNBOOK.md) 在 compose 或 kind 环境跑：
+
+1. **备份** — `deploy/compose/backup/backup.sh`
+2. **恢复** — `restore.sh`（破坏性，仅试点环境）
+3. **Re-embed SOP** — 换 embedding 模型 → restart → `POST /admin/memories/re-embed`
+4. **回归** — `./test-e2e.sh` 69/69（可选）
 
 ```bash
-cd F:/project/private-coding-agent
-go test ./... -count=1
-go vet ./...
-cd deploy/compose && ./test-e2e.sh   # 期望 67/67 E2E PASS（22d2 不增步号，compose 路径不变）
-
-# K8s 路径手动校验（需本地 docker + helm + kind）：
-helm lint ./deploy/helm/pca
-helm template ./deploy/helm/pca -f ./deploy/helm/pca/values-kind.yaml | kubectl apply --dry-run=client -f -
-# 全量真跑见 docs/DEPLOY-K8S.md §10 "本地实验 — kind"
-# 或在 GH 上 `gh workflow run kind-nightly.yml` 手动触发 nightly
+cd deploy/compose && docker compose up -d
+cd backup && ./backup.sh
+# 见 PILOT-RUNBOOK.md §2–§3
 ```
 
 ### 5.2 已完成
@@ -277,9 +277,9 @@ helm template ./deploy/helm/pca -f ./deploy/helm/pca/values-kind.yaml | kubectl 
 
 每切片：读 plan → 实现 → 更新 `SLICE-VERIFICATION.md` + E2E 步号 → README 勾选。
 
-### 5.3 Full P1 剩余
+### 5.3 Full P1 状态
 
-按 [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md)：切片 22 全段（22a/b/c/d1/d2）已落地；**剩 23（可选 N8N 集成，需法务确认）**。Slice 20 reflection proposals 已经在审核流中沉淀；Slice 21a Orchestration Router 已用 YAML 规则跑通 Shadow + Hint；Slice 21b External MCP Manager 已让外部 HTTP MCP server 作为 `mcp.<slug>.<tool>` 进入 Bus。Slice 22d2 完成意味着 Full-P1 主线工程实质收口——K8sDriver + 完整 chart + nightly e2e + DEPLOY-K8S 已经把 docker.sock 妥协路径替换掉。
+按 [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md)：**切片 18–22d2 全部落地**；**Slice 23（N8N）跳过** — Full P1 **核心完成**。Compose Pilot #11–#15 已收口（`689466a`）。
 
 ### 5.4 Compose 试点技术债（P2 运维）
 

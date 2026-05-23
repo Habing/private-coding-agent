@@ -221,11 +221,13 @@ cd deploy/compose/backup
 
 生产环境建议 cron daily 跑 `backup.sh`，保留 7–30 天 off-site 副本。
 
+**生产化演练清单**（备份/restore、re-embed SOP）：[`docs/PILOT-RUNBOOK.md`](PILOT-RUNBOOK.md)
+
 ## 10. 验证
 
 ```bash
 # 本地 compose 烟囱测试
-cd deploy/compose && cp .env.example .env && ./test-e2e.sh    # 49/49 PASS
+cd deploy/compose && cp .env.example .env && ./test-e2e.sh    # 69/69 PASS
 
 # 生产烟囱
 curl -fsS https://agent.example.com/healthz
