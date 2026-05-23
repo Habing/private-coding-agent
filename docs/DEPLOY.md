@@ -227,7 +227,7 @@ cd deploy/compose/backup
 
 ```bash
 # 本地 compose 烟囱测试
-cd deploy/compose && cp .env.example .env && ./test-e2e.sh    # 69/69 PASS
+cd deploy/compose && cp .env.example .env && ./test-e2e.sh    # 78/78 PASS
 
 # 生产烟囱
 curl -fsS https://agent.example.com/healthz

@@ -89,6 +89,7 @@ cd deploy\compose
 ```
 
 每切片完成后的增量步号与 L1/L2 命令见 [`docs/SLICE-VERIFICATION.md`](docs/SLICE-VERIFICATION.md)。  
+CI：`.github/workflows/compose-e2e.yml` 在 PR/push main、每日 04:30 UTC 与 `workflow_dispatch` 跑同一脚本。
 P0 Gate：**E2E 1～42**；切片 13 起增量 **43～48**（quota+logout / session-sandbox / OIDC / memory inject / sandbox files）。详见 [`HANDOFF.md`](HANDOFF.md) §3.0。
 
 ## 关键端点

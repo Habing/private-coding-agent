@@ -1,0 +1,44 @@
+name: compose-e2e
+
+# Full-stack compose regression: deploy/compose/test-e2e.sh (78 steps).
+# Exercises docker sandbox driver, workflow engine + triggers, NL authoring,
+# reflection, MCP, snapshots, etc. Complements kind-nightly.yml (K8s driver).
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+  schedule:
+    # Daily at 04:30 UTC — after kind-nightly (03:17) to spread runner load.
+    - cron: '30 4 * * *'
+
+jobs:
+  compose-e2e:
+    name: compose e2e (78 steps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pre-build sandbox base image
+        run: docker build -t pca/sandbox:base ./sandbox/image
+
+      - name: Run compose E2E
+        run: |
+          cd deploy/compose
+          cp -n .env.example .env || true
+          bash ./test-e2e.sh
+
+      - name: Dump compose logs on failure
+        if: failure()
+        run: |
+          cd deploy/compose
+          docker compose ps -a || true
+          docker compose logs server --tail=300 || true
+          docker compose logs postgres --tail=100 || true
+          docker compose logs mock-provider --tail=100 || true

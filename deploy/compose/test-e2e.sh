@@ -217,7 +217,7 @@ MSGS=$(curl -fsS "http://localhost:8080/sessions/$SID/messages" -H "Authorizatio
 echo "$MSGS" | jq -e '.messages | length >= 2' >/dev/null \
   || { echo "messages not persisted: $MSGS"; exit 1; }
 
-echo "[21b/75] DELETE /sessions/:id archives session and releases sandbox ..."
+echo "[21b/78] DELETE /sessions/:id archives session and releases sandbox ..."
 curl -fsS -X DELETE "http://localhost:8080/sessions/$SID" \
   -H "Authorization: Bearer $TOK" >/dev/null
 
