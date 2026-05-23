@@ -272,11 +272,17 @@ cd deploy/compose
 | 审计 | 3 个 action：`sandbox.snapshot.{create,list,get}` 均 `audit.Detached`（5s ctx，不阻塞 hash chain append）；`create` metadata `{object_key,size_bytes,image_ref,session_id}`；`list` metadata `{count,session_id_filter?}`、target 空串；`get` target=snapshot_id |
 | 配置/部署 | 新增 `SnapshotConfig{Enabled,Endpoint,Bucket,AccessKey,SecretKey,Region,UseSSL,Prefix,KeepLocalImage}` + `PCA_SNAPSHOT_*` env；compose `minio` service pin `RELEASE.2025-04-08T15-41-24Z`、端口 9000/9001、healthcheck、命名卷 `miniodata`；server `depends_on: minio: service_healthy`；启动期 log `objstore: bucket pca-snapshots ready` |
 
-### 切片 22c — seccomp + trivy CI（待办）
+### 切片 22c — seccomp + trivy CI
 
 | 项 | 验证 |
 |----|------|
-| L3 | GitHub Actions trivy scan + sandbox seccomp profile |
+| L1 | `go test ./internal/sandbox/... ./internal/config/... -count=1`：`LoadSeccompProfile` 返回有效 JSON 字符串且 `defaultAction==SCMP_ACT_ERRNO`；`seccompAllowedSyscalls()` 拍平后断言 `mount/umount/umount2/pivot_root/name_to_handle_at/open_by_handle_at/ptrace/process_vm_readv/process_vm_writev/process_madvise/keyctl/add_key/request_key/bpf/init_module/finit_module/delete_module/kexec_load/kexec_file_load/userfaultfd/perf_event_open` 等 21 个高危 syscall **不在** allow 名单（drift detection）；同时断言 `read/write/openat/close/execve/clone/clone3/fork/exit/exit_group/brk/mmap/munmap/mprotect/socket/connect/accept4/poll/epoll_wait/wait4/getpid/getuid/getgid/setns/unshare/futex` 等 26 个常用 syscall **在** allow 名单（over-trim detection）；`TestSandboxConfig_Defaults` 断言 `Sandbox.SeccompEnabled==true`；`TestSandboxConfig_EnvDisable` 断言 `PCA_SANDBOX_SECCOMP_ENABLED=false` 后 `false` |
+| L2 | `go build ./...`；`go vet ./...` 干净；`docker build -t pca/sandbox:base ./sandbox/image` 烟测（trivy workflow 中跑）；二进制内嵌 seccomp.json ~22KB 增量 |
+| L3 增量 | E2E **[66]**：(a) 建沙箱（默认 `PCA_SANDBOX_SECCOMP_ENABLED=true`）→ (b) `POST /sandbox/sessions/$SID/exec` cmd=`["mount","-t","tmpfs","none","/tmp/seccomp-probe"]` 期望 `exit_code != 0` 且 `stderr_base64` 解码后匹配 `operation not permitted|permission denied|not permitted`（seccomp 在 syscall 层返回 EPERM）→ (c) 回归保护：`exec sh -c "echo ok > /workspace/seccomp-probe && cat /workspace/seccomp-probe"` 期望 `exit_code==0` 且 stdout 含 `ok`（防止 profile 删过头）→ (d) `DELETE /sandbox/sessions/$SID` 收尾 |
+| L3 trivy CI | `.github/workflows/security.yml` 在 PR 修改 `sandbox/image/**` / `.github/workflows/security.yml` / `.trivyignore` 或 push to main 时触发；流程：checkout → `docker build pca/sandbox:base ./sandbox/image` → `aquasecurity/trivy-action@master` CRITICAL（exit-code=1 → 阻塞 merge）→ HIGH（`if: always()`, exit-code=0 → 仅 table）。本次 22c PR 应全绿（debian:12-slim 当前无 CRITICAL CVE） |
+| 不变量 | (a) profile 派生自 Docker `moby/v25.0.5/profiles/seccomp/default.json`，沿用 `defaultAction: SCMP_ACT_ERRNO`（默认拒）+ 显式 allowlist 范式；(b) 从 allow 名单 **物理删除** 16 类约 40 个危险 syscall 名（不是新增 `SCMP_ACT_ERRNO` 块），让它们 fall through 到顶层 default deny —— 比"允许后再拒"更不易被绕过；(c) 保留 `setns/unshare/clone3` 因为现代 glibc/Node.js 启动期需要（删了沙箱直接进不去）；(d) `//go:embed seccomp.json` 编译进二进制，零外挂依赖（compose / kubelet 不挂 volume）；启动期 `LoadSeccompProfile` 一次解析并校验，profile 损坏 → `slog.Warn` 后回退（带 fallback 路径但实际 boot 期发现错误也只是不注入 seccomp，不阻 server 启动）；(e) `securityOpts(profile string)` helper：`["no-new-privileges:true"]` 是 baseline；profile 非空时追加 `"seccomp="+profile`；空字符串等价于禁用 seccomp（不退化为 Docker default）；(f) `SandboxConfig.SeccompEnabled` 默认 true，`v.SetDefault("sandbox.seccomp_enabled", true)` 必须在 `ReadInConfig` 前注册以让 viper.AutomaticEnv 绑定 `PCA_SANDBOX_SECCOMP_ENABLED`；(g) 与 `CapDrop ALL` 是 defense-in-depth 双层 —— 即便 `CapAdd` 配置错误塞回 `SYS_ADMIN`，sandbox 内 `mount` 仍被 seccomp 在 syscall 层拒 |
+| 审计 | 无新增 audit action（seccomp 是底层 enforcement，不产生应用层事件）。trivy run 失败通过 GitHub Actions check 反馈，不写入 audit_log |
+| 配置/部署 | 新增 `SandboxConfig{SeccompEnabled bool}` 顶层段（首次新增 `sandbox.*` 配置树）；`config.example.yaml` 加 `sandbox: { seccomp_enabled: true }` 段附说明；`cmd/server/main.go` boot 期 `if cfg.Sandbox.SeccompEnabled { seccompJSON, err := sandbox.LoadSeccompProfile(); ... }` → 传入 `DockerDriverConfig.SeccompProfile`；新增 `.github/workflows/security.yml`（仓库首个 GitHub Actions workflow）+ `.trivyignore` placeholder；SECURITY-SANDBOX.md §1/§2/§9/§11 改写 |
 
 ### 切片 22d — K8sDriver + Helm（待办）
 
@@ -307,6 +313,7 @@ cd deploy/compose
 | Full P1（含 21b） | `./test-e2e.sh` | 1–63（slice 21b 完成后） |
 | Full P1（含 22a） | `./test-e2e.sh` | 1–64（slice 22a 完成后） |
 | Full P1（含 22b） | `./test-e2e.sh` | 1–65（slice 22b 完成后） |
+| Full P1（含 22c） | `./test-e2e.sh` | 1–66（slice 22c 完成后） |
 
 ```powershell
 go test ./... -count=1
@@ -360,7 +367,7 @@ cd deploy/compose
 | 21b | 63 |
 | 22a | 64 |
 | 22b | 65 |
-| 22c | 66+（待办） |
-| 22d | 66+（待办） |
-| 23 | 66+（可选） |
+| 22c | 66 |
+| 22d | 67+（待办） |
+| 23 | 67+（可选） |
 | **Full P1 全量** | **1–70+** |
