@@ -27,6 +27,7 @@ func (h *ProposalHandler) RegisterAgent(rg *gin.RouterGroup) {
 	g := rg.Group("/agent/workflow")
 	g.GET("/templates", h.listTemplates)
 	g.POST("/proposals", h.createProposal)
+	g.GET("/proposals/:id/graph", h.proposalGraph)
 	g.GET("/proposals/:id", h.getProposal)
 	g.POST("/proposals/:id/confirm", h.confirmProposal)
 }
@@ -134,6 +135,29 @@ func (h *ProposalHandler) getProposal(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, proposalResponse(prop))
+}
+
+func (h *ProposalHandler) proposalGraph(c *gin.Context) {
+	cl, ok := h.claims(c)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_id"})
+		return
+	}
+	prop, err := h.svc.Get(c.Request.Context(), cl.TenantID, id)
+	if err != nil {
+		h.writeProposalErr(c, err)
+		return
+	}
+	g, err := GraphFromYAML(prop.DSLYAML)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "parse", "detail": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, g)
 }
 
 func (h *ProposalHandler) confirmProposal(c *gin.Context) {

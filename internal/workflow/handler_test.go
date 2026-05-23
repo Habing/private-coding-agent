@@ -229,5 +229,45 @@ func TestHandler_Unauthorized(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, rr.Code)
 }
 
+func TestHandler_GraphPreview(t *testing.T) {
+	r, _, _, _ := newHandlerSetup(t)
+	rr := doJSON(t, r, http.MethodPost, "/admin/workflows/graph-preview", map[string]any{
+		"dsl_yaml": svcDSL,
+	})
+	require.Equal(t, http.StatusOK, rr.Code)
+	var g workflow.Graph
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &g))
+	require.Equal(t, "greet", g.Meta.ID)
+	require.NotEmpty(t, g.Nodes)
+}
+
+func TestHandler_GraphPreview_BadYAML(t *testing.T) {
+	r, _, _, _ := newHandlerSetup(t)
+	rr := doJSON(t, r, http.MethodPost, "/admin/workflows/graph-preview", map[string]any{
+		"dsl_yaml": "[[[",
+	})
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestHandler_Graph_Get(t *testing.T) {
+	r, _, _, _ := newHandlerSetup(t)
+	rr := doJSON(t, r, http.MethodPost, "/admin/workflows", map[string]any{
+		"slug": "greet", "name": "G", "dsl_yaml": svcDSL,
+	})
+	require.Equal(t, http.StatusCreated, rr.Code)
+
+	rr = doJSON(t, r, http.MethodGet, "/admin/workflows/greet/graph", nil)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var g workflow.Graph
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &g))
+	require.Equal(t, "greet", g.Meta.ID)
+}
+
+func TestHandler_Graph_NotFound(t *testing.T) {
+	r, _, _, _ := newHandlerSetup(t)
+	rr := doJSON(t, r, http.MethodGet, "/admin/workflows/missing/graph", nil)
+	require.Equal(t, http.StatusNotFound, rr.Code)
+}
+
 // keep the auth import meaningful even if helpers above shift around.
 var _ = context.Background

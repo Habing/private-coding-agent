@@ -27,7 +27,9 @@ func NewAdminHandler(svc *Service) *AdminHandler {
 func (h *AdminHandler) Register(rg *gin.RouterGroup) {
 	g := rg.Group("/admin/workflows")
 	g.POST("", h.create)
+	g.POST("/graph-preview", h.graphPreview)
 	g.GET("", h.list)
+	g.GET("/:slug/graph", h.graph)
 	g.GET("/:slug", h.get)
 	g.PUT("/:slug", h.update)
 	g.DELETE("/:slug", h.delete)
@@ -260,4 +262,55 @@ func (h *AdminHandler) runs(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"runs": rows})
+}
+
+type graphPreviewReq struct {
+	DSLYAML string `json:"dsl_yaml"`
+}
+
+func (h *AdminHandler) graphPreview(c *gin.Context) {
+	if _, _, ok := h.claims(c); !ok {
+		return
+	}
+	var req graphPreviewReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
+		return
+	}
+	if req.DSLYAML == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "dsl_required"})
+		return
+	}
+	if h.maxBodyChars > 0 && len(req.DSLYAML) > h.maxBodyChars {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "dsl_too_large", "max": h.maxBodyChars})
+		return
+	}
+	g, err := GraphFromYAML(req.DSLYAML)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "parse", "detail": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, g)
+}
+
+func (h *AdminHandler) graph(c *gin.Context) {
+	tid, _, ok := h.claims(c)
+	if !ok {
+		return
+	}
+	wf, err := h.svc.Get(c.Request.Context(), tid, c.Param("slug"))
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal", "detail": err.Error()})
+		return
+	}
+	g, err := GraphFromYAML(wf.DSLYAML)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "parse", "detail": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, g)
 }

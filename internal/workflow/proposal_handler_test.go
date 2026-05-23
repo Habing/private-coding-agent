@@ -104,3 +104,24 @@ func TestProposalHandler_MemberConfirmAdminApprove(t *testing.T) {
 	require.Equal(t, http.StatusOK, rr.Code)
 	require.True(t, bus.has("workflow.pending-api"))
 }
+
+func TestProposalHandler_ProposalGraph(t *testing.T) {
+	r, _, _, _ := newProposalHandlerSetup(t, "member")
+	rr := doJSON(t, r, http.MethodPost, "/agent/workflow/proposals", map[string]any{
+		"slug": "graph-wf", "name": "Graph WF", "dsl_yaml": replaceDSLID(svcDSL, "graph-wf"),
+	})
+	require.Equal(t, http.StatusCreated, rr.Code)
+	var created struct {
+		Proposal struct {
+			ID uuid.UUID `json:"id"`
+		} `json:"proposal"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &created))
+
+	rr = doJSON(t, r, http.MethodGet, "/agent/workflow/proposals/"+created.Proposal.ID.String()+"/graph", nil)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var g workflow.Graph
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &g))
+	require.Equal(t, "graph-wf", g.Meta.ID)
+	require.NotEmpty(t, g.Nodes)
+}
