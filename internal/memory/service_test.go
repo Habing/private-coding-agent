@@ -101,3 +101,32 @@ func TestService_CrossTenant404(t *testing.T) {
 	_, err = svc.Update(ctx, uuid.New(), uid, res.Memory.ID, memory.UpdateRequest{Content: &newContent})
 	require.ErrorIs(t, err, memory.ErrMemoryNotFound)
 }
+
+func TestService_ReEmbedTenant(t *testing.T) {
+	pg := newPool(t)
+	tid, uid := fixtures(t, pg)
+	repo := memory.NewRepo(pg)
+	emb := newFakeEmbedder(memory.EmbeddingDim)
+	svc := memory.NewService(repo, emb, memory.MemoryConfig{
+		EmbedOnWrite: true, EmbeddingModel: "mock:emb",
+	})
+	ctx := context.Background()
+	_, err := svc.Create(ctx, tid, uid, memory.CreateRequest{Type: memory.TypeKnowledge, Content: "alpha"})
+	require.NoError(t, err)
+	_, err = svc.Create(ctx, tid, uid, memory.CreateRequest{Type: memory.TypeKnowledge, Content: "beta"})
+	require.NoError(t, err)
+
+	res, err := svc.ReEmbedTenant(ctx, tid)
+	require.NoError(t, err)
+	require.Equal(t, 2, res.Total)
+	require.Equal(t, 2, res.Updated)
+	require.Equal(t, 0, res.Failed)
+	require.GreaterOrEqual(t, len(emb.calls), 1)
+	require.Len(t, emb.calls[len(emb.calls)-1], 2)
+}
+
+func TestService_ReEmbedTenant_Disabled(t *testing.T) {
+	svc, tid, _ := newService(t)
+	_, err := svc.ReEmbedTenant(context.Background(), tid)
+	require.ErrorIs(t, err, memory.ErrReEmbedDisabled)
+}

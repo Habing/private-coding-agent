@@ -29,6 +29,7 @@ type Config struct {
 	MCP           MCPConfig           `mapstructure:"mcp"`
 	Snapshot      SnapshotConfig      `mapstructure:"snapshot"`
 	Sandbox       SandboxConfig       `mapstructure:"sandbox"`
+	Workflow      WorkflowConfig      `mapstructure:"workflow"`
 }
 
 // SandboxConfig groups host-side sandbox driver options that aren't already
@@ -158,13 +159,23 @@ type OrchestratorRuleSuggestConfig struct {
 // ReflectionConfig drives the Reflection Agent (slice 20). Enabled=false skips
 // worker construction and admin route registration entirely.
 type ReflectionConfig struct {
-	Enabled               bool          `mapstructure:"enabled"`
-	Model                 string        `mapstructure:"model"`
-	AutoApproveThreshold  float64       `mapstructure:"auto_approve_threshold"`
-	MaxMessagesPerSession int           `mapstructure:"max_messages_per_session"`
-	MaxCharsPerMessage    int           `mapstructure:"max_chars_per_message"`
-	WorkerBuffer          int           `mapstructure:"worker_buffer"`
-	WorkerTimeout         time.Duration `mapstructure:"worker_timeout"`
+	Enabled                  bool          `mapstructure:"enabled"`
+	Model                    string        `mapstructure:"model"`
+	AutoApproveThreshold     float64       `mapstructure:"auto_approve_threshold"`
+	MaxMessagesPerSession    int           `mapstructure:"max_messages_per_session"`
+	MaxCharsPerMessage       int           `mapstructure:"max_chars_per_message"`
+	WorkerBuffer             int           `mapstructure:"worker_buffer"`
+	WorkerTimeout            time.Duration `mapstructure:"worker_timeout"`
+	MaxAttempts              int           `mapstructure:"max_attempts"`
+	RetryBaseInterval        time.Duration `mapstructure:"retry_base_interval"`
+	PollInterval             time.Duration `mapstructure:"poll_interval"`
+	ProposalPendingTTLDays   int           `mapstructure:"proposal_pending_ttl_days"`
+}
+
+// WorkflowConfig tunes workflow engine housekeeping (pilot tech-debt #14).
+type WorkflowConfig struct {
+	RunsRetentionDays int           `mapstructure:"runs_retention_days"`
+	RetentionInterval time.Duration `mapstructure:"retention_interval"`
 }
 
 // ProvidersConfig controls the model-provider registry (slice 13).
@@ -285,7 +296,30 @@ func Load(path string) (*Config, error) {
 	if err := applySlice22dDefaults(&c); err != nil {
 		return nil, err
 	}
+	applyPilotDefaults(&c)
 	return &c, nil
+}
+
+// applyPilotDefaults fills compose-pilot housekeeping knobs (tech-debt #14/#15).
+func applyPilotDefaults(c *Config) {
+	if c.Workflow.RunsRetentionDays == 0 {
+		c.Workflow.RunsRetentionDays = 90
+	}
+	if c.Workflow.RetentionInterval <= 0 {
+		c.Workflow.RetentionInterval = 24 * time.Hour
+	}
+	if c.Reflection.MaxAttempts <= 0 {
+		c.Reflection.MaxAttempts = 3
+	}
+	if c.Reflection.RetryBaseInterval <= 0 {
+		c.Reflection.RetryBaseInterval = time.Minute
+	}
+	if c.Reflection.PollInterval <= 0 {
+		c.Reflection.PollInterval = 30 * time.Second
+	}
+	if c.Reflection.ProposalPendingTTLDays == 0 {
+		c.Reflection.ProposalPendingTTLDays = 30
+	}
 }
 
 // applySlice22dDefaults validates Sandbox.Driver and fills K8s sub-defaults.

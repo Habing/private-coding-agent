@@ -374,6 +374,10 @@ func run() error {
 	if err := workflowService.RepublishAll(ctx); err != nil {
 		slog.Warn("workflow: republish on boot", "err", err.Error())
 	}
+	workflow.StartRunsRetention(ctx, workflowRepo, cfg.Workflow.RunsRetentionDays, cfg.Workflow.RetentionInterval)
+	slog.Info("workflow retention",
+		"runs_retention_days", cfg.Workflow.RunsRetentionDays,
+		"interval", cfg.Workflow.RetentionInterval)
 
 	// Slice 21b — External MCP Manager. cfg.MCP.Enabled=false skips
 	// construction and the admin handler returns 503; boot republish runs
@@ -455,6 +459,7 @@ func run() error {
 	var reflectionAdmin *reflection.AdminHandler
 	if cfg.Reflection.Enabled {
 		reflRepo := reflection.NewRepo(pool)
+		reflJobRepo := reflection.NewJobRepo(pool)
 		reflMem := newReflectionMemoryAdapter(memoryService)
 		reflCfg := reflection.Config{
 			Enabled:               true,
@@ -467,14 +472,22 @@ func run() error {
 		}
 		reflector := reflection.NewReflector(modelGateway, reflMem,
 			session.NewMessageRepo(pool), reflRepo, auditRepo, reflCfg)
-		reflWorker := reflection.NewWorker(reflector, reflCfg.WorkerBuffer, reflCfg.WorkerTimeout)
+		reflWorker := reflection.NewWorker(reflector, reflCfg.WorkerBuffer, reflCfg.WorkerTimeout, reflection.WorkerOptions{
+			Store:                  reflJobRepo,
+			MaxAttempts:            cfg.Reflection.MaxAttempts,
+			RetryBaseInterval:      cfg.Reflection.RetryBaseInterval,
+			PollInterval:           cfg.Reflection.PollInterval,
+			ProposalPendingTTLDays: cfg.Reflection.ProposalPendingTTLDays,
+		})
 		go reflWorker.Run(ctx)
 		sessionService.WithReflectionHook(reflWorker.Enqueue)
 		reflectionAdmin = reflection.NewAdminHandler(reflRepo, reflMem).WithAuditSink(auditRepo)
 		slog.Info("reflection enabled",
 			"model", reflCfg.Model,
 			"auto_approve_threshold", reflCfg.AutoApproveThreshold,
-			"worker_buffer", reflCfg.WorkerBuffer)
+			"worker_buffer", reflCfg.WorkerBuffer,
+			"max_attempts", cfg.Reflection.MaxAttempts,
+			"poll_interval", cfg.Reflection.PollInterval)
 	}
 
 	var ready atomic.Bool
@@ -550,6 +563,7 @@ func run() error {
 			skills.NewAdminHandler(skillDBRepo).WithAuditSink(auditRepo).Register(adminGroup)
 		}
 		workflow.NewAdminHandler(workflowService).Register(adminGroup)
+		memory.NewAdminHandler(memoryService).WithAuditSink(auditRepo).Register(adminGroup)
 		if reflectionAdmin != nil {
 			reflectionAdmin.Register(adminGroup)
 		}

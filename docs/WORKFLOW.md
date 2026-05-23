@@ -233,7 +233,7 @@ Prometheus：workflow 内的 tool 节点照旧打 `pca_tool_invocations_total{to
 
 ### `workflow_runs` 表
 
-每次 invoke 写一行，包含 `inputs_json` / `outputs_json` / `status` / `duration_ms` / `dry_run`。v1 **不做** retention，行多了运维侧手工 TRUNCATE 或后续接入清理 job。`GET /admin/workflows/:slug/runs` 默认返回最近 N 条。
+每次 invoke 写一行，包含 `inputs_json` / `outputs_json` / `status` / `duration_ms` / `dry_run`。**Compose 试点（2026-05-23）** 已接入自动 retention：`workflow.runs_retention_days` 默认 90 天，启动时 purge 一次 + 后台 daily ticker（见 [`docs/P2-COMPOSE-PILOT.md`](P2-COMPOSE-PILOT.md) #14）。设为 `0` 禁用。`GET /admin/workflows/:slug/runs` 默认返回最近 N 条。
 
 ---
 

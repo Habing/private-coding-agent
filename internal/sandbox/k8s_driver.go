@@ -486,5 +486,14 @@ func (d *K8sDriver) Snapshot(ctx context.Context, tenantID, id uuid.UUID) (*Snap
 	return nil, ErrSnapshotDisabled
 }
 
+func (d *K8sDriver) RestoreFromSnapshot(ctx context.Context, tenantID, userID, snapshotID uuid.UUID) (*Sandbox, error) {
+	if d.snaps != nil {
+		if _, err := d.snaps.Get(ctx, tenantID, snapshotID); err != nil {
+			return nil, err
+		}
+	}
+	return nil, ErrSnapshotDisabled
+}
+
 // compile-time check that K8sDriver satisfies the Runtime interface.
 var _ Runtime = (*K8sDriver)(nil)

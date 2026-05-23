@@ -20,7 +20,7 @@
 
 ### P1 — 企业可用（规划已落盘，实施中）
 
-**路线图：** [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md)
+**路线图：** [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md) · **Compose 试点运维：** [`docs/P2-COMPOSE-PILOT.md`](docs/P2-COMPOSE-PILOT.md)
 
 #### MVP-P1（企业试点）— 切片 13～17
 

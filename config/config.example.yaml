@@ -106,6 +106,17 @@ reflection:
   worker_buffer: 256
   # Per-job timeout (LLM call + persist).
   worker_timeout: 5m
+  # Durable queue (pilot tech-debt #15): persisted in reflection_jobs; survives restart.
+  max_attempts: 3
+  retry_base_interval: 1m
+  poll_interval: 30s
+  # Reject pending admin proposals older than this many days.
+  proposal_pending_ttl_days: 30
+
+workflow:
+  # Purge workflow_runs older than N days (0 disables). Runs once at boot + daily.
+  runs_retention_days: 90
+  retention_interval: 24h
 
 orchestrator:
   # Slice 21a: pre-Run routing pass. Inspects the latest user message and

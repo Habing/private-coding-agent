@@ -325,6 +325,12 @@ func TestK8sDriver_Snapshot_TenantScopeBeforeDisabled(t *testing.T) {
 	require.False(t, errors.Is(err, sandbox.ErrSnapshotDisabled))
 }
 
+func TestK8sDriver_Restore_ReturnsDisabled(t *testing.T) {
+	d, _, tenantID, _ := newK8sTestEnv(t)
+	_, err := d.RestoreFromSnapshot(context.Background(), tenantID, uuid.New(), uuid.New())
+	require.ErrorIs(t, err, sandbox.ErrSnapshotDisabled)
+}
+
 func TestK8sDriver_NetworkModes_Labels(t *testing.T) {
 	cases := []sandbox.NetworkMode{sandbox.NetworkInternal, sandbox.NetworkBridge, sandbox.NetworkNone}
 	for _, mode := range cases {

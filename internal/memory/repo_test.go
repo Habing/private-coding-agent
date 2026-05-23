@@ -277,3 +277,21 @@ func TestRepo_Search_CrossTenant(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, hitsB, 0)
 }
+
+func TestRepo_ListByTenantAndUpdateEmbedding(t *testing.T) {
+	pg := newPool(t)
+	tid, uid := fixtures(t, pg)
+	ctx := context.Background()
+	repo := memory.NewRepo(pg)
+	m, err := repo.Insert(ctx, newMem(t, tid, uid, memory.TypeKnowledge, "reembed me", nil), nil)
+	require.NoError(t, err)
+
+	rows, err := repo.ListByTenant(ctx, tid, 10, 0)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, m.ID, rows[0].ID)
+
+	vec := make([]float32, memory.EmbeddingDim)
+	vec[0] = 1
+	require.NoError(t, repo.UpdateEmbedding(ctx, tid, uid, m.ID, vec))
+}

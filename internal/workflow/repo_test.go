@@ -212,3 +212,42 @@ func TestRepo_RunLifecycle(t *testing.T) {
 	require.True(t, runs[0].DryRun)
 	require.Equal(t, 42, runs[0].DurationMS)
 }
+
+func TestRepo_DeleteRunsOlderThan(t *testing.T) {
+	p := newPool(t)
+	repo := workflow.NewRepo(p)
+	ctx := context.Background()
+	tid := seedTenant(t, p)
+	uid := uuid.New()
+	_, err := p.Exec(ctx,
+		`INSERT INTO users (id, tenant_id, email, password_hash) VALUES ($1,$2,$3,'')`,
+		uid, tid, "u-"+uid.String()[:8]+"@example.com")
+	require.NoError(t, err)
+
+	w, err := repo.Create(ctx, tid, "retention", "Retention", "", helloDSL)
+	require.NoError(t, err)
+
+	oldID, err := repo.CreateRun(ctx, workflow.Run{
+		TenantID: tid, UserID: uid, WorkflowID: w.ID, VersionAtRun: 1,
+		Status: workflow.StatusOK, Inputs: []byte(`{}`),
+	})
+	require.NoError(t, err)
+	newID, err := repo.CreateRun(ctx, workflow.Run{
+		TenantID: tid, UserID: uid, WorkflowID: w.ID, VersionAtRun: 1,
+		Status: workflow.StatusOK, Inputs: []byte(`{}`),
+	})
+	require.NoError(t, err)
+
+	_, err = p.Exec(ctx, `UPDATE workflow_runs SET started_at = now() - interval '100 days' WHERE id=$1`, oldID)
+	require.NoError(t, err)
+
+	cutoff := time.Now().AddDate(0, 0, -90)
+	n, err := repo.DeleteRunsOlderThan(ctx, cutoff)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), n)
+
+	runs, err := repo.ListRuns(ctx, tid, w.ID, 10)
+	require.NoError(t, err)
+	require.Len(t, runs, 1)
+	require.Equal(t, newID, runs[0].ID)
+}

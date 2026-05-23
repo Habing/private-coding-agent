@@ -303,3 +303,9 @@ func TestDockerDriver_Snapshot_DisabledWithoutDeps(t *testing.T) {
 	_, err = d.Snapshot(ctx, tid, sb.ID)
 	require.ErrorIs(t, err, sandbox.ErrSnapshotDisabled)
 }
+
+func TestDockerDriver_Restore_DisabledWithoutDeps(t *testing.T) {
+	d, tid, _ := newDockerDriverForTest(t)
+	_, err := d.RestoreFromSnapshot(context.Background(), tid, uuid.New(), uuid.New())
+	require.ErrorIs(t, err, sandbox.ErrSnapshotDisabled)
+}

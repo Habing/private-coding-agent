@@ -348,6 +348,60 @@ WHERE id = ANY($1) AND tenant_id=$2 AND owner_user_id=$3`,
 	return nil
 }
 
+// memoryRowLite is a minimal row for tenant-wide re-embed scans.
+type memoryRowLite struct {
+	ID          uuid.UUID
+	OwnerUserID uuid.UUID
+	Content     string
+}
+
+// ListByTenant returns memories for a tenant ordered by id (stable pagination).
+func (r *Repo) ListByTenant(ctx context.Context, tenantID uuid.UUID, limit, offset int) ([]memoryRowLite, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	rows, err := r.pool.Query(ctx, `
+SELECT id, owner_user_id, content
+FROM memories
+WHERE tenant_id=$1
+ORDER BY id ASC
+LIMIT $2 OFFSET $3`, tenantID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list memories by tenant: %w", err)
+	}
+	defer rows.Close()
+	out := make([]memoryRowLite, 0, limit)
+	for rows.Next() {
+		var row memoryRowLite
+		if err := rows.Scan(&row.ID, &row.OwnerUserID, &row.Content); err != nil {
+			return nil, fmt.Errorf("scan memory lite: %w", err)
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// UpdateEmbedding overwrites the embedding column for one row (admin re-embed).
+func (r *Repo) UpdateEmbedding(ctx context.Context, tenantID, ownerUserID, id uuid.UUID, embedding []float32) error {
+	if len(embedding) == 0 {
+		return fmt.Errorf("empty embedding")
+	}
+	tag, err := r.pool.Exec(ctx, `
+UPDATE memories SET embedding=$4, updated_at=now()
+WHERE id=$1 AND tenant_id=$2 AND owner_user_id=$3`,
+		id, tenantID, ownerUserID, pgvector.NewVector(embedding))
+	if err != nil {
+		return fmt.Errorf("update embedding: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrMemoryNotFound
+	}
+	return nil
+}
+
 // scanMemory consumes a QueryRow and returns the row or ErrMemoryNotFound.
 func scanMemory(row pgx.Row) (*Memory, error) {
 	var m Memory

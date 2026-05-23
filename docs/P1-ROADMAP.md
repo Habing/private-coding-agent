@@ -114,6 +114,8 @@ flowchart TD
 | Workflow | 19 |
 | Hybrid 检索 | Full 之后 / 技术债 |
 | Project/Tenant memory | P2 |
+| Compose 试点 #11/#14/#15 | [`P2-COMPOSE-PILOT.md`](P2-COMPOSE-PILOT.md) ✅ |
+| Compose 试点 #12/#13 | [`P2-COMPOSE-PILOT.md`](P2-COMPOSE-PILOT.md) ✅ |
 
 ---
 

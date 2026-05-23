@@ -40,10 +40,16 @@ type Runtime interface {
 	// directories as needed. Size capped at MaxFileSize.
 	WriteFile(ctx context.Context, tenantID, id uuid.UUID, path string, data []byte) error
 
-	// Snapshot commits the running container into a Docker image, exports the
-	// tar via `docker save`, streams it to S3-compatible object storage, and
+	// Snapshot exports the running container root filesystem via `docker export`,
+	// captures tmpfs /workspace separately, streams both to object storage, and
 	// persists a sandbox_snapshots row. Returns the persisted Snapshot.
 	// ErrSnapshotDisabled when slice-22b is gated off; ErrSandboxNotFound when
 	// the sandbox does not exist or belongs to a different tenant.
 	Snapshot(ctx context.Context, tenantID, id uuid.UUID) (*Snapshot, error)
+
+	// RestoreFromSnapshot loads a persisted snapshot tar from object storage,
+	// starts a new running sandbox from the imported image, rehydrates
+	// /workspace from the sidecar tar, and returns it.
+	// DockerDriver only; K8sDriver returns ErrSnapshotDisabled.
+	RestoreFromSnapshot(ctx context.Context, tenantID, userID, snapshotID uuid.UUID) (*Sandbox, error)
 }

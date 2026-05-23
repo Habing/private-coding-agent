@@ -32,6 +32,8 @@ type mockRuntime struct {
 	writeErr   error
 	snap       *sandbox.Snapshot
 	snapErr    error
+	restoreRet *sandbox.Sandbox
+	restoreErr error
 
 	// last-call inspection
 	lastCreateOpts sandbox.CreateOpts
@@ -66,6 +68,12 @@ func (m *mockRuntime) Snapshot(_ context.Context, _, _ uuid.UUID) (*sandbox.Snap
 		return m.snap, nil
 	}
 	return nil, m.snapErr
+}
+func (m *mockRuntime) RestoreFromSnapshot(_ context.Context, _, _ uuid.UUID, _ uuid.UUID) (*sandbox.Sandbox, error) {
+	if m.restoreErr != nil {
+		return nil, m.restoreErr
+	}
+	return m.restoreRet, nil
 }
 
 func newRouterWithMock(t *testing.T, m *mockRuntime) (*gin.Engine, string) {
@@ -278,6 +286,24 @@ func TestHandler_SnapshotGet_DisabledNoRepo(t *testing.T) {
 	mr := &mockRuntime{}
 	r, tok := newRouterWithMock(t, mr)
 	w := do(r, http.MethodGet, "/sandbox/snapshots/"+uuid.NewString(), tok, nil)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+}
+
+func TestHandler_SnapshotRestore_OK(t *testing.T) {
+	sid := uuid.New()
+	mr := &mockRuntime{restoreRet: &sandbox.Sandbox{
+		ID: sid, Status: sandbox.StatusRunning, Image: "pca/snapshot:restored",
+	}}
+	r, tok := newRouterWithMock(t, mr)
+	w := do(r, http.MethodPost, "/sandbox/snapshots/restore/"+uuid.NewString(), tok, nil)
+	require.Equal(t, http.StatusCreated, w.Code)
+	require.Contains(t, w.Body.String(), sid.String())
+}
+
+func TestHandler_SnapshotRestore_Disabled(t *testing.T) {
+	mr := &mockRuntime{restoreErr: sandbox.ErrSnapshotDisabled}
+	r, tok := newRouterWithMock(t, mr)
+	w := do(r, http.MethodPost, "/sandbox/snapshots/restore/"+uuid.NewString(), tok, nil)
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 }
 

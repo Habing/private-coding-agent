@@ -75,6 +75,7 @@ func (h *Handler) Register(rg *gin.RouterGroup) {
 	// distinguish "off" (503 snapshot_disabled) from "broken".
 	s := rg.Group("/sandbox/snapshots")
 	s.GET("", h.listSnapshots)
+	s.POST("/restore/:id", h.restoreSnapshot)
 	s.GET("/:id", h.getSnapshot)
 }
 
@@ -579,6 +580,35 @@ func (h *Handler) getSnapshot(c *gin.Context) {
 	h.auditSnapshotEvent(c, start, snap.TenantID, snap.UserID, "sandbox.snapshot.get",
 		snap.ID.String(), http.StatusOK, map[string]any{})
 	c.JSON(http.StatusOK, toSnapshotDTO(snap))
+}
+
+func (h *Handler) restoreSnapshot(c *gin.Context) {
+	cl, ok := h.claims(c)
+	if !ok {
+		return
+	}
+	id, ok := h.parseID(c)
+	if !ok {
+		return
+	}
+	start := time.Now()
+	sb, err := h.rt.RestoreFromSnapshot(c.Request.Context(), cl.TenantID, cl.UserID, id)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrSnapshotDisabled):
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "snapshot_disabled"})
+		case errors.Is(err, ErrSnapshotNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "runtime_error"})
+		}
+		return
+	}
+	h.auditSnapshotEvent(c, start, sb.TenantID, sb.OwnerUserID, "sandbox.snapshot.restore",
+		id.String(), http.StatusCreated, map[string]any{
+			"sandbox_id": sb.ID.String(),
+		})
+	c.JSON(http.StatusCreated, toDTO(sb))
 }
 
 // auditSnapshotEvent mirrors auditSandboxEvent but takes explicit tenant/user

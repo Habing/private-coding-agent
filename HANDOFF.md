@@ -187,8 +187,11 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 | K8sDriver | **22d1** ✅ |
 | Helm chart + kind nightly + DEPLOY-K8S.md | **22d2** ✅ |
 | Reflection、Workflow、delegate、N8N | **18–23** |
+| Compose 试点 #11 备份 / #14 runs 保留 / #15 Reflection 队列 | **Compose Pilot** ✅ → [`docs/P2-COMPOSE-PILOT.md`](docs/P2-COMPOSE-PILOT.md) |
+| Compose 试点 #12 re-embed admin | **Compose Pilot** ✅ |
+| Compose 试点 #13 snapshot restore | **Compose Pilot** ✅（Docker only） |
 | Hybrid 检索、Project/Tenant memory | **P2** /  backlog |
-| 历史 re-embed admin | backlog |
+| 历史 re-embed admin | 见 Compose Pilot #12 |
 
 ---
 
@@ -278,7 +281,19 @@ helm template ./deploy/helm/pca -f ./deploy/helm/pca/values-kind.yaml | kubectl 
 
 按 [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md)：切片 22 全段（22a/b/c/d1/d2）已落地；**剩 23（可选 N8N 集成，需法务确认）**。Slice 20 reflection proposals 已经在审核流中沉淀；Slice 21a Orchestration Router 已用 YAML 规则跑通 Shadow + Hint；Slice 21b External MCP Manager 已让外部 HTTP MCP server 作为 `mcp.<slug>.<tool>` 进入 Bus。Slice 22d2 完成意味着 Full-P1 主线工程实质收口——K8sDriver + 完整 chart + nightly e2e + DEPLOY-K8S 已经把 docker.sock 妥协路径替换掉。
 
-### 5.3 已知"未做"的设计决策（留给后续）
+### 5.4 Compose 试点技术债（P2 运维）
+
+Full P1 完成后、Slice 23 之前，单实例 compose **#11–#15 全部交付**（含 #12 re-embed、#13 snapshot restore）。计划与**每项改完必测**纪律见 [`docs/P2-COMPOSE-PILOT.md`](docs/P2-COMPOSE-PILOT.md)。
+
+```bash
+go test ./... -count=1
+go vet ./...
+cd deploy/compose && ./test-e2e.sh   # 69/69
+```
+
+**Compose 试点轨道已收口。**
+
+### 5.5 已知"未做"的设计决策（留给后续）
 
 - Embedding 维度切换工具链（换模型 = 清表 / 重新生成）
 - 记忆 confidence / 衰减 / 重排（Reflection 切片）

@@ -87,7 +87,14 @@ memory:
   inject_max_chars: 4000
 ```
 
-切换 embedding model 后**老向量必须重算**（不同模型空间不可比）。Backfill 工具留到 P2。
+切换 embedding model 后**老向量必须重算**（不同模型空间不可比）。使用 admin 接口：
+
+```bash
+curl -X POST http://localhost:8080/admin/memories/re-embed \
+  -H "Authorization: Bearer $ADMIN_JWT"
+```
+
+返回 `{total, updated, failed, embedding_model}`；审计事件 `memory.reembed.*`。详见 [`P2-COMPOSE-PILOT.md`](P2-COMPOSE-PILOT.md) #12。
 
 ### 3.5 Skills
 
@@ -198,11 +205,21 @@ server 启动会一次性校验：
 
 ## 9. 备份 / DR
 
-不在 MVP 范围。可参考的最小动作：
+Compose 试点已提供脚本（`deploy/compose/backup/`）：
 
-- Postgres：`pg_dump` 全库 daily；audit_log / messages / memories 是核心
-- Redis：可放弃（撤销名单和 counter 短窗丢失可接受），如果不可放弃则启用 AOF
-- 沙箱容器：**默认无持久数据**（tmpfs workspace），无需备份；持久工作区是 P2 议题
+```bash
+cd deploy/compose/backup
+./backup.sh                    # pg_dump 全库 + 可选 MinIO mirror
+./restore.sh path/to/dump.dump # 需先停 server，输入 RESTORE 确认
+```
+
+要点：
+
+- **Postgres**：`pg_dump -Fc` 自定义格式；核心表 audit_log / messages / memories / workflow_runs
+- **Redis**：compose 已启用 AOF（`appendonly yes`，`appendfsync everysec`）；撤销名单丢失窗口极小
+- **MinIO / 快照**：`backup.sh` 可选 `mc mirror`；沙箱容器默认 tmpfs，无持久工作区
+
+生产环境建议 cron daily 跑 `backup.sh`，保留 7–30 天 off-site 副本。
 
 ## 10. 验证
 

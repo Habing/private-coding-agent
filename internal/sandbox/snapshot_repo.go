@@ -155,6 +155,20 @@ func (r *SnapshotRepo) Delete(ctx context.Context, tenantID, id uuid.UUID) error
 	return nil
 }
 
+// LinkSession re-attaches a snapshot row to a live sandbox after restore.
+func (r *SnapshotRepo) LinkSession(ctx context.Context, tenantID, id, sessionID uuid.UUID) error {
+	tag, err := r.pool.Exec(ctx, `
+UPDATE sandbox_snapshots SET session_id=$3 WHERE id=$1 AND tenant_id=$2`,
+		id, tenantID, sessionID)
+	if err != nil {
+		return fmt.Errorf("link snapshot session: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrSnapshotNotFound
+	}
+	return nil
+}
+
 // scanSnapshot scans a single row from either pool.QueryRow or pgx.Rows
 // (both implement Scan with the same signature).
 type rowScanner interface {

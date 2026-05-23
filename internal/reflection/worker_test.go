@@ -44,7 +44,7 @@ func (f *fakeProc) Jobs() []reflection.ReflectionJob {
 
 func TestWorker_HappyPath_EnqueueAndProcess(t *testing.T) {
 	fp := &fakeProc{}
-	w := reflection.NewWorker(fp, 4, time.Second)
+	w := reflection.NewWorker(fp, 4, time.Second, reflection.WorkerOptions{})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go w.Run(ctx)
@@ -66,7 +66,7 @@ func TestWorker_HappyPath_EnqueueAndProcess(t *testing.T) {
 func TestWorker_FullChannel_DropsAndDoesNotBlock(t *testing.T) {
 	block := make(chan struct{})
 	fp := &fakeProc{block: block}
-	w := reflection.NewWorker(fp, 1, time.Second)
+	w := reflection.NewWorker(fp, 1, time.Second, reflection.WorkerOptions{})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go w.Run(ctx)
@@ -99,7 +99,7 @@ func TestWorker_FullChannel_DropsAndDoesNotBlock(t *testing.T) {
 
 func TestWorker_StopDrainsBuffered(t *testing.T) {
 	fp := &fakeProc{}
-	w := reflection.NewWorker(fp, 4, time.Second)
+	w := reflection.NewWorker(fp, 4, time.Second, reflection.WorkerOptions{})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -116,7 +116,7 @@ func TestWorker_StopDrainsBuffered(t *testing.T) {
 
 func TestWorker_AfterStop_EnqueueDrops(t *testing.T) {
 	fp := &fakeProc{}
-	w := reflection.NewWorker(fp, 4, time.Second)
+	w := reflection.NewWorker(fp, 4, time.Second, reflection.WorkerOptions{})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go w.Run(ctx)

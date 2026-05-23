@@ -106,6 +106,18 @@ func (c *Client) Put(ctx context.Context, key string, reader io.Reader, size int
 	}, nil
 }
 
+// Open returns a streaming reader for key. Caller must Close the reader.
+func (c *Client) Open(ctx context.Context, key string) (io.ReadCloser, error) {
+	if key == "" {
+		return nil, errors.New("objstore: key required")
+	}
+	obj, err := c.mc.GetObject(ctx, c.bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("objstore: get %s/%s: %w", c.bucket, key, err)
+	}
+	return obj, nil
+}
+
 // Stat returns the size + etag of an object. Returns ErrNotExists on miss.
 func (c *Client) Stat(ctx context.Context, key string) (int64, error) {
 	info, err := c.mc.StatObject(ctx, c.bucket, key, minio.StatObjectOptions{})

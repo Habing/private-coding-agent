@@ -11,4 +11,5 @@ var (
 	ErrEmptySearch       = errors.New("search requires at least one of query, type, tags")
 	ErrInvalidSearchMode = errors.New("invalid search mode")
 	ErrVectorDisabled    = errors.New("vector search not available")
+	ErrReEmbedDisabled   = errors.New("re-embed not available")
 )

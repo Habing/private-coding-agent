@@ -49,6 +49,7 @@ type MemoryProposal struct {
 
 // ReflectionJob is what session.ArchiveSession hands to the worker.
 type ReflectionJob struct {
+	JobID     uuid.UUID // durable queue id; Nil when store disabled
 	TenantID  uuid.UUID
 	UserID    uuid.UUID
 	SessionID uuid.UUID

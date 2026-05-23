@@ -141,6 +141,71 @@ func (s *Service) Delete(ctx context.Context, tenantID, userID, id uuid.UUID) er
 	return s.repo.Delete(ctx, tenantID, userID, id)
 }
 
+const reEmbedBatchSize = 32
+
+// ReEmbedResult summarizes a tenant-wide embedding backfill.
+type ReEmbedResult struct {
+	Total          int    `json:"total"`
+	Updated        int    `json:"updated"`
+	Failed         int    `json:"failed"`
+	EmbeddingModel string `json:"embedding_model"`
+}
+
+// ReEmbedTenant recomputes embeddings for every memory row in tenantID using
+// the currently configured embedder. Intended for admin use after switching
+// embedding models (different vector spaces are not comparable).
+func (s *Service) ReEmbedTenant(ctx context.Context, tenantID uuid.UUID) (*ReEmbedResult, error) {
+	if !s.vectorEnabled() {
+		return nil, ErrReEmbedDisabled
+	}
+	res := &ReEmbedResult{EmbeddingModel: s.cfg.EmbeddingModel}
+	offset := 0
+	for {
+		rows, err := s.repo.ListByTenant(ctx, tenantID, 200, offset)
+		if err != nil {
+			return nil, err
+		}
+		if len(rows) == 0 {
+			break
+		}
+		for i := 0; i < len(rows); i += reEmbedBatchSize {
+			end := i + reEmbedBatchSize
+			if end > len(rows) {
+				end = len(rows)
+			}
+			batch := rows[i:end]
+			texts := make([]string, len(batch))
+			for j, row := range batch {
+				texts[j] = row.Content
+			}
+			vecs, err := s.embedder.Embed(ctx, texts)
+			if err != nil {
+				return nil, fmt.Errorf("embed batch at offset %d: %w", offset+i, err)
+			}
+			if len(vecs) != len(batch) {
+				return nil, ErrEmbedDimMismatch
+			}
+			for j, row := range batch {
+				res.Total++
+				if len(vecs[j]) != s.embedder.Dim() {
+					res.Failed++
+					continue
+				}
+				if err := s.repo.UpdateEmbedding(ctx, tenantID, row.OwnerUserID, row.ID, vecs[j]); err != nil {
+					res.Failed++
+					continue
+				}
+				res.Updated++
+			}
+		}
+		offset += len(rows)
+		if len(rows) < 200 {
+			break
+		}
+	}
+	return res, nil
+}
+
 // Search dispatches keyword vs vector backends per req.Mode + query state.
 //
 // Resolution:

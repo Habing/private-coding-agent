@@ -312,6 +312,23 @@ cd deploy/compose
 |----|------|
 | L3 | E2E **[68+]**（若未 skip） |
 
+### Compose Pilot — 单实例运维收口（P2 tech-debt #11–#15）
+
+> 计划：[`docs/P2-COMPOSE-PILOT.md`](P2-COMPOSE-PILOT.md) · 实施：[`superpowers/plans/2026-05-22-compose-pilot-tech-debt.md`](superpowers/plans/2026-05-22-compose-pilot-tech-debt.md)  
+> **纪律：每项 Task 改完必跑下表 L1 + compose E2E 69/69，再勾选 plan。**
+
+| 项 | 验证 |
+|----|------|
+| L1 #11 | `bash -n deploy/compose/backup/*.sh`；Redis `CONFIG GET appendonly` → `yes`；`backup.sh` 产出 `pca-pg-*.dump` |
+| L1 #14 | `go test ./internal/workflow/... -run DeleteRunsOlderThan`；server 日志 `workflow retention` |
+| L1 #15 | `go test ./internal/reflection/...` 含 `job_repo_test`；迁移 `0023_reflection_jobs` migrate 成功 |
+| L1 #12 | `go test ./internal/memory/...`；E2E 步 69 `POST /admin/memories/re-embed` |
+| L1 #13 | `go test ./internal/sandbox/...`；E2E 步 68 `POST /sandbox/snapshots/restore/:id` → 读 `marker.txt` |
+| L2 | `go test ./... -count=1` + `go vet ./...` |
+| L3 | compose `./test-e2e.sh` **69/69** |
+| 配置 | `config.example.yaml` + `docs/DEPLOY.md` §8 re-embed / §9 备份 |
+| 状态 | **#11–#15 全部 ✅** |
+
 **Full P1 完成：** E2E **≥70**；主 spec §11 核心项 ✅。
 
 ---
@@ -332,6 +349,7 @@ cd deploy/compose
 | Full P1（含 22c） | `./test-e2e.sh` | 1–66（slice 22c 完成后） |
 | Full P1（含 22d1） | `./test-e2e.sh` | 1–67（slice 22d1 完成后） |
 | Full P1（含 22d2） | `./test-e2e.sh` + nightly `kind-e2e.sh` | compose 1–67 不变；kind 6 步独立 PASS |
+| Compose Pilot (#11–#15) | `./test-e2e.sh` + 上表 L1 | compose **69/69** |
 
 ```powershell
 go test ./... -count=1

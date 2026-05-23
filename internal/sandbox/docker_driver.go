@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -49,6 +50,7 @@ type DockerDriverConfig struct {
 // Snapshot. Kept narrow so tests can swap in an in-memory fake.
 type SnapshotStore interface {
 	Put(ctx context.Context, key string, reader io.Reader, size int64, contentType string) (*objstore.PutResult, error)
+	Open(ctx context.Context, key string) (io.ReadCloser, error)
 }
 
 // DockerDriver implements Runtime using the local Docker daemon.
@@ -184,12 +186,13 @@ func (d *DockerDriver) createAndStartContainer(ctx context.Context, sb *Sandbox,
 		},
 		Env: envToSlice(opts.Env),
 	}
+	tmpfs := map[string]string{
+		"/tmp":         "size=1g",
+		workspaceRoot:  "size=1g,uid=10001,gid=10001",
+	}
 	hostCfg := &container.HostConfig{
 		ReadonlyRootfs: true,
-		Tmpfs: map[string]string{
-			workspaceRoot: "size=1g,uid=10001,gid=10001",
-			"/tmp":        "size=1g",
-		},
+		Tmpfs:          tmpfs,
 		CapDrop:     strslice.StrSlice{"ALL"},
 		CapAdd:      strslice.StrSlice{"CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID", "FOWNER"},
 		SecurityOpt: securityOpts(d.cfg.SeccompProfile),
@@ -373,11 +376,9 @@ func (d *DockerDriver) Destroy(ctx context.Context, tenantID, id uuid.UUID) (des
 	return nil
 }
 
-// Snapshot commits the running container, exports it via `docker save`, streams
-// the tar into object storage, and persists a sandbox_snapshots row. Returns
-// ErrSnapshotDisabled when SetSnapshotDeps was never called (slice-22b gated
-// off); ErrSandboxNotFound when id is missing or belongs to a different
-// tenant.
+// Snapshot exports the running container root filesystem via `docker export`,
+// captures tmpfs /workspace separately (export omits tmpfs mounts), streams
+// both tars into object storage, and persists a sandbox_snapshots row.
 func (d *DockerDriver) Snapshot(ctx context.Context, tenantID, id uuid.UUID) (snapOut *Snapshot, snapErr error) {
 	ctx, span := tracer.Start(ctx, "sandbox.snapshot",
 		trace.WithAttributes(attribute.String("sandbox.id", id.String())))
@@ -410,36 +411,27 @@ func (d *DockerDriver) Snapshot(ctx context.Context, tenantID, id uuid.UUID) (sn
 	}
 
 	imageTag := fmt.Sprintf("pca-snapshot-%s:%d", id.String(), time.Now().Unix())
-	commitResp, err := d.cli.ContainerCommit(ctx, cid, container.CommitOptions{
-		Reference: imageTag,
-		Pause:     true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("container commit: %w", err)
-	}
-	imageID := commitResp.ID
-
-	// Best-effort cleanup of the locally committed image once we're done. Set
-	// KeepLocalImage=true via config to retain (debug only).
-	defer func() {
-		if d.cfg.KeepLocalImage {
-			return
-		}
-		_, rmErr := d.cli.ImageRemove(context.Background(), imageTag, image.RemoveOptions{Force: false, PruneChildren: false})
-		if rmErr != nil {
-			logx.FromCtx(ctx).Warn("sandbox snapshot: ImageRemove",
-				"image_ref", imageTag, "err", rmErr.Error())
-		}
-	}()
-
-	reader, err := d.cli.ImageSave(ctx, []string{imageTag})
-	if err != nil {
-		return nil, fmt.Errorf("image save: %w", err)
-	}
-	defer reader.Close()
 
 	now := time.Now().UTC()
 	objKey := buildSnapshotKey(d.keyPrefix, tenantID, id, now)
+	wsKey := workspaceSnapshotKey(objKey)
+
+	wsReader, err := streamWorkspaceTarFromContainer(ctx, d.cli, cid)
+	if err != nil {
+		return nil, fmt.Errorf("workspace tar: %w", err)
+	}
+	defer wsReader.Close()
+
+	wsPut, err := d.objstore.Put(ctx, wsKey, wsReader, -1, "application/x-tar")
+	if err != nil {
+		return nil, fmt.Errorf("objstore put workspace: %w", err)
+	}
+
+	reader, err := d.cli.ContainerExport(ctx, cid)
+	if err != nil {
+		return nil, fmt.Errorf("container export: %w", err)
+	}
+	defer reader.Close()
 
 	put, err := d.objstore.Put(ctx, objKey, reader, -1, "application/x-tar")
 	if err != nil {
@@ -454,8 +446,9 @@ func (d *DockerDriver) Snapshot(ctx context.Context, tenantID, id uuid.UUID) (sn
 		SizeBytes: put.Size,
 		ImageRef:  imageTag,
 		Metadata: map[string]any{
-			"image_id": imageID,
-			"etag":     put.ETag,
+			"format":        "container_export",
+			"etag":          put.ETag,
+			"workspace_key": wsPut.Key,
 		},
 	}
 	if err := d.snaps.Insert(ctx, snap); err != nil {
@@ -478,5 +471,112 @@ func buildSnapshotKey(prefix string, tenantID, sessionID uuid.UUID, ts time.Time
 		return base
 	}
 	return strings.TrimRight(prefix, "/") + "/" + base
+}
+
+// RestoreFromSnapshot loads a snapshot tar from object storage, starts a
+// new sandbox from the imported image, and rehydrates /workspace from the
+// sidecar workspace tar (tmpfs content is not in container export).
+func (d *DockerDriver) RestoreFromSnapshot(ctx context.Context, tenantID, userID, snapshotID uuid.UUID) (sbOut *Sandbox, restoreErr error) {
+	ctx, span := tracer.Start(ctx, "sandbox.snapshot.restore",
+		trace.WithAttributes(attribute.String("snapshot.id", snapshotID.String())))
+	defer func() {
+		if restoreErr != nil {
+			span.RecordError(restoreErr)
+			span.SetStatus(codes.Error, restoreErr.Error())
+		} else if sbOut != nil {
+			span.SetAttributes(attribute.String("sandbox.id", sbOut.ID.String()))
+		}
+		span.End()
+	}()
+
+	if d.snaps == nil || d.objstore == nil {
+		return nil, ErrSnapshotDisabled
+	}
+
+	snap, err := d.snaps.Get(ctx, tenantID, snapshotID)
+	if err != nil {
+		return nil, err
+	}
+	rc, err := d.objstore.Open(ctx, snap.ObjectKey)
+	if err != nil {
+		return nil, fmt.Errorf("objstore open: %w", err)
+	}
+	defer rc.Close()
+
+	loadResp, err := d.cli.ImageImport(ctx, image.ImportSource{
+		Source:     rc,
+		SourceName: "-",
+	}, snap.ImageRef, image.ImportOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("image import: %w", err)
+	}
+	defer loadResp.Close()
+	if err := drainImageLoad(loadResp); err != nil {
+		return nil, fmt.Errorf("image import drain: %w", err)
+	}
+
+	imageRef := snap.ImageRef
+	if _, err := d.cli.ImageInspect(ctx, imageRef); err != nil {
+		return nil, fmt.Errorf("inspect imported image: %w", err)
+	}
+
+	opts := CreateOpts{TenantID: tenantID, OwnerUserID: userID, Image: imageRef}
+	opts, err = NormalizeCreateOpts(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	sb := &Sandbox{
+		ID:          uuid.New(),
+		TenantID:    tenantID,
+		OwnerUserID: userID,
+		Image:       opts.Image,
+		Status:      StatusPending,
+		Network:     opts.Network,
+		Resources:   opts.Resources,
+	}
+	if err := d.repo.Insert(ctx, sb); err != nil {
+		return nil, err
+	}
+
+	cid, err := d.createAndStartContainer(ctx, sb, opts)
+	if err != nil {
+		_ = d.repo.UpdateStatus(ctx, sb.ID, StatusFailed)
+		return nil, fmt.Errorf("create restored container: %w", err)
+	}
+	if err := d.repo.SetContainerID(ctx, sb.ID, cid); err != nil {
+		_ = d.cli.ContainerRemove(context.Background(), cid, container.RemoveOptions{Force: true, RemoveVolumes: true})
+		return nil, fmt.Errorf("set container id: %w", err)
+	}
+
+	if wsKey, _ := snap.Metadata["workspace_key"].(string); wsKey != "" {
+		wsRC, err := d.objstore.Open(ctx, wsKey)
+		if err != nil {
+			_ = d.cli.ContainerRemove(context.Background(), cid, container.RemoveOptions{Force: true, RemoveVolumes: true})
+			return nil, fmt.Errorf("objstore open workspace: %w", err)
+		}
+		wsErr := restoreWorkspaceTarToContainer(ctx, d.cli, cid, wsRC)
+		_ = wsRC.Close()
+		if wsErr != nil {
+			_ = d.cli.ContainerRemove(context.Background(), cid, container.RemoveOptions{Force: true, RemoveVolumes: true})
+			return nil, fmt.Errorf("restore workspace: %w", wsErr)
+		}
+	}
+
+	sb.Status = StatusRunning
+	if pcametrics.SandboxActive != nil {
+		pcametrics.SandboxActive.Add(ctx, 1)
+	}
+	if err := d.snaps.LinkSession(ctx, tenantID, snapshotID, sb.ID); err != nil {
+		logx.FromCtx(ctx).Warn("snapshot restore: link session", "err", err.Error())
+	}
+	return sb, nil
+}
+
+func drainImageLoad(r io.Reader) error {
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+	}
+	return scanner.Err()
 }
 
