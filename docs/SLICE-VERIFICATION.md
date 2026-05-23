@@ -261,11 +261,16 @@ cd deploy/compose
 | L3 增量 | E2E **[64]**：`GET /audit/verify` 返回 `ok=true`；`UPDATE audit_log SET metadata` 篡改任意行 → 再 verify → `ok=false, first_broken_id=<id>, reason=entry_hash_mismatch`；恢复原 metadata → verify 再次 `ok=true`；无 token 调 `/audit/verify` → 401 |
 | 不变量 | (a) `Repo.Append` 在 `BeginTx → pg_advisory_xact_lock(hashtext('audit_log')) → SELECT prev → INSERT → COMMIT` 序列内完成，跨 goroutine / 跨副本（K8s 多 pod）链不分叉；(b) `occurred_at` 写入前 `Truncate(time.Microsecond)`，确保 hash 输入与 PG timestamptz 存储字节一致；(c) Genesis 行 `prev_hash = 32 零字节`；pre-chain 行（迁移前已存在）`prev_hash + entry_hash` 都是零字节，verify 跳过它们并把首个非零行设为 `chain_start_id`；(d) `Verify(fromID=0)` 强制首链行 prev_hash 必须等于 ZeroHash；`Verify(fromID>0)` 信任首行 prev_hash 做种子，只校验 suffix 内部一致性；(e) `/audit/verify` 自身不入 audit_log，避免递归；admin-only（`auth.Middleware + RequireAdmin`），member→403、无 token→401；(f) 哈希算法硬编码 SHA-256，canonical 编码 = `prev || RS || occurred_at_rfc3339nano_utc || RS || tenant_id || RS || user_id || RS || action || RS || target || RS || method || RS || path || RS || status || RS || duration_ms || RS || canonical_metadata_json`（map[string]any json.Marshal 按 key 升序，nil UUID 编码为空串） |
 
-### 切片 22b — Snapshot → MinIO（待办）
+### 切片 22b — Snapshot → MinIO
 
 | 项 | 验证 |
 |----|------|
-| L3 | E2E **[65+]** + compose 加 minio service |
+| L1 | `go test ./internal/objstore/... ./internal/sandbox/... ./internal/config/... -count=1`（含 objstore `New` 配置映射 + 空 bucket 校验；snapshot_repo dockertest Insert/Get round-trip / tenant 隔离 / session 删除后 `session_id` NULL 行仍在 / List `session_id` 过滤；handler httptest Snapshot_Create_OK 201 + DTO、Disabled→503 snapshot_disabled、NotReady→409、NotFound→404、SnapshotList_DisabledNoRepo→503、SnapshotGet_DisabledNoRepo→503、SnapshotList_NoAuth→401；docker_driver `Snapshot_DisabledWithoutDeps`→ErrSnapshotDisabled；config_test 覆盖默认值 + `PCA_SNAPSHOT_*` env 解析） |
+| L2 | `go build ./...`；`go vet ./...` 干净；migration 0022 up/down 通过 dockertest 启动期自动跑通；`docker compose -f deploy/compose/docker-compose.yml config` 校验 yaml |
+| L3 增量 | E2E **[65]**：(a) 建沙箱 → (b) PUT `/workspace/marker.txt` 内容 `hello-22b` → (c) POST `/sandbox/sessions/$SID/snapshot` 返回 201 + `{id,object_key,size_bytes,image_ref}`；`object_key` 前缀含 `tenant_id/session_id/`、`size_bytes>1000`、`image_ref` 形如 `pca-snapshot-*` → (d) GET `/sandbox/snapshots?session_id=$SID` items 含该 snapshot → (e) DELETE 沙箱 → (f) GET `/sandbox/snapshots/$SNAP_ID` 仍 200，`session_id=null`（FK ON DELETE SET NULL）；audit `?action=sandbox.snapshot.create` 含 target=$SNAP_ID 一行 |
+| 不变量 | (a) `cfg.Snapshot.Enabled=false` 时 main.go 不构造 objstore；`docker_driver.Snapshot` 返回 `ErrSnapshotDisabled` → handler 映射 503 `snapshot_disabled`；3 条路由（POST snapshot / GET snapshots / GET snapshots/:id）始终注册（对齐 21b MCP 行为）；(b) 对象 key 布局固定为 `{prefix?}/{tenant_id}/{session_id}/{rfc3339nano}.tar` — tenant 必须为第一段（未来 IAM scoped policy 直接按前缀切），即便 DB `session_id` 被 NULL 也保留原 session 段；(c) tar 端到端流式 — `ImageSave` 返 `io.ReadCloser` 直传 minio-go `PutObject(objectSize=-1, PartSize=64MiB)`，服务端 RSS 与镜像大小无关；(d) `runtime.Snapshot` 流程内 release pgx 连接再做上传，最后再 Acquire 写 DB，防止慢上传长时占用连接池；(e) `docker save` 成功后 `ImageRemove(force=false)` 清理临时镜像，`PCA_SNAPSHOT_KEEP_LOCAL_IMAGE=true` 时保留；`ImageRemove` 失败仅 WARN，不算请求失败；(f) FK `session_id REFERENCES sandbox_sessions(id) ON DELETE SET NULL`：沙箱销毁后快照行保留、`session_id=null`；(g) tenant-scoped 查询：`SnapshotRepo.Get/List WHERE tenant_id=$1` 跨租户 404；(h) handler 列表分页 `limit` 默认 50、上限 200；(i) 启动期 `objstore.EnsureBucket` 幂等（已存在则 NoOp）；MinIO 默认 7 天 multipart abort lifecycle 处理崩溃 orphan parts |
+| 审计 | 3 个 action：`sandbox.snapshot.{create,list,get}` 均 `audit.Detached`（5s ctx，不阻塞 hash chain append）；`create` metadata `{object_key,size_bytes,image_ref,session_id}`；`list` metadata `{count,session_id_filter?}`、target 空串；`get` target=snapshot_id |
+| 配置/部署 | 新增 `SnapshotConfig{Enabled,Endpoint,Bucket,AccessKey,SecretKey,Region,UseSSL,Prefix,KeepLocalImage}` + `PCA_SNAPSHOT_*` env；compose `minio` service pin `RELEASE.2025-04-08T15-41-24Z`、端口 9000/9001、healthcheck、命名卷 `miniodata`；server `depends_on: minio: service_healthy`；启动期 log `objstore: bucket pca-snapshots ready` |
 
 ### 切片 22c — seccomp + trivy CI（待办）
 
@@ -283,7 +288,7 @@ cd deploy/compose
 
 | 项 | 验证 |
 |----|------|
-| L3 | E2E **[65+]**（若未 skip） |
+| L3 | E2E **[66+]**（若未 skip） |
 
 **Full P1 完成：** E2E **≥70**；主 spec §11 核心项 ✅。
 
@@ -301,6 +306,7 @@ cd deploy/compose
 | Full P1（含 21a） | `./test-e2e.sh` | 1–62（slice 21a 完成后） |
 | Full P1（含 21b） | `./test-e2e.sh` | 1–63（slice 21b 完成后） |
 | Full P1（含 22a） | `./test-e2e.sh` | 1–64（slice 22a 完成后） |
+| Full P1（含 22b） | `./test-e2e.sh` | 1–65（slice 22b 完成后） |
 
 ```powershell
 go test ./... -count=1
@@ -352,6 +358,9 @@ cd deploy/compose
 | 20 | 61 |
 | 21a | 62 |
 | 21b | 63 |
-| 22 | 64+ |
-| 23 | 65+（可选） |
+| 22a | 64 |
+| 22b | 65 |
+| 22c | 66+（待办） |
+| 22d | 66+（待办） |
+| 23 | 66+（可选） |
 | **Full P1 全量** | **1–70+** |

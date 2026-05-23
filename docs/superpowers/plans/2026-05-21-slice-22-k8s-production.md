@@ -1,10 +1,10 @@
 # Slice 22 — K8s + Production Security Implementation Plan
 
-> **Goal:** audit hash chain、Snapshot/MinIO、seccomp、trivy CI、K8sDriver、Helm；E2E 64+。
+> **Goal:** audit hash chain、Snapshot/MinIO、seccomp、trivy CI、K8sDriver、Helm；E2E 65+。
 >
 > **拆分:** 22 体量过大，按 19/21 模式拆为四段顺序落地：
 > - **22a — Audit Hash Chain** ✅ 已落地（HEAD `7968a77`，E2E 步骤 64）
-> - **22b — Snapshot → MinIO**（pending）
+> - **22b — Snapshot → MinIO** ✅ 已落地（HEAD `a533657`，E2E 步骤 65）
 > - **22c — seccomp + trivy CI**（pending）
 > - **22d — K8sDriver + Helm chart**（pending）
 
@@ -29,12 +29,24 @@
 
 **22a 不做：** Merkle tree / Notary anchoring、跨租户独立子链、哈希算法可配置、自动 verify 定时任务、链断点修复工具、KMS/HSM 签名（全部 v2+）
 
-## 22b — Snapshot → MinIO（pending）
+## 22b — Snapshot → MinIO ✅
 
-- [ ] compose 加 `minio` service + MinIO SDK 依赖
-- [ ] `DockerDriver.Snapshot(sessionID)`：commit 容器 → push 到 MinIO 对象存储 → 元数据写 `sandbox_snapshots` 表
-- [ ] `POST /sandbox/sessions/{id}/snapshot` + `GET /sandbox/snapshots`
-- [ ] E2E 步骤 65：create sandbox → snapshot → 列表里看到 → 删 sandbox 后 snapshot 仍可用
+> 落地：commits `950d6c4` → `ea7efd5` → `a533657` → (C4 docs)；E2E **[65/65]** PASS
+
+- [x] migration `0022_sandbox_snapshots`：`sandbox_snapshots` 表 + FK `session_id REFERENCES sandbox_sessions(id) ON DELETE SET NULL` + 复合索引 `(tenant_id, created_at DESC)` + `(session_id)`
+- [x] `internal/sandbox/snapshot_repo.go`：tenant-scoped Insert/Get/List/Delete；`ErrSnapshotNotFound` sentinel；dockertest 覆盖 tenant 隔离 + FK SET NULL 行为 + `session_id` 过滤
+- [x] `internal/objstore/`（新包）：`minio-go/v7` 封装 `Client.{EnsureBucket,Put,Stat}`；`Put(reader, size=-1, PartSize=64MiB)` 启动 multipart 流式；`New` 校验 endpoint+bucket 非空
+- [x] `internal/sandbox/docker_driver.go` Snapshot 真实实现：`ContainerCommit(Pause=true)` → `ImageSave` → `objstore.Put` 直传 → optional `ImageRemove` → `SnapshotRepo.Insert`；镜像 tag `pca-snapshot-<sessionID>:<unix_ts>`
+- [x] `internal/sandbox/runtime.go` Snapshot 改造：释放 pgx 连接再做上传，最后重新 Acquire 写 DB；防止慢上传长时占用连接池
+- [x] compose 加 `minio` service（pin `RELEASE.2025-04-08T15-41-24Z` + healthcheck + 命名卷 `miniodata` + 端口 9000/9001）；server `depends_on: minio: service_healthy`
+- [x] `SnapshotConfig{Enabled,Endpoint,Bucket,AccessKey,SecretKey,Region,UseSSL,Prefix,KeepLocalImage}` + `PCA_SNAPSHOT_*` env + defaults + config_test
+- [x] `cmd/server/main.go` 启动期 wiring：`if cfg.Snapshot.Enabled { objstore.New → EnsureBucket → SetSnapshotDeps → WithSnapshotRepo }`；disabled 三条路由统一 503 `snapshot_disabled`
+- [x] `internal/sandbox/handler.go`：`POST /sandbox/sessions/:id/snapshot` 替换 not_implemented + `GET /sandbox/snapshots`（`?session_id=` `?limit=`）+ `GET /sandbox/snapshots/:id`；3 个 audit action `sandbox.snapshot.{create,list,get}` 全 `audit.Detached`
+- [x] handler httptest：Create 201 DTO / Disabled 503 / NotReady 409 / NotFound 404 / ListDisabledNoRepo 503 / GetDisabledNoRepo 503 / ListNoAuth 401
+- [x] E2E 步骤 65：create sandbox → write `/workspace/marker.txt` → POST snapshot 断言 object_key 前缀 + size>1000 + image_ref → list filtered by session_id → DELETE sandbox → GET snapshot 仍 200 且 `session_id=null` → audit `sandbox.snapshot.create` 含 target=SNAP_ID
+- [x] README + HANDOFF + SLICE-VERIFICATION + 22 plan 更新
+
+**22b 不做（留 22b-v2）：** restore-from-snapshot（基于快照新建沙箱）、`DELETE /sandbox/snapshots/:id` 路由（repo 已留 Delete 方法）、presigned URL 下载（走 MinIO console）、自动 GC / retention policy、多区域复制 / KMS 加密、异步 job 队列
 
 ## 22c — seccomp + trivy CI（pending）
 
