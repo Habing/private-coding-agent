@@ -31,3 +31,17 @@ func TestReadyz_Ready(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	require.Equal(t, http.StatusOK, w.Code)
 }
+
+func TestHealthz_InfoMerged(t *testing.T) {
+	r := httpx.NewEngine(httpx.Deps{
+		Ready: func() bool { return true },
+		Info: map[string]any{
+			"sandbox": map[string]any{"driver": "docker"},
+		},
+	})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), `"sandbox"`)
+	require.Contains(t, w.Body.String(), `"driver":"docker"`)
+}

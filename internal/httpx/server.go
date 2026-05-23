@@ -11,6 +11,11 @@ type Deps struct {
 	ServiceName string
 	Ready       func() bool
 	Register    func(r *gin.Engine)
+	// Info is an optional map of boot-time descriptors exposed via /healthz.
+	// Slice 22d1: main.go fills {"sandbox": {"driver": "docker"|"k8s"}} so
+	// ops + e2e can confirm which driver this binary is running without
+	// having to grep logs or inspect the binary build.
+	Info map[string]any
 }
 
 // NewEngine constructs a Gin engine wired with recovery and health routes.

@@ -20,6 +20,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/yourorg/private-coding-agent/internal/agent"
 	"github.com/yourorg/private-coding-agent/internal/audit"
@@ -99,12 +102,16 @@ func run() error {
 	}
 	defer pool.Close()
 
-	// Docker client
-	dockerCli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-	if err != nil {
-		return fmt.Errorf("docker: %w", err)
+	// Docker client. Only built when sandbox.driver=docker; the k8s driver
+	// path keeps it nil and the reconciler is skipped.
+	var dockerCli *client.Client
+	if cfg.Sandbox.Driver == "docker" {
+		dockerCli, err = client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		if err != nil {
+			return fmt.Errorf("docker: %w", err)
+		}
+		defer dockerCli.Close()
 	}
-	defer dockerCli.Close()
 
 	// Redis
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.Redis.Addr})
@@ -120,27 +127,64 @@ func run() error {
 		ToolInvokePerMinute: cfg.Quota.ToolInvokePerMinute,
 	})
 
-	// Sandbox driver. Slice 22c: load the embedded hardened seccomp profile
-	// at boot and inject it into every sandbox HostConfig. If the operator
-	// disabled seccomp via PCA_SANDBOX_SECCOMP_ENABLED=false, pass empty and
-	// the driver falls back to Docker's runtime default seccomp.
+	// Sandbox driver. Slice 22d1 made this a 2-way switch:
+	//   - docker (default): host Docker daemon, one container per sandbox
+	//   - k8s: Kubernetes API server, one Pod per sandbox
+	// The Runtime interface is identical across drivers; downstream
+	// consumers (tools, handler, session.Service) take Runtime, so nothing
+	// else in the wiring changes by driver.
 	sandboxRepo := sandbox.NewSessionRepo(pool)
-	var seccompProfile string
-	if cfg.Sandbox.SeccompEnabled {
-		seccompProfile, err = sandbox.LoadSeccompProfile()
-		if err != nil {
-			return fmt.Errorf("load seccomp profile: %w", err)
+	var sandboxDriver sandbox.Runtime
+	switch cfg.Sandbox.Driver {
+	case "docker":
+		// Slice 22c: load the embedded hardened seccomp profile at boot and
+		// inject it into every sandbox HostConfig. If the operator disabled
+		// seccomp via PCA_SANDBOX_SECCOMP_ENABLED=false, pass empty and the
+		// driver falls back to Docker's runtime default seccomp.
+		var seccompProfile string
+		if cfg.Sandbox.SeccompEnabled {
+			seccompProfile, err = sandbox.LoadSeccompProfile()
+			if err != nil {
+				return fmt.Errorf("load seccomp profile: %w", err)
+			}
+			slog.Info("sandbox: hardened seccomp profile loaded", "size_bytes", len(seccompProfile))
+		} else {
+			slog.Warn("sandbox: seccomp disabled via config — falling back to Docker default profile")
 		}
-		slog.Info("sandbox: hardened seccomp profile loaded", "size_bytes", len(seccompProfile))
-	} else {
-		slog.Warn("sandbox: seccomp disabled via config — falling back to Docker default profile")
-	}
-	sandboxDriver, err := sandbox.NewDockerDriver(ctx, dockerCli, sandboxRepo, rdb, sandbox.DockerDriverConfig{
-		KeepLocalImage: cfg.Snapshot.KeepLocalImage,
-		SeccompProfile: seccompProfile,
-	})
-	if err != nil {
-		return fmt.Errorf("sandbox driver: %w", err)
+		sandboxDriver, err = sandbox.NewDockerDriver(ctx, dockerCli, sandboxRepo, rdb, sandbox.DockerDriverConfig{
+			KeepLocalImage: cfg.Snapshot.KeepLocalImage,
+			SeccompProfile: seccompProfile,
+		})
+		if err != nil {
+			return fmt.Errorf("sandbox docker driver: %w", err)
+		}
+	case "k8s":
+		restCfg, err := buildK8sRestConfig(cfg.Sandbox.K8s)
+		if err != nil {
+			return fmt.Errorf("sandbox k8s rest config: %w", err)
+		}
+		k8sClient, err := kubernetes.NewForConfig(restCfg)
+		if err != nil {
+			return fmt.Errorf("sandbox k8s clientset: %w", err)
+		}
+		sandboxDriver, err = sandbox.NewK8sDriver(k8sClient, restCfg, sandboxRepo, rdb, sandbox.K8sDriverConfig{
+			Namespace:               cfg.Sandbox.K8s.Namespace,
+			ServiceAccount:          cfg.Sandbox.K8s.ServiceAccount,
+			SeccompLocalhostProfile: cfg.Sandbox.K8s.SeccompLocalhostProfile,
+			PodReadyTimeout:         time.Duration(cfg.Sandbox.K8s.PodReadyTimeoutSec) * time.Second,
+		})
+		if err != nil {
+			return fmt.Errorf("sandbox k8s driver: %w", err)
+		}
+		slog.Info("sandbox: k8s driver active",
+			"namespace", cfg.Sandbox.K8s.Namespace,
+			"in_cluster", cfg.Sandbox.K8s.InCluster,
+			"service_account", cfg.Sandbox.K8s.ServiceAccount,
+			"seccomp_localhost", cfg.Sandbox.K8s.SeccompLocalhostProfile != "")
+	default:
+		// applySlice22dDefaults already rejected unknown values; this is
+		// belt-and-braces for future refactor safety.
+		return fmt.Errorf("sandbox.driver=%q is not supported", cfg.Sandbox.Driver)
 	}
 	sandboxHandler := sandbox.NewHandler(sandboxDriver).WithQuota(quotaSvc, sandboxRepo)
 	// Will set sandboxHandler.WithAuditSink after auditRepo is constructed.
@@ -259,9 +303,15 @@ func run() error {
 	}
 	sessionWSHandler := session.NewWSHandler(sessionService, wsAllowed)
 
-	// Reconciler (Task 16)
-	if err := sandbox.RunReconciler(ctx, sandboxRepo, dockerCli); err != nil {
-		return fmt.Errorf("reconciler: %w", err)
+	// Reconciler (Task 16). Docker-only — K8s reconciliation (via watch loop
+	// across pod lifecycle events) is 22d-v2 work; on k8s we skip and rely on
+	// Pod restartPolicy=Never + Destroy idempotence to converge state.
+	if dockerCli != nil {
+		if err := sandbox.RunReconciler(ctx, sandboxRepo, dockerCli); err != nil {
+			return fmt.Errorf("reconciler: %w", err)
+		}
+	} else {
+		slog.Info("sandbox reconciler skipped: non-docker driver")
 	}
 
 	// Standard auth/tenant/user wiring
@@ -369,7 +419,21 @@ func run() error {
 		}
 		ensureCancel()
 		snapRepo := sandbox.NewSnapshotRepo(pool)
-		sandboxDriver.SetSnapshotDeps(snapRepo, osClient, cfg.Snapshot.Prefix)
+		// Slice 22d1: SetSnapshotDeps is docker-specific (commit+image-save
+		// have no K8s equivalent yet — kaniko-based snapshot is 22d-v2).
+		// K8sDriver exposes SetSnapshotRepo so its Destroy can null
+		// session_id on snapshots that survived a docker→k8s migration.
+		if dd, ok := sandboxDriver.(interface {
+			SetSnapshotDeps(*sandbox.SnapshotRepo, sandbox.SnapshotStore, string)
+		}); ok {
+			dd.SetSnapshotDeps(snapRepo, osClient, cfg.Snapshot.Prefix)
+		} else if kd, ok := sandboxDriver.(interface {
+			SetSnapshotRepo(*sandbox.SnapshotRepo)
+		}); ok {
+			kd.SetSnapshotRepo(snapRepo)
+			slog.Warn("snapshot.enabled=true but driver does not implement snapshot create/restore; admin /snapshot routes will return 503",
+				"driver", cfg.Sandbox.Driver)
+		}
 		sandboxHandler.WithSnapshotRepo(snapRepo)
 		slog.Info("objstore: bucket ready",
 			"bucket", cfg.Snapshot.Bucket,
@@ -529,6 +593,11 @@ func run() error {
 		ServiceName: cfg.Telemetry.ServiceName,
 		Ready:       func() bool { return ready.Load() },
 		Register:    register,
+		Info: map[string]any{
+			"sandbox": map[string]any{
+				"driver": cfg.Sandbox.Driver,
+			},
+		},
 	})
 
 	srv := &http.Server{
@@ -617,4 +686,34 @@ func toOrchestratorRules(in []config.OrchestratorRuleConfig) []orchestrator.Rule
 		})
 	}
 	return out
+}
+
+// buildK8sRestConfig builds a *rest.Config from sandbox.k8s config. Two
+// modes are supported: in-cluster (the recommended posture when this
+// binary runs inside K8s itself) and kubeconfig (the dev/debug posture).
+//
+// In-cluster requires the controller pod to have a ServiceAccount with
+// pods.create/delete/get/list rights in the target namespace; the chart
+// in 22d2 will own that RBAC.
+//
+// Kubeconfig path resolution defers to clientcmd's standard rules
+// ($KUBECONFIG → $HOME/.kube/config) when cfg.Kubeconfig is empty.
+func buildK8sRestConfig(cfg config.SandboxK8sConfig) (*rest.Config, error) {
+	if cfg.InCluster {
+		rc, err := rest.InClusterConfig()
+		if err != nil {
+			return nil, fmt.Errorf("in-cluster config: %w", err)
+		}
+		return rc, nil
+	}
+	loading := clientcmd.NewDefaultClientConfigLoadingRules()
+	if cfg.Kubeconfig != "" {
+		loading.ExplicitPath = cfg.Kubeconfig
+	}
+	rc, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		loading, &clientcmd.ConfigOverrides{}).ClientConfig()
+	if err != nil {
+		return nil, fmt.Errorf("kubeconfig: %w", err)
+	}
+	return rc, nil
 }

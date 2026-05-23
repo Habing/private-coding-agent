@@ -33,13 +33,61 @@ type Config struct {
 
 // SandboxConfig groups host-side sandbox driver options that aren't already
 // covered by Quota or Snapshot. Slice 22c added SeccompEnabled (defense in
-// depth on top of CapDrop ALL / no-new-privileges).
+// depth on top of CapDrop ALL / no-new-privileges). Slice 22d1 added Driver
+// (docker | k8s) + K8s sub-config for the Kubernetes flavor.
 type SandboxConfig struct {
+	// Driver picks the Runtime implementation: "docker" (default) drives the
+	// local Docker daemon; "k8s" drives a Kubernetes cluster (one Pod per
+	// sandbox). Any other value fails Load at boot.
+	Driver string `mapstructure:"driver"`
+
 	// SeccompEnabled toggles whether the embedded hardened seccomp profile is
 	// applied to every sandbox container. Default true. Set false only as a
 	// kernel-too-old escape hatch (<3.17) or to chase a profile-induced
-	// toolchain regression while a fix lands.
+	// toolchain regression while a fix lands. Applies to docker driver;
+	// the k8s driver uses cfg.Sandbox.K8s.SeccompLocalhostProfile instead.
 	SeccompEnabled bool `mapstructure:"seccomp_enabled"`
+
+	// K8s configures the Kubernetes-flavored driver. Ignored when Driver
+	// is "docker". See SandboxK8sConfig for individual fields.
+	K8s SandboxK8sConfig `mapstructure:"k8s"`
+}
+
+// SandboxK8sConfig configures the K8sDriver. Only read when Sandbox.Driver
+// is "k8s". Field semantics mirror the K8sDriverConfig struct in
+// internal/sandbox; field-by-field defaults documented inline.
+type SandboxK8sConfig struct {
+	// Namespace is the K8s namespace where sandbox Pods are created.
+	// Default "pca-sandboxes". The deploy chart owns its lifecycle; the
+	// driver does NOT auto-create it.
+	Namespace string `mapstructure:"namespace"`
+
+	// InCluster=true builds the clientset via rest.InClusterConfig (the
+	// recommended posture inside K8s). InCluster=false uses kubeconfig
+	// for dev/debug. Defaults to false so a vanilla compose-up does not
+	// touch the kube API.
+	InCluster bool `mapstructure:"in_cluster"`
+
+	// Kubeconfig is the path passed to clientcmd.BuildConfigFromFlags when
+	// InCluster is false. Empty → $KUBECONFIG or $HOME/.kube/config.
+	Kubeconfig string `mapstructure:"kubeconfig"`
+
+	// ServiceAccount sets pod.spec.serviceAccountName. Empty (default)
+	// means automountServiceAccountToken=false on the pod — the
+	// recommended posture. Set only when the workload genuinely needs an
+	// in-cluster SA.
+	ServiceAccount string `mapstructure:"service_account"`
+
+	// SeccompLocalhostProfile is the relative path under kubelet's
+	// /var/lib/kubelet/seccomp/ where the hardened profile is staged.
+	// Empty → RuntimeDefault. Non-empty → Localhost type. Localhost
+	// requires the profile to already be on every node.
+	SeccompLocalhostProfile string `mapstructure:"seccomp_localhost_profile"`
+
+	// PodReadyTimeoutSec caps how long Create blocks waiting for the Pod
+	// to reach phase=Running. Default 60s covers cold image pulls on
+	// slow registries.
+	PodReadyTimeoutSec int `mapstructure:"pod_ready_timeout_sec"`
 }
 
 // SnapshotConfig drives Slice 22b's sandbox snapshot → S3 object storage
@@ -209,8 +257,17 @@ func Load(path string) (*Config, error) {
 	// Register defaults BEFORE Unmarshal so AutomaticEnv can route env vars
 	// to the matching keys. Without SetDefault, viper does not "know" the
 	// key exists and AutomaticEnv silently fails to bind. Slice 22c:
-	// Sandbox.SeccompEnabled defaults to true.
+	// Sandbox.SeccompEnabled defaults to true. Slice 22d1: Sandbox.Driver
+	// defaults to "docker" + nested k8s.* keys registered so PCA_SANDBOX_K8S_*
+	// env vars bind correctly.
 	v.SetDefault("sandbox.seccomp_enabled", true)
+	v.SetDefault("sandbox.driver", "docker")
+	v.SetDefault("sandbox.k8s.namespace", "")
+	v.SetDefault("sandbox.k8s.in_cluster", false)
+	v.SetDefault("sandbox.k8s.kubeconfig", "")
+	v.SetDefault("sandbox.k8s.service_account", "")
+	v.SetDefault("sandbox.k8s.seccomp_localhost_profile", "")
+	v.SetDefault("sandbox.k8s.pod_ready_timeout_sec", 0)
 
 	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("read config %s: %w", path, err)
@@ -225,7 +282,34 @@ func Load(path string) (*Config, error) {
 	applySlice20Defaults(&c)
 	applySlice21bDefaults(&c)
 	applySlice22bDefaults(&c)
+	if err := applySlice22dDefaults(&c); err != nil {
+		return nil, err
+	}
 	return &c, nil
+}
+
+// applySlice22dDefaults validates Sandbox.Driver and fills K8s sub-defaults.
+// Returning an error here is intentional — an unknown driver is a fatal boot
+// misconfiguration, not something to silently default away from. K8s fields
+// only take effect when Driver == "k8s", but defaults are filled
+// unconditionally so they look identical in /healthz / debug dumps.
+func applySlice22dDefaults(c *Config) error {
+	if c.Sandbox.Driver == "" {
+		c.Sandbox.Driver = "docker"
+	}
+	switch c.Sandbox.Driver {
+	case "docker", "k8s":
+		// ok
+	default:
+		return fmt.Errorf("sandbox.driver=%q is invalid (allowed: docker | k8s)", c.Sandbox.Driver)
+	}
+	if c.Sandbox.K8s.Namespace == "" {
+		c.Sandbox.K8s.Namespace = "pca-sandboxes"
+	}
+	if c.Sandbox.K8s.PodReadyTimeoutSec <= 0 {
+		c.Sandbox.K8s.PodReadyTimeoutSec = 60
+	}
+	return nil
 }
 
 // applySlice22bDefaults fills SnapshotConfig defaults. Enabled stays whatever

@@ -166,6 +166,37 @@ mcp:
   list_tools_timeout: 10s
 
 sandbox:
+  # Slice 22d1: Runtime driver.
+  #   - "docker" (default): local Docker daemon, one container per sandbox.
+  #     Requires DOCKER_HOST / /var/run/docker.sock reachable from this binary.
+  #   - "k8s": one Pod per sandbox. See sandbox.k8s.* below. Snapshot is
+  #     disabled in this mode (admin /snapshot routes return 503).
+  driver: "docker"
+
+  # K8s driver options. Only read when driver=="k8s".
+  k8s:
+    # Namespace where sandbox Pods are created. The deploy chart owns its
+    # lifecycle; this binary does NOT auto-create it.
+    namespace: "pca-sandboxes"
+    # true → build the clientset from rest.InClusterConfig (the recommended
+    # posture inside a Kubernetes deployment). false → use kubeconfig
+    # (dev/debug). Override with PCA_SANDBOX_K8S_IN_CLUSTER.
+    in_cluster: false
+    # Path to kubeconfig when in_cluster=false. Empty defers to $KUBECONFIG
+    # then $HOME/.kube/config.
+    kubeconfig: ""
+    # Pod ServiceAccount. Empty (default) makes the Pod run with
+    # automountServiceAccountToken=false — the recommended posture; only
+    # set when the workload genuinely needs an in-cluster SA.
+    service_account: ""
+    # Relative path under kubelet's /var/lib/kubelet/seccomp/ for the
+    # hardened profile. Empty → RuntimeDefault. Non-empty → Localhost type
+    # (operator must have staged the profile to every node).
+    seccomp_localhost_profile: ""
+    # Cap on Create wait for phase=Running. Default 60s covers cold image
+    # pulls; tune down for hot caches.
+    pod_ready_timeout_sec: 60
+
   # Slice 22c: applies an embedded hardened seccomp profile to every sandbox
   # container in addition to CapDrop ALL + no-new-privileges. Profile denies
   # mount/ptrace/keyctl/bpf/userfaultfd/perf_event_open etc. Set false only

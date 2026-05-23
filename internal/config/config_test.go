@@ -125,3 +125,44 @@ func TestSandboxConfig_EnvDisable(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, cfg.Sandbox.SeccompEnabled, "env false must override default true")
 }
+
+func TestSandboxDriver_DefaultDocker(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte(sandboxYAML), 0o600))
+	cfg, err := Load(p)
+	require.NoError(t, err)
+	require.Equal(t, "docker", cfg.Sandbox.Driver)
+	require.Equal(t, "pca-sandboxes", cfg.Sandbox.K8s.Namespace, "K8s defaults filled even when docker driver is selected")
+	require.Equal(t, 60, cfg.Sandbox.K8s.PodReadyTimeoutSec)
+}
+
+func TestSandboxDriver_EnvK8s(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte(sandboxYAML), 0o600))
+	t.Setenv("PCA_SANDBOX_DRIVER", "k8s")
+	t.Setenv("PCA_SANDBOX_K8S_NAMESPACE", "my-ns")
+	t.Setenv("PCA_SANDBOX_K8S_IN_CLUSTER", "true")
+	t.Setenv("PCA_SANDBOX_K8S_SERVICE_ACCOUNT", "sb-runner")
+	t.Setenv("PCA_SANDBOX_K8S_SECCOMP_LOCALHOST_PROFILE", "pca/seccomp.json")
+	t.Setenv("PCA_SANDBOX_K8S_POD_READY_TIMEOUT_SEC", "120")
+	cfg, err := Load(p)
+	require.NoError(t, err)
+	require.Equal(t, "k8s", cfg.Sandbox.Driver)
+	require.Equal(t, "my-ns", cfg.Sandbox.K8s.Namespace)
+	require.True(t, cfg.Sandbox.K8s.InCluster)
+	require.Equal(t, "sb-runner", cfg.Sandbox.K8s.ServiceAccount)
+	require.Equal(t, "pca/seccomp.json", cfg.Sandbox.K8s.SeccompLocalhostProfile)
+	require.Equal(t, 120, cfg.Sandbox.K8s.PodReadyTimeoutSec)
+}
+
+func TestSandboxDriver_InvalidFailsFast(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte(sandboxYAML), 0o600))
+	t.Setenv("PCA_SANDBOX_DRIVER", "podman")
+	_, err := Load(p)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "sandbox.driver")
+}
