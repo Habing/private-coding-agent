@@ -36,6 +36,9 @@ func Validate(doc *WorkflowDoc, cfg Config) error {
 	if err := validateSteps(doc.Steps, seen, 0, cfg); err != nil {
 		return err
 	}
+	if err := validateTriggers(doc.Triggers, seen); err != nil {
+		return err
+	}
 	// Outputs are expression templates; require non-empty value.
 	for k, v := range doc.Outputs {
 		if v == "" {

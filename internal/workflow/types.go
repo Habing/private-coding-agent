@@ -88,6 +88,7 @@ type WorkflowDoc struct {
 	Version     int                  `yaml:"version,omitempty"`
 	Description string               `yaml:"description,omitempty"`
 	Inputs      map[string]InputSpec `yaml:"inputs,omitempty"`
+	Triggers    []TriggerSpec        `yaml:"triggers,omitempty"`
 	Steps       []Step               `yaml:"steps"`
 	Outputs     map[string]string    `yaml:"outputs,omitempty"`
 }
