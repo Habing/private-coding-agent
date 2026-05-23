@@ -66,6 +66,22 @@ describe('<WorkflowProposalCard />', () => {
     expect(screen.getByTestId('proposal-mini-graph')).toBeInTheDocument()
   })
 
+  it('shows trigger summary from proposal graph', async () => {
+    server.use(
+      http.get('/agent/workflow/proposals/p1/graph', () =>
+        HttpResponse.json({
+          meta: { id: 'weekly' },
+          nodes: [
+            { id: 'trigger:schedule', kind: 'trigger-cron', label: 'schedule', detail: '0 9 * * *' },
+          ],
+          edges: [],
+        }),
+      ),
+    )
+    renderCard('admin')
+    expect(await screen.findByText(/cron · schedule/)).toBeInTheDocument()
+  })
+
   it('admin confirm calls REST confirm and shows toast', async () => {
     server.use(
       http.post('/agent/workflow/proposals/p1/confirm', () =>

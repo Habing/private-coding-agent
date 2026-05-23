@@ -31,6 +31,10 @@ vi.mock('@/components/WorkflowGraph', () => ({
   WorkflowGraphMini: () => null,
 }))
 
+vi.mock('@/components/WorkflowTriggersPanel', () => ({
+  TriggersPanel: () => <div data-testid="triggers-panel">triggers</div>,
+}))
+
 import { Workflows } from './Workflows'
 
 function makeWorkflow(over: Partial<Workflow> = {}): Workflow {
@@ -148,6 +152,7 @@ describe('<Workflows />', () => {
     await userEvent.click(await screen.findByRole('button', { name: '编辑' }))
 
     const editor = await screen.findByTestId('yaml-editor')
+    expect(screen.getByTestId('triggers-panel')).toBeInTheDocument()
     // Bypass userEvent.type because the YAML body contains `[]` which the
     // keyboard parser would interpret as key descriptors.
     fireEvent.change(editor, { target: { value: 'id: edit-me\nname: changed\nsteps: []\n' } })

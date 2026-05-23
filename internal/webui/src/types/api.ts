@@ -295,6 +295,26 @@ export interface WorkflowInvokeResult {
   duration_ms: number
 }
 
+export interface WorkflowTriggerRow {
+  trigger_id: string
+  kind: 'cron' | 'webhook'
+  enabled: boolean
+  cron_expr?: string
+  timezone?: string
+  webhook_url?: string
+  webhook_token_suffix?: string
+  next_run_at?: string | null
+  last_run_at?: string | null
+  last_status?: string
+  last_error?: string
+  default_inputs?: Record<string, unknown>
+}
+
+export interface WorkflowTriggersResponse {
+  triggers: WorkflowTriggerRow[]
+  webhook_base_url: string
+}
+
 export type MemoryProposalStatus = 'pending' | 'approved' | 'auto_approved' | 'rejected'
 
 export interface MemoryProposal {

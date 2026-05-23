@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { YamlEditor } from '@/components/YamlEditor'
 import { WorkflowGraph } from '@/components/WorkflowGraph'
+import { TriggersPanel } from '@/components/WorkflowTriggersPanel'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -201,6 +202,7 @@ function WorkflowRow({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workflows'] })
       qc.invalidateQueries({ queryKey: ['workflow', workflow.slug] })
+      qc.invalidateQueries({ queryKey: ['workflow-triggers', workflow.slug] })
       onError(null)
     },
     onError: (e) => onError(humanError(e)),
@@ -215,6 +217,7 @@ function WorkflowRow({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workflows'] })
       qc.invalidateQueries({ queryKey: ['workflow', workflow.slug] })
+      qc.invalidateQueries({ queryKey: ['workflow-triggers', workflow.slug] })
       onError(null)
     },
     onError: (e) => onError(humanError(e)),
@@ -367,6 +370,7 @@ function EditPane({
           />
         </div>
         <InvokePanel slug={workflow.slug} />
+        <TriggersPanel slug={workflow.slug} published={workflow.published} dsl={dsl} />
         <RunsPanel slug={workflow.slug} />
       </div>
     </div>

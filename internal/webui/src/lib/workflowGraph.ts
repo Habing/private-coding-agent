@@ -86,4 +86,7 @@ export const workflowNodeKindClass: Record<string, string> = {
   foreach: 'border-purple-600 bg-purple-50 dark:bg-purple-950/30',
   parallel: 'border-orange-600 bg-orange-50 dark:bg-orange-950/30',
   wait: 'border-slate-600 bg-slate-50 dark:bg-slate-900/40',
+  'trigger-cron': 'border-teal-600 bg-teal-50 dark:bg-teal-950/30',
+  'trigger-webhook': 'border-cyan-600 bg-cyan-50 dark:bg-cyan-950/30',
+  trigger: 'border-teal-600 bg-teal-50 dark:bg-teal-950/30',
 }

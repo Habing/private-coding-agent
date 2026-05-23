@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { WorkflowGraphMini } from '@/components/WorkflowGraph'
 import { ApiError, api } from '@/lib/api'
 import { isAdmin } from '@/lib/roles'
+import type { WorkflowGraphDTO } from '@/lib/workflowGraph'
 import type { WorkflowProposalPayload } from '@/lib/workflowProposal'
 import {
   proposalDryRunLabel,
@@ -96,6 +97,7 @@ export function WorkflowProposalCard({ payload }: WorkflowProposalCardProps) {
         {payload.proposal_id && payload.dry_run_ok && (
           <div className="mt-3">
             <WorkflowGraphMini proposalId={payload.proposal_id} />
+            <ProposalTriggerSummary proposalId={payload.proposal_id} />
           </div>
         )}
 
@@ -136,6 +138,33 @@ function CardShell({ children, className = '' }: { children: ReactNode; classNam
     <div className={`w-full max-w-[80%] rounded-md border p-3 text-xs ${className}`}>
       {children}
     </div>
+  )
+}
+
+function ProposalTriggerSummary({ proposalId }: { proposalId: string }) {
+  const token = useAuthStore((s) => s.token)
+  const q = useQuery({
+    queryKey: ['workflow-proposal-graph', proposalId, 'triggers'],
+    queryFn: () =>
+      api<WorkflowGraphDTO>(
+        `/agent/workflow/proposals/${encodeURIComponent(proposalId)}/graph`,
+        { token },
+      ),
+    enabled: !!token && proposalId.length > 0,
+    staleTime: 30_000,
+  })
+  const triggers = (q.data?.nodes ?? []).filter((n) => n.kind.startsWith('trigger'))
+  if (q.isLoading || triggers.length === 0) return null
+  return (
+    <ul className="mt-2 flex flex-col gap-0.5 text-[10px] text-muted-foreground">
+      {triggers.map((n) => (
+        <li key={n.id} className="font-mono">
+          {n.kind === 'trigger-cron'
+            ? `cron · ${n.label} · ${n.detail ?? ''}`
+            : `webhook · ${n.label}`}
+        </li>
+      ))}
+    </ul>
   )
 }
 
