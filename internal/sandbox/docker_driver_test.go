@@ -291,13 +291,15 @@ func TestDockerDriver_ReadFile_TooLarge(t *testing.T) {
 	require.ErrorIs(t, err, sandbox.ErrTooLarge)
 }
 
-func TestDockerDriver_Snapshot_NotImplemented(t *testing.T) {
+func TestDockerDriver_Snapshot_DisabledWithoutDeps(t *testing.T) {
 	ctx := context.Background()
 	d, tid, uid := newDockerDriverForTest(t)
 	sb, err := d.Create(ctx, sandbox.CreateOpts{TenantID: tid, OwnerUserID: uid})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = d.Destroy(ctx, tid, sb.ID) })
 
+	// SetSnapshotDeps not called → driver returns ErrSnapshotDisabled even for
+	// a running sandbox (gated-off behaviour).
 	_, err = d.Snapshot(ctx, tid, sb.ID)
-	require.ErrorIs(t, err, sandbox.ErrNotImplemented)
+	require.ErrorIs(t, err, sandbox.ErrSnapshotDisabled)
 }

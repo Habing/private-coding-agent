@@ -28,9 +28,18 @@ type Handler struct {
 	audit        audit.Sink
 	quota        *quota.Service
 	activeCount  ActiveSandboxCounter
+	snapshotRepo *SnapshotRepo
 }
 
 func NewHandler(rt Runtime) *Handler { return &Handler{rt: rt} }
+
+// WithSnapshotRepo wires the slice-22b snapshot repository so the snapshot
+// list / get routes can read persisted metadata directly without an extra
+// Runtime trip. nil leaves slice-22b read APIs disabled (handler will 503).
+func (h *Handler) WithSnapshotRepo(repo *SnapshotRepo) *Handler {
+	h.snapshotRepo = repo
+	return h
+}
 
 // WithAuditSink wires an audit.Sink so the handler records sandbox.create /
 // sandbox.destroy entries on successful operations. Returns the receiver for

@@ -40,7 +40,10 @@ type Runtime interface {
 	// directories as needed. Size capped at MaxFileSize.
 	WriteFile(ctx context.Context, tenantID, id uuid.UUID, path string, data []byte) error
 
-	// Snapshot exports the workspace state. Slice 2 returns ErrNotImplemented;
-	// implementation lands when MinIO support is added.
-	Snapshot(ctx context.Context, tenantID, id uuid.UUID) (string, error)
+	// Snapshot commits the running container into a Docker image, exports the
+	// tar via `docker save`, streams it to S3-compatible object storage, and
+	// persists a sandbox_snapshots row. Returns the persisted Snapshot.
+	// ErrSnapshotDisabled when slice-22b is gated off; ErrSandboxNotFound when
+	// the sandbox does not exist or belongs to a different tenant.
+	Snapshot(ctx context.Context, tenantID, id uuid.UUID) (*Snapshot, error)
 }

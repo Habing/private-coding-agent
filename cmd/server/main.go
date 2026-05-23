@@ -32,6 +32,7 @@ import (
 	"github.com/yourorg/private-coding-agent/internal/memory"
 	"github.com/yourorg/private-coding-agent/internal/metrics"
 	"github.com/yourorg/private-coding-agent/internal/modelgw"
+	"github.com/yourorg/private-coding-agent/internal/objstore"
 	"github.com/yourorg/private-coding-agent/internal/orchestrator"
 	"github.com/yourorg/private-coding-agent/internal/quota"
 	"github.com/yourorg/private-coding-agent/internal/reflection"
@@ -121,7 +122,9 @@ func run() error {
 
 	// Sandbox driver
 	sandboxRepo := sandbox.NewSessionRepo(pool)
-	sandboxDriver, err := sandbox.NewDockerDriver(ctx, dockerCli, sandboxRepo, rdb, sandbox.DockerDriverConfig{})
+	sandboxDriver, err := sandbox.NewDockerDriver(ctx, dockerCli, sandboxRepo, rdb, sandbox.DockerDriverConfig{
+		KeepLocalImage: cfg.Snapshot.KeepLocalImage,
+	})
 	if err != nil {
 		return fmt.Errorf("sandbox driver: %w", err)
 	}
@@ -328,6 +331,36 @@ func run() error {
 		slog.Info("mcp manager enabled",
 			"heartbeat", cfg.MCP.HeartbeatInterval,
 			"invoke_timeout", cfg.MCP.InvokeTimeout)
+	}
+
+	// Slice 22b — Sandbox→S3 snapshot. cfg.Snapshot.Enabled=false skips
+	// construction; sandboxHandler.snapshot route then returns 503
+	// snapshot_disabled via ErrSnapshotDisabled.
+	if cfg.Snapshot.Enabled {
+		osClient, err := objstore.New(objstore.Config{
+			Endpoint:  cfg.Snapshot.Endpoint,
+			Bucket:    cfg.Snapshot.Bucket,
+			AccessKey: cfg.Snapshot.AccessKey,
+			SecretKey: cfg.Snapshot.SecretKey,
+			Region:    cfg.Snapshot.Region,
+			UseSSL:    cfg.Snapshot.UseSSL,
+		})
+		if err != nil {
+			return fmt.Errorf("objstore new: %w", err)
+		}
+		ensureCtx, ensureCancel := context.WithTimeout(ctx, 10*time.Second)
+		if err := osClient.EnsureBucket(ensureCtx); err != nil {
+			ensureCancel()
+			return fmt.Errorf("objstore ensure bucket: %w", err)
+		}
+		ensureCancel()
+		snapRepo := sandbox.NewSnapshotRepo(pool)
+		sandboxDriver.SetSnapshotDeps(snapRepo, osClient, cfg.Snapshot.Prefix)
+		sandboxHandler.WithSnapshotRepo(snapRepo)
+		slog.Info("objstore: bucket ready",
+			"bucket", cfg.Snapshot.Bucket,
+			"endpoint", cfg.Snapshot.Endpoint,
+			"prefix", cfg.Snapshot.Prefix)
 	}
 
 	auditSvc := audit.NewService(auditRepo)

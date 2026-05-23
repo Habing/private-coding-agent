@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
 	"github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/strslice"
 	"github.com/docker/docker/client"
@@ -22,6 +24,7 @@ import (
 
 	"github.com/yourorg/private-coding-agent/internal/logx"
 	pcametrics "github.com/yourorg/private-coding-agent/internal/metrics"
+	"github.com/yourorg/private-coding-agent/internal/objstore"
 )
 
 var tracer trace.Tracer = otel.Tracer("internal/sandbox")
@@ -31,21 +34,36 @@ type DockerDriverConfig struct {
 	// InternalNetworkName 是给 NetworkInternal 模式的共享 internal 网络名。
 	// 不存在时 DockerDriver 会自动创建。
 	InternalNetworkName string
+	// KeepLocalImage controls whether the committed image is left on the
+	// sandbox host after Snapshot uploads it to object storage. Default false
+	// (image is removed) to prevent disk bloat; true is debug only.
+	KeepLocalImage bool
+}
+
+// SnapshotStore is the subset of objstore.Client that DockerDriver needs for
+// Snapshot. Kept narrow so tests can swap in an in-memory fake.
+type SnapshotStore interface {
+	Put(ctx context.Context, key string, reader io.Reader, size int64, contentType string) (*objstore.PutResult, error)
 }
 
 // DockerDriver implements Runtime using the local Docker daemon.
 type DockerDriver struct {
-	cli   *client.Client
-	repo  *SessionRepo
-	redis *redis.Client
-	cfg   DockerDriverConfig
+	cli      *client.Client
+	repo     *SessionRepo
+	redis    *redis.Client
+	cfg      DockerDriverConfig
+	snaps    *SnapshotRepo
+	objstore SnapshotStore
+	keyPrefix string
 }
 
 // NewDockerDriver wires a DockerDriver. cli must be a connected docker client;
 // repo persists session metadata; redis is used for distributed Destroy locks.
 //
 // The internal network (cfg.InternalNetworkName, default "pca-sandbox-internal")
-// is created if missing; idempotent.
+// is created if missing; idempotent. Snapshot dependencies (objstore +
+// SnapshotRepo) default to nil; the Snapshot method returns ErrSnapshotDisabled
+// unless SetSnapshotDeps is called.
 func NewDockerDriver(ctx context.Context, cli *client.Client, repo *SessionRepo, rdb *redis.Client, cfg DockerDriverConfig) (*DockerDriver, error) {
 	if cfg.InternalNetworkName == "" {
 		cfg.InternalNetworkName = "pca-sandbox-internal"
@@ -55,6 +73,15 @@ func NewDockerDriver(ctx context.Context, cli *client.Client, repo *SessionRepo,
 		return nil, fmt.Errorf("ensure internal network: %w", err)
 	}
 	return d, nil
+}
+
+// SetSnapshotDeps wires the slice-22b dependencies. Pass nil store to leave
+// snapshot disabled (Snapshot will return ErrSnapshotDisabled). keyPrefix is
+// the optional config-driven prefix prepended to every object key.
+func (d *DockerDriver) SetSnapshotDeps(snaps *SnapshotRepo, store SnapshotStore, keyPrefix string) {
+	d.snaps = snaps
+	d.objstore = store
+	d.keyPrefix = keyPrefix
 }
 
 func (d *DockerDriver) ensureInternalNetwork(ctx context.Context) error {
@@ -317,12 +344,110 @@ func (d *DockerDriver) Destroy(ctx context.Context, tenantID, id uuid.UUID) (des
 	return nil
 }
 
-// Snapshot is reserved for future MinIO-backed workspace persistence.
-// Returns ErrNotImplemented in Slice 2.
-func (d *DockerDriver) Snapshot(ctx context.Context, tenantID, id uuid.UUID) (string, error) {
-	// 仍然校验沙箱存在,防泄露
-	if _, err := d.repo.Get(ctx, tenantID, id); err != nil {
-		return "", err
+// Snapshot commits the running container, exports it via `docker save`, streams
+// the tar into object storage, and persists a sandbox_snapshots row. Returns
+// ErrSnapshotDisabled when SetSnapshotDeps was never called (slice-22b gated
+// off); ErrSandboxNotFound when id is missing or belongs to a different
+// tenant.
+func (d *DockerDriver) Snapshot(ctx context.Context, tenantID, id uuid.UUID) (snapOut *Snapshot, snapErr error) {
+	ctx, span := tracer.Start(ctx, "sandbox.snapshot",
+		trace.WithAttributes(attribute.String("sandbox.id", id.String())))
+	defer func() {
+		if snapErr != nil {
+			span.RecordError(snapErr)
+			span.SetStatus(codes.Error, snapErr.Error())
+		}
+		span.End()
+	}()
+
+	if d.snaps == nil || d.objstore == nil {
+		// Tenant scope check before disclosing config state.
+		if _, err := d.repo.Get(ctx, tenantID, id); err != nil {
+			return nil, err
+		}
+		return nil, ErrSnapshotDisabled
 	}
-	return "", ErrNotImplemented
+
+	sb, err := d.repo.Get(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	if sb.Status != StatusRunning {
+		return nil, ErrSandboxNotReady
+	}
+	cid, err := d.repo.GetContainerID(ctx, tenantID, id)
+	if err != nil || cid == "" {
+		return nil, ErrSandboxNotReady
+	}
+
+	imageTag := fmt.Sprintf("pca-snapshot-%s:%d", id.String(), time.Now().Unix())
+	commitResp, err := d.cli.ContainerCommit(ctx, cid, container.CommitOptions{
+		Reference: imageTag,
+		Pause:     true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("container commit: %w", err)
+	}
+	imageID := commitResp.ID
+
+	// Best-effort cleanup of the locally committed image once we're done. Set
+	// KeepLocalImage=true via config to retain (debug only).
+	defer func() {
+		if d.cfg.KeepLocalImage {
+			return
+		}
+		_, rmErr := d.cli.ImageRemove(context.Background(), imageTag, image.RemoveOptions{Force: false, PruneChildren: false})
+		if rmErr != nil {
+			logx.FromCtx(ctx).Warn("sandbox snapshot: ImageRemove",
+				"image_ref", imageTag, "err", rmErr.Error())
+		}
+	}()
+
+	reader, err := d.cli.ImageSave(ctx, []string{imageTag})
+	if err != nil {
+		return nil, fmt.Errorf("image save: %w", err)
+	}
+	defer reader.Close()
+
+	now := time.Now().UTC()
+	objKey := buildSnapshotKey(d.keyPrefix, tenantID, id, now)
+
+	put, err := d.objstore.Put(ctx, objKey, reader, -1, "application/x-tar")
+	if err != nil {
+		return nil, fmt.Errorf("objstore put: %w", err)
+	}
+
+	snap := &Snapshot{
+		TenantID:  sb.TenantID,
+		UserID:    sb.OwnerUserID,
+		SessionID: &sb.ID,
+		ObjectKey: put.Key,
+		SizeBytes: put.Size,
+		ImageRef:  imageTag,
+		Metadata: map[string]any{
+			"image_id": imageID,
+			"etag":     put.ETag,
+		},
+	}
+	if err := d.snaps.Insert(ctx, snap); err != nil {
+		return nil, fmt.Errorf("insert snapshot row: %w", err)
+	}
+	span.SetAttributes(
+		attribute.String("snapshot.id", snap.ID.String()),
+		attribute.Int64("snapshot.size_bytes", snap.SizeBytes),
+	)
+	return snap, nil
 }
+
+// buildSnapshotKey assembles the object key. Layout: {prefix?}/{tenant}/{session}/{rfc3339nano}.tar
+// — tenant must be the first segment after any prefix so MinIO bucket
+// policies / IAM roles can scope by prefix in future.
+func buildSnapshotKey(prefix string, tenantID, sessionID uuid.UUID, ts time.Time) string {
+	base := fmt.Sprintf("%s/%s/%s.tar", tenantID.String(), sessionID.String(),
+		ts.Format("20060102T150405.000000000Z"))
+	if prefix == "" {
+		return base
+	}
+	return strings.TrimRight(prefix, "/") + "/" + base
+}
+

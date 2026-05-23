@@ -30,6 +30,7 @@ type mockRuntime struct {
 	readRet    []byte
 	readErr    error
 	writeErr   error
+	snap       *sandbox.Snapshot
 	snapErr    error
 
 	// last-call inspection
@@ -57,8 +58,14 @@ func (m *mockRuntime) WriteFile(_ context.Context, _, _ uuid.UUID, _ string, dat
 	m.lastWriteData = data
 	return m.writeErr
 }
-func (m *mockRuntime) Snapshot(_ context.Context, _, _ uuid.UUID) (string, error) {
-	return "", m.snapErr
+func (m *mockRuntime) Snapshot(_ context.Context, _, _ uuid.UUID) (*sandbox.Snapshot, error) {
+	if m.snapErr != nil {
+		return nil, m.snapErr
+	}
+	if m.snap != nil {
+		return m.snap, nil
+	}
+	return nil, m.snapErr
 }
 
 func newRouterWithMock(t *testing.T, m *mockRuntime) (*gin.Engine, string) {

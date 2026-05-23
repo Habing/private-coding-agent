@@ -164,3 +164,24 @@ mcp:
   # Per initialize + tools/list HTTP timeout. Used by RegisterServer,
   # RefreshTools, TestConnection, and each heartbeat tick.
   list_tools_timeout: 10s
+
+snapshot:
+  # Slice 22b: Sandbox→S3 snapshot. When enabled, POST
+  # /sandbox/sessions/:id/snapshot commits the running container, exports it
+  # via `docker save`, and streams the tar to MinIO. Snapshots survive
+  # sandbox destruction (session_id is set NULL on cascade). enabled=false
+  # makes the three snapshot routes return 503 snapshot_disabled.
+  enabled: false
+  # MinIO / S3 host:port (no scheme). use_ssl picks http vs https.
+  endpoint: "minio:9000"
+  bucket: "pca-snapshots"
+  access_key: "minioadmin"
+  secret_key: "minioadmin"
+  region: "us-east-1"
+  use_ssl: false
+  # Optional prefix prepended to every object key — useful when several
+  # deployments share a single bucket.
+  prefix: ""
+  # When true, the committed image tag is kept on the sandbox host after
+  # upload (debugging only — accumulates disk).
+  keep_local_image: false

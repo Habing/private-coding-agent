@@ -73,6 +73,26 @@ services:
     ports:
       - "8083:8083"
 
+  # Slice 22b — MinIO object storage for sandbox snapshots. Pinned tag avoids
+  # the rolling :latest surprise; the named volume keeps data across compose
+  # recreate. Healthcheck uses MinIO's documented /minio/health/ready probe.
+  minio:
+    image: minio/minio:RELEASE.2025-04-08T15-41-24Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    healthcheck:
+      test: ["CMD-SHELL", "mc alias set local http://127.0.0.1:9000 \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" >/dev/null 2>&1 && mc ready local || curl -fsS http://127.0.0.1:9000/minio/health/ready || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    ports:
+      - "9000:9000"  # S3 API
+      - "9001:9001"  # console
+    volumes:
+      - miniodata:/data
+
   jaeger:
     image: jaegertracing/all-in-one:1.55
     environment:
@@ -108,6 +128,8 @@ services:
       mock-oidc:
         condition: service_started
       mock-mcp:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     environment:
       PCA_DB_DSN: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
@@ -148,6 +170,17 @@ services:
       PCA_MCP_HEARTBEAT_INTERVAL: ${PCA_MCP_HEARTBEAT_INTERVAL:-60s}
       PCA_MCP_INVOKE_TIMEOUT: ${PCA_MCP_INVOKE_TIMEOUT:-30s}
       PCA_MCP_LIST_TOOLS_TIMEOUT: ${PCA_MCP_LIST_TOOLS_TIMEOUT:-10s}
+      # Slice 22b: sandbox→S3 snapshot. enabled=true wires objstore at boot;
+      # E2E step 65 exercises the full POST /snapshot path against this MinIO.
+      PCA_SNAPSHOT_ENABLED: ${PCA_SNAPSHOT_ENABLED:-true}
+      PCA_SNAPSHOT_ENDPOINT: ${PCA_SNAPSHOT_ENDPOINT:-minio:9000}
+      PCA_SNAPSHOT_BUCKET: ${PCA_SNAPSHOT_BUCKET:-pca-snapshots}
+      PCA_SNAPSHOT_ACCESS_KEY: ${PCA_SNAPSHOT_ACCESS_KEY:-${MINIO_ROOT_USER:-minioadmin}}
+      PCA_SNAPSHOT_SECRET_KEY: ${PCA_SNAPSHOT_SECRET_KEY:-${MINIO_ROOT_PASSWORD:-minioadmin}}
+      PCA_SNAPSHOT_REGION: ${PCA_SNAPSHOT_REGION:-us-east-1}
+      PCA_SNAPSHOT_USE_SSL: ${PCA_SNAPSHOT_USE_SSL:-false}
+      PCA_SNAPSHOT_PREFIX: ${PCA_SNAPSHOT_PREFIX:-}
+      PCA_SNAPSHOT_KEEP_LOCAL_IMAGE: ${PCA_SNAPSHOT_KEEP_LOCAL_IMAGE:-false}
       DOCKER_HOST: "unix:///var/run/docker.sock"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -156,3 +189,4 @@ services:
 
 volumes:
   pgdata:
+  miniodata:

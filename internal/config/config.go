@@ -27,6 +27,29 @@ type Config struct {
 	Reflection    ReflectionConfig    `mapstructure:"reflection"`
 	Orchestrator  OrchestratorConfig  `mapstructure:"orchestrator"`
 	MCP           MCPConfig           `mapstructure:"mcp"`
+	Snapshot      SnapshotConfig      `mapstructure:"snapshot"`
+}
+
+// SnapshotConfig drives Slice 22b's sandbox snapshot → S3 object storage
+// integration. Enabled=false causes main.go to skip the objstore client
+// construction; the three snapshot HTTP routes still register but uniformly
+// return 503 snapshot_disabled (mirrors Slice 21b MCP behavior).
+//
+// Endpoint is the MinIO/S3 endpoint host:port (no scheme). UseSSL toggles
+// https/. Prefix is an optional path prepended to every object key; useful
+// when multiple deployments share one bucket. KeepLocalImage=false (default)
+// removes the committed image after upload to prevent disk bloat on the
+// sandbox host; true keeps it for debugging.
+type SnapshotConfig struct {
+	Enabled         bool   `mapstructure:"enabled"`
+	Endpoint        string `mapstructure:"endpoint"`
+	Bucket          string `mapstructure:"bucket"`
+	AccessKey       string `mapstructure:"access_key"`
+	SecretKey       string `mapstructure:"secret_key"`
+	Region          string `mapstructure:"region"`
+	UseSSL          bool   `mapstructure:"use_ssl"`
+	Prefix          string `mapstructure:"prefix"`
+	KeepLocalImage  bool   `mapstructure:"keep_local_image"`
 }
 
 // MCPConfig drives Slice 21b's external MCP Manager. Enabled=false skips
@@ -183,7 +206,20 @@ func Load(path string) (*Config, error) {
 	applySlice15Defaults(&c)
 	applySlice20Defaults(&c)
 	applySlice21bDefaults(&c)
+	applySlice22bDefaults(&c)
 	return &c, nil
+}
+
+// applySlice22bDefaults fills SnapshotConfig defaults. Enabled stays whatever
+// the caller sets (YAML/env). Defaults match the docker-compose minio service
+// so a vanilla compose-up just works.
+func applySlice22bDefaults(c *Config) {
+	if c.Snapshot.Bucket == "" {
+		c.Snapshot.Bucket = "pca-snapshots"
+	}
+	if c.Snapshot.Region == "" {
+		c.Snapshot.Region = "us-east-1"
+	}
 }
 
 // applySlice21bDefaults fills MCPConfig timeouts. Enabled stays whatever the

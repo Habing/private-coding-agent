@@ -108,4 +108,8 @@ var (
 	ErrPathOutsideWorkspace = errors.New("path outside /workspace")
 	ErrNotImplemented       = errors.New("not implemented")
 	ErrTooLarge             = errors.New("payload too large")
+	// ErrSnapshotDisabled is returned by Runtime.Snapshot when the slice-22b
+	// snapshot subsystem is gated off via PCA_SNAPSHOT_ENABLED=false. The
+	// handler maps it to HTTP 503 snapshot_disabled.
+	ErrSnapshotDisabled = errors.New("snapshot subsystem disabled")
 )
