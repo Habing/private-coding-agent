@@ -6,6 +6,7 @@ import { MessageList } from '@/components/MessageList'
 import { SandboxFiles } from '@/components/SandboxFiles'
 import { useChatSocket } from '@/hooks/useChatSocket'
 import { api } from '@/lib/api'
+import { profileLabel } from '@/lib/profileLabels'
 import { useAuthStore } from '@/stores/auth'
 import type { MessageListResponse, Session } from '@/types/api'
 
@@ -26,10 +27,11 @@ export function Chat() {
     enabled: !!id && !!token,
   })
 
-  const { status, events, errorMessage, sendUserMessage } = useChatSocket(id)
+  const { status, events, errorMessage, awaitingReply, sendUserMessage } =
+    useChatSocket(id)
 
   const history = data?.messages ?? []
-  const composerDisabled = status !== 'open'
+  const composerDisabled = status !== 'open' || awaitingReply
 
   return (
     <div className="flex h-full">
@@ -40,11 +42,16 @@ export function Chat() {
         {isLoading ? (
           <div className="flex-1 px-4 py-3 text-xs text-muted-foreground">加载中…</div>
         ) : (
-          <MessageList history={history} events={events} />
+          <MessageList
+            history={history}
+            events={events}
+            awaitingReply={awaitingReply}
+          />
         )}
         <Composer
           onSend={(content) => sendUserMessage(content)}
           disabled={composerDisabled}
+          placeholder={awaitingReply ? '等待回复中…' : '输入消息…'}
         />
       </div>
       <aside className="flex w-64 shrink-0 flex-col border-l bg-muted/20">
@@ -56,8 +63,13 @@ export function Chat() {
               <dd className="inline font-mono text-[10px]">{session?.model ?? '—'}</dd>
             </div>
             <div>
-              <dt className="inline">Profile </dt>
-              <dd className="inline font-mono text-[10px]">{session?.profile ?? '—'}</dd>
+              <dt className="inline">智能体 </dt>
+              <dd
+                className="inline text-[10px]"
+                title={session?.profile}
+              >
+                {session?.profile ? profileLabel(session.profile) : '—'}
+              </dd>
             </div>
             {session?.sandbox_id && (
               <div>

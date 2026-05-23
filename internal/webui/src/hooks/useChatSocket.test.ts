@@ -59,6 +59,7 @@ describe('useChatSocket', () => {
         kind: 'user',
         text: 'hi',
       })
+      expect(result.current.awaitingReply).toBe(true)
     } finally {
       server.close()
     }
@@ -85,14 +86,20 @@ describe('useChatSocket', () => {
     }
   })
 
-  it('sets status closed on done frame', async () => {
+  it('clears awaitingReply on done frame', async () => {
     const server = new Server(WS_URL)
     server.on('connection', (sock) => {
-      sock.send(JSON.stringify({ type: 'done' }))
+      sock.on('message', () => {
+        sock.send(JSON.stringify({ type: 'done' }))
+      })
     })
     try {
       const { result } = renderHook(() => useChatSocket(sessionID))
-      await waitFor(() => expect(result.current.lastDoneSeq).not.toBeNull())
+      await waitFor(() => expect(result.current.status).toBe('open'))
+      act(() => result.current.sendUserMessage('hi'))
+      await waitFor(() => expect(result.current.awaitingReply).toBe(true))
+      await waitFor(() => expect(result.current.awaitingReply).toBe(false))
+      expect(result.current.lastDoneSeq).not.toBeNull()
     } finally {
       server.close()
     }

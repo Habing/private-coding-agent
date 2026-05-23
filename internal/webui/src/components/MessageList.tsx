@@ -1,12 +1,15 @@
 import { useEffect, useRef } from 'react'
 
 import { ToolCallCard } from '@/components/ToolCallCard'
+import { TypingIndicator } from '@/components/TypingIndicator'
+import { shouldShowWaitingIndicator } from '@/lib/chatWaiting'
 import { cn } from '@/lib/utils'
 import type { AgentEvent, Message } from '@/types/api'
 
 export interface MessageListProps {
   history: Message[]
   events: AgentEvent[]
+  awaitingReply?: boolean
 }
 
 function UserBubble({ text }: { text: string }) {
@@ -19,15 +22,22 @@ function UserBubble({ text }: { text: string }) {
   )
 }
 
-function AssistantBubble({ text }: { text: string }) {
+function AssistantBubble({ text, streaming }: { text: string; streaming?: boolean }) {
   return (
     <div className="flex justify-start">
       <div
         className={cn(
           'max-w-[80%] whitespace-pre-wrap rounded-2xl border bg-card px-3 py-2 text-sm',
+          streaming && 'border-primary/30 shadow-sm',
         )}
       >
         {text}
+        {streaming && (
+          <span
+            className="ml-0.5 inline-block h-[1em] w-0.5 animate-pulse bg-primary align-[-0.15em]"
+            aria-hidden="true"
+          />
+        )}
       </div>
     </div>
   )
@@ -84,14 +94,14 @@ function appendAssistantText(items: RenderItem[], key: string, chunk: string) {
   const last = items[items.length - 1]
   if (last?.streaming) {
     last.streamText = (last.streamText ?? '') + chunk
-    last.node = <AssistantBubble text={last.streamText} />
+    last.node = <AssistantBubble text={last.streamText} streaming />
     return
   }
   items.push({
     key,
     streaming: true,
     streamText: chunk,
-    node: <AssistantBubble text={chunk} />,
+    node: <AssistantBubble text={chunk} streaming />,
   })
 }
 
@@ -189,17 +199,22 @@ function extractCall(events: AgentEvent[], id: string): AgentEvent | undefined {
   return events.find((e) => e.kind === 'tool_call' && e.tool_call_id === id)
 }
 
-export function MessageList({ history, events }: MessageListProps) {
+export function MessageList({
+  history,
+  events,
+  awaitingReply = false,
+}: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null)
+
+  const eventItems = buildEventItems(events)
+  const showWaiting = shouldShowWaitingIndicator(events, awaitingReply)
+  const empty = history.length === 0 && eventItems.length === 0 && !showWaiting
 
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
     el.scrollTop = el.scrollHeight
-  }, [history, events])
-
-  const eventItems = buildEventItems(events)
-  const empty = history.length === 0 && eventItems.length === 0
+  }, [history, events, showWaiting])
 
   return (
     <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
@@ -209,6 +224,7 @@ export function MessageList({ history, events }: MessageListProps) {
       {eventItems.map((it) => (
         <div key={it.key}>{it.node}</div>
       ))}
+      {showWaiting && <TypingIndicator label="正在思考…" />}
       {empty && (
         <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
           还没有消息，发一条试试

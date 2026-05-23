@@ -1,14 +1,22 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { useAuthStore } from '@/stores/auth'
 import { server } from '@/test/mswServer'
-import type { Session } from '@/types/api'
+import type { ProfileListResponse, Session } from '@/types/api'
 
 import { Home } from './Home'
+
+const mockProfiles: ProfileListResponse = {
+  profiles: [
+    { name: 'coding', description: 'coding agent' },
+    { name: 'review', description: 'review agent' },
+  ],
+}
 
 function ChatProbe() {
   const { id } = useParams<{ id: string }>()
@@ -61,14 +69,17 @@ describe('<Home />', () => {
     useAuthStore.getState().clear()
   })
 
-  it('auto-creates and navigates when there are zero sessions', async () => {
+  it('creates and navigates when there are zero sessions', async () => {
+    const user = userEvent.setup()
     server.use(
       http.get('/sessions', () => HttpResponse.json({ sessions: [] })),
+      http.get('/agent/profiles', () => HttpResponse.json(mockProfiles)),
       http.post('/sessions', () =>
         HttpResponse.json(makeSession('s-new'), { status: 201 }),
       ),
     )
     renderHome()
+    await user.click(await screen.findByRole('button', { name: '新建会话' }))
     expect(await screen.findByTestId('chat-route')).toHaveTextContent('chat:s-new')
   })
 
@@ -77,6 +88,7 @@ describe('<Home />', () => {
       http.get('/sessions', () =>
         HttpResponse.json({ sessions: [makeSession('s1')] }),
       ),
+      http.get('/agent/profiles', () => HttpResponse.json(mockProfiles)),
     )
     renderHome()
     expect(await screen.findByText(/选择.*会话|请选择/i)).toBeInTheDocument()
@@ -87,6 +99,7 @@ describe('<Home />', () => {
       http.get('/sessions', () =>
         HttpResponse.json({ error: 'unauthorized' }, { status: 401 }),
       ),
+      http.get('/agent/profiles', () => HttpResponse.json(mockProfiles)),
     )
     renderHome()
     expect(await screen.findByTestId('login-route')).toBeInTheDocument()

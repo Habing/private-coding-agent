@@ -1,21 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ApiError, api } from '@/lib/api'
+import { profileDescription, profileLabel } from '@/lib/profileLabels'
 import { useAuthStore } from '@/stores/auth'
 import type {
   CreateTenantSkillRequest,
+  ProfileListResponse,
   ProfileSkillBinding,
   TenantSkill,
   TenantSkillListResponse,
   UpdateTenantSkillRequest,
 } from '@/types/api'
 
-const PROFILES = ['coding']
+const DEFAULT_PROFILE = 'coding'
 
 export function SkillsAdmin() {
   const token = useAuthStore((s) => s.token)
@@ -26,9 +28,16 @@ export function SkillsAdmin() {
     body: '',
     enabled: true,
   })
-  const [profile, setProfile] = useState(PROFILES[0])
+  const [profile, setProfile] = useState(DEFAULT_PROFILE)
   const [bindingDraft, setBindingDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
+
+  const profilesQ = useQuery({
+    queryKey: ['profiles'],
+    queryFn: () => api<ProfileListResponse>('/agent/profiles', { token }),
+    enabled: !!token,
+    staleTime: 5 * 60 * 1000,
+  })
 
   const { data, isLoading, error: listErr } = useQuery({
     queryKey: ['admin-skills'],
@@ -99,6 +108,16 @@ export function SkillsAdmin() {
   })
 
   const skills = data?.skills ?? []
+  const profiles = profilesQ.data?.profiles ?? []
+  const selectedProfile = profiles.find((p) => p.name === profile)
+
+  useEffect(() => {
+    if (profiles.length === 0) return
+    if (!profiles.some((p) => p.name === profile)) {
+      setProfile(profiles[0].name)
+      setBindingDraft('')
+    }
+  }, [profiles, profile])
 
   function submitCreate() {
     if (!draft.skill_key.trim() || !draft.body.trim()) return
@@ -175,12 +194,12 @@ export function SkillsAdmin() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Profile 绑定</CardTitle>
+          <CardTitle>智能体绑定</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1">
-              <Label htmlFor="profile-select">Profile</Label>
+              <Label htmlFor="profile-select">智能体类型</Label>
               <select
                 id="profile-select"
                 className="h-9 rounded-md border bg-background px-2 text-sm"
@@ -189,13 +208,23 @@ export function SkillsAdmin() {
                   setProfile(e.target.value)
                   setBindingDraft('')
                 }}
+                disabled={profilesQ.isLoading || profiles.length === 0}
               >
-                {PROFILES.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
+                {profiles.map((p) => (
+                  <option key={p.name} value={p.name}>
+                    {profileLabel(p.name)}
                   </option>
                 ))}
               </select>
+              {selectedProfile &&
+                profileDescription(selectedProfile.name, selectedProfile.description) && (
+                  <p className="max-w-xs text-xs text-muted-foreground">
+                    {profileDescription(
+                      selectedProfile.name,
+                      selectedProfile.description,
+                    )}
+                  </p>
+                )}
             </div>
             <div className="flex flex-1 flex-col gap-1 min-w-[260px]">
               <Label htmlFor="binding-keys">Skill Keys (空格或逗号分隔)</Label>
@@ -214,7 +243,7 @@ export function SkillsAdmin() {
             当前绑定:{' '}
             {bindingQ.data?.skill_keys?.length
               ? bindingQ.data.skill_keys.join(', ')
-              : '（未配置，使用 Profile 默认）'}
+              : '（未配置，使用智能体默认）'}
           </p>
         </CardContent>
       </Card>

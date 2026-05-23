@@ -5,6 +5,7 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { ApiError, api } from '@/lib/api'
+import { profileDescription, profileLabel } from '@/lib/profileLabels'
 import { useAuthStore } from '@/stores/auth'
 import type {
   CreateSessionRequest,
@@ -86,7 +87,7 @@ export function Home() {
       </div>
       <div className="flex min-w-[280px] flex-col gap-3 rounded-md border bg-card p-4">
         <div className="flex flex-col gap-1">
-          <Label htmlFor="home-profile">Profile</Label>
+          <Label htmlFor="home-profile">智能体类型</Label>
           <select
             id="home-profile"
             className="h-9 rounded-md border bg-background px-2 text-sm"
@@ -96,12 +97,14 @@ export function Home() {
           >
             {profiles.map((p) => (
               <option key={p.name} value={p.name}>
-                {p.name}
+                {profileLabel(p.name)}
               </option>
             ))}
           </select>
-          {selected?.description && (
-            <p className="text-xs text-muted-foreground">{selected.description}</p>
+          {selected && profileDescription(selected.name, selected.description) && (
+            <p className="text-xs text-muted-foreground">
+              {profileDescription(selected.name, selected.description)}
+            </p>
           )}
         </div>
         <Button onClick={() => createMut.mutate()} disabled={!canCreate}>

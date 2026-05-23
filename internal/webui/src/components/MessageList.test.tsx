@@ -114,4 +114,21 @@ describe('<MessageList />', () => {
     render(<MessageList history={[]} events={[]} />)
     expect(screen.getByText(/还没有消息/)).toBeInTheDocument()
   })
+
+  it('shows typing indicator while awaiting reply', () => {
+    const events: AgentEvent[] = [{ kind: 'user', text: 'question' }]
+    render(<MessageList history={[]} events={events} awaitingReply />)
+    expect(screen.getByRole('status')).toBeInTheDocument()
+    expect(screen.getByText('正在思考…')).toBeInTheDocument()
+  })
+
+  it('hides typing indicator once assistant streams text', () => {
+    const events: AgentEvent[] = [
+      { kind: 'user', text: 'question' },
+      { kind: 'assistant_delta', text: 'ans' },
+    ]
+    render(<MessageList history={[]} events={events} awaitingReply />)
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.getByText('ans')).toBeInTheDocument()
+  })
 })

@@ -11,6 +11,8 @@ export interface UseChatSocketResult {
   events: AgentEvent[]
   errorMessage: string | null
   lastDoneSeq: number | null
+  /** True from send until server emits done or error for that turn. */
+  awaitingReply: boolean
   sendUserMessage: (content: string) => void
   reset: () => void
 }
@@ -21,6 +23,7 @@ export function useChatSocket(sessionID: string | undefined): UseChatSocketResul
   const [events, setEvents] = useState<AgentEvent[]>([])
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [lastDoneSeq, setLastDoneSeq] = useState<number | null>(null)
+  const [awaitingReply, setAwaitingReply] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
 
@@ -47,6 +50,7 @@ export function useChatSocket(sessionID: string | undefined): UseChatSocketResul
       } else {
         setStatus('error')
         setErrorMessage((prev) => prev ?? (ev.reason || `ws closed (${ev.code})`))
+        setAwaitingReply(false)
       }
     }
     ws.onmessage = (ev) => {
@@ -61,9 +65,11 @@ export function useChatSocket(sessionID: string | undefined): UseChatSocketResul
         setEvents((es) => [...es, frame.event])
       } else if (frame.type === 'done') {
         setLastDoneSeq(frame.seq ?? -1)
+        setAwaitingReply(false)
       } else if (frame.type === 'error') {
         setStatus('error')
         setErrorMessage(frame.message)
+        setAwaitingReply(false)
       }
       // 'pong' frames are no-ops; future heartbeat could observe them.
     }
@@ -85,13 +91,23 @@ export function useChatSocket(sessionID: string | undefined): UseChatSocketResul
     if (!ws || ws.readyState !== WebSocket.OPEN) return
     ws.send(JSON.stringify({ type: 'user_message', content }))
     setEvents((es) => [...es, { kind: 'user', text: content }])
+    setAwaitingReply(true)
   }, [])
 
   const reset = useCallback(() => {
     setEvents([])
     setLastDoneSeq(null)
     setErrorMessage(null)
+    setAwaitingReply(false)
   }, [])
 
-  return { status, events, errorMessage, lastDoneSeq, sendUserMessage, reset }
+  return {
+    status,
+    events,
+    errorMessage,
+    lastDoneSeq,
+    awaitingReply,
+    sendUserMessage,
+    reset,
+  }
 }
