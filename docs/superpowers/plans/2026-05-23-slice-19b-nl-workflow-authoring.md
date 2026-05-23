@@ -30,9 +30,8 @@
 - [x] `internal/db/migrations/0024_workflow_proposals.{up,down}.sql` *(Task 1)*
 - [x] `internal/workflow/template/` — catalog、render、slot validate、NL extractor *(Task 2)*
 - [x] `internal/workflow/proposal_*.go` — Repo + Service（create / dry_run / confirm / approve）*(Task 1)*
-- [ ] `internal/workflow/tools_publish.go` — `workflow.publish`、`workflow.propose` 工具
-- [ ] `internal/agent/handler.go` — `GET /agent/workflow/templates`、`POST/GET /agent/workflow/proposals[/:id]`、`POST .../confirm`
-- [ ] `internal/workflow/handler.go` — `POST /admin/workflow/proposals/:id/approve`
+- [x] `internal/workflow/tools_publish.go` — `workflow.publish`、`workflow.propose` 工具 *(Task 3)*
+- [x] `internal/agent/workflow` via `proposal_handler.go` — templates + proposals REST *(Task 4)*
 - [ ] Orchestrator 规则 `nl-workflow-author`（config example + E2E marker）
 - [ ] Web UI：`WorkflowProposalCard` + 聊天流嵌入；`profileLabels` / 中文文案
 - [ ] Skill 更新：`skills/workflow/workflow-dsl-authoring/SKILL.md` + 新 `skills/workflow/workflow-template-authoring/SKILL.md`
@@ -138,11 +137,13 @@ Web 聊天 WorkflowProposalCard
 
 ## Task 3 — workflow.propose + workflow.publish tools
 
+**Status:** ✅ 2026-05-23 — `go test ./internal/workflow/... -run ProposalTools -count=1` PASS
+
 **Files:**
 
 - `internal/workflow/tools_publish.go`
 - `internal/workflow/tools_publish_test.go`
-- 修改 `internal/workflow/tools_admin.go` — `NewAdminTools` 追加 publish/propose
+- `workflow.NewProposalTools`（独立于 `NewAdminTools`）
 
 **`workflow.propose` input:**
 
@@ -165,19 +166,21 @@ Web 聊天 WorkflowProposalCard
 
 或 `{ "slug": "..." }`（已 dry_run 的 draft workflow，admin 快捷发布）。
 
-- [ ] admin gate 与 create 一致
-- [ ] publish 前断言 proposal.dry_run_ok
-- [ ] 审计 `workflow.proposal.confirm` + 现有 publish audit
+- [x] admin gate：`publish` 仅 admin；`propose` 任意登录用户
+- [x] publish 前断言 proposal.dry_run_ok
+- [x] 审计 `workflow.proposal.confirm` + 现有 publish audit
 
 ---
 
 ## Task 4 — HTTP handlers
 
+**Status:** ✅ 2026-05-23 — `proposal_handler_test.go` PASS；`main.go` 已挂载
+
 **Files:**
 
-- `internal/agent/workflow_handler.go` — templates + proposals CRUD/confirm
-- `internal/workflow/proposal_handler.go` — admin approve
-- `cmd/server/main.go` — 路由挂载
+- `internal/workflow/proposal_handler.go`
+- `internal/workflow/proposal_handler_test.go`
+- `cmd/server/main.go` — ProposalService + routes + ToolBus 注册
 
 | 路由 | Auth |
 |------|------|

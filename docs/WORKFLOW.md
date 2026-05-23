@@ -292,10 +292,22 @@ B+C 混合：**模板填槽（C）** + **自由 DSL（B）** → Dry-Run → 确
 
 **审计（已实现）：** `workflow.proposal.create` / `workflow.proposal.confirm` / `workflow.proposal.reject`
 
-### 8.2 待做（Task 3+）
+### 8.2 已接线 API（Task 3–4）
 
-- `workflow.propose` / `workflow.publish` 工具与 REST
-- Web 对话确认卡片、Orchestrator 规则、E2E 70–75
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/agent/workflow/templates` | 5 个内置模板 catalog |
+| POST | `/agent/workflow/proposals` | 创建 proposal + 自动 dry_run |
+| GET | `/agent/workflow/proposals/:id` | 详情 |
+| POST | `/agent/workflow/proposals/:id/confirm` | admin 发布 / member 提交审批 |
+| POST | `/admin/workflow/proposals/:id/approve` | admin 批准 |
+| POST | `/admin/workflow/proposals/:id/reject` | admin 拒绝 |
+
+**ToolBus：** `workflow.propose`（登录用户）、`workflow.publish`（仅 admin）
+
+**Profile：** `coding` 含 propose+publish；`workflow-authoring` 含 propose
+
+### 8.3 待做（Task 5+）
 
 计划：[`docs/superpowers/plans/2026-05-23-slice-19b-nl-workflow-authoring.md`](superpowers/plans/2026-05-23-slice-19b-nl-workflow-authoring.md)
 

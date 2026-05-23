@@ -366,7 +366,14 @@ func run() error {
 	workflowRepo := workflow.NewRepo(pool)
 	workflowEngine := workflow.NewEngine(workflow.BusStepRunner{Bus: toolBus}, workflow.DefaultConfig())
 	workflowService := workflow.NewService(workflowRepo, workflowEngine, toolBus, auditRepo)
+	proposalRepo := workflow.NewProposalRepo(pool)
+	proposalService := workflow.NewProposalService(proposalRepo, workflowService, auditRepo)
 	for _, t := range workflow.NewAdminTools(workflowService) {
+		if err := toolBus.Register(t); err != nil {
+			return fmt.Errorf("register %s: %w", t.Name(), err)
+		}
+	}
+	for _, t := range workflow.NewProposalTools(proposalService) {
 		if err := toolBus.Register(t); err != nil {
 			return fmt.Errorf("register %s: %w", t.Name(), err)
 		}
@@ -548,6 +555,7 @@ func run() error {
 		modelHandler.Register(protected)
 		toolHandler.Register(protected)
 		agentHandler.Register(protected)
+		workflow.NewProposalHandler(proposalService).RegisterAgent(protected)
 		sessionHandler.Register(protected)
 		memoryHandler.Register(protected)
 		skills.NewHandler(skillRegistry).WithDBLookup(skillDBRepo).Register(protected)
@@ -563,6 +571,7 @@ func run() error {
 			skills.NewAdminHandler(skillDBRepo).WithAuditSink(auditRepo).Register(adminGroup)
 		}
 		workflow.NewAdminHandler(workflowService).Register(adminGroup)
+		workflow.NewProposalHandler(proposalService).RegisterAdmin(adminGroup)
 		memory.NewAdminHandler(memoryService).WithAuditSink(auditRepo).Register(adminGroup)
 		if reflectionAdmin != nil {
 			reflectionAdmin.Register(adminGroup)

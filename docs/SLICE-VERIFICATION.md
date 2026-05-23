@@ -311,10 +311,10 @@ cd deploy/compose
 | 项 | 验证 |
 |----|------|
 | L1 Task 1 | 迁移 `0024_workflow_proposals` migrate 成功；`go test ./internal/workflow/... -run Proposal -count=1` PASS |
-| L1 Task 2 | `go test ./internal/workflow/template/... -count=1` PASS；5 模板 render → `Parse` + `Validate` |
-| L2 | `go test ./internal/workflow/... -count=1` + `go vet ./internal/workflow/...` |
-| L3 | E2E 70–75 **待 Task 3–7** |
-| 状态 | **Task 1–2 ✅**（2026-05-23）；Task 3+ 未接线 `main.go` / HTTP |
+| L1 Task 3–4 | `workflow.propose` / `workflow.publish` 注册；`GET /agent/workflow/templates`；proposal confirm/approve handler 单测 PASS |
+| L2 | `go test ./internal/workflow/... ./internal/agent/... -count=1` |
+| L3 | E2E 70–75 **待 Task 5–7** |
+| 状态 | **Task 1–4 ✅**（2026-05-23）；Task 5+ Web/orchestrator/E2E 未做 |
 
 ### 切片 23 — N8N（可选）
 
