@@ -1,12 +1,9 @@
 package sandbox
 
 import (
-	"archive/tar"
-	"bytes"
 	"context"
 	"fmt"
 	"io"
-	"path"
 	"strings"
 	"time"
 
@@ -38,53 +35,20 @@ func (d *DockerDriver) WriteFile(ctx context.Context, tenantID, id uuid.UUID, re
 		return ErrTooLarge
 	}
 
-	rel := strings.TrimPrefix(abs, workspaceRoot+"/")
-	if rel == "" || rel == abs {
+	rel := stripWorkspacePrefix(abs)
+	if rel == "" {
 		// abs == workspaceRoot itself — refuse writing to the workspace root.
 		return ErrPathOutsideWorkspace
 	}
 
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-
-	// Emit intermediate directory entries so tar -x will create them.
-	if dir := path.Dir(rel); dir != "." && dir != "/" {
-		parts := strings.Split(dir, "/")
-		acc := ""
-		for _, p := range parts {
-			if p == "" {
-				continue
-			}
-			if acc == "" {
-				acc = p
-			} else {
-				acc = acc + "/" + p
-			}
-			_ = tw.WriteHeader(&tar.Header{
-				Name:     acc + "/",
-				Mode:     0o755,
-				Typeflag: tar.TypeDir,
-			})
-		}
-	}
-
-	if err := tw.WriteHeader(&tar.Header{
-		Name: rel,
-		Mode: 0o644,
-		Size: int64(len(data)),
-	}); err != nil {
-		return fmt.Errorf("tar header: %w", err)
-	}
-	if _, err := tw.Write(data); err != nil {
-		return fmt.Errorf("tar write: %w", err)
-	}
-	if err := tw.Close(); err != nil {
-		return fmt.Errorf("tar close: %w", err)
+	tarBytes, err := buildWriteTarStream(rel, data)
+	if err != nil {
+		return err
 	}
 
 	res, err := d.Exec(ctx, tenantID, id, ExecOpts{
 		Cmd:        []string{"tar", "-x", "-C", workspaceRoot},
-		Stdin:      buf.Bytes(),
+		Stdin:      tarBytes,
 		TimeoutSec: 30,
 	})
 	if err != nil {
@@ -111,8 +75,8 @@ func (d *DockerDriver) ReadFile(ctx context.Context, tenantID, id uuid.UUID, rel
 	if err != nil {
 		return nil, err
 	}
-	rel := strings.TrimPrefix(abs, workspaceRoot+"/")
-	if rel == "" || rel == abs {
+	rel := stripWorkspacePrefix(abs)
+	if rel == "" {
 		return nil, ErrPathOutsideWorkspace
 	}
 	cid, err := d.requireContainerID(ctx, tenantID, id)
@@ -161,30 +125,7 @@ func (d *DockerDriver) ReadFile(ctx context.Context, tenantID, id uuid.UUID, rel
 		return nil, fmt.Errorf("tar create: exit=%d stderr=%q", insp.ExitCode, string(stderrBuf.Bytes()))
 	}
 
-	tr := tar.NewReader(bytes.NewReader(stdoutBuf.Bytes()))
-	hdr, err := tr.Next()
-	if err == io.EOF {
-		return nil, ErrSandboxNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("tar next: %w", err)
-	}
-	if hdr.Typeflag == tar.TypeDir {
-		return nil, fmt.Errorf("path_is_directory")
-	}
-	if hdr.Size > int64(MaxFileSize) {
-		return nil, ErrTooLarge
-	}
-
-	limit := int64(MaxFileSize) + 1
-	data, err := io.ReadAll(io.LimitReader(tr, limit))
-	if err != nil {
-		return nil, fmt.Errorf("read tar entry: %w", err)
-	}
-	if int64(len(data)) > int64(MaxFileSize) {
-		return nil, ErrTooLarge
-	}
-	return data, nil
+	return parseReadTarStream(stdoutBuf.Bytes())
 }
 
 func (d *DockerDriver) requireContainerID(ctx context.Context, tenantID, id uuid.UUID) (string, error) {
