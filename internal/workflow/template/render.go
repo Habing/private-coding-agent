@@ -64,8 +64,17 @@ type yamlDoc struct {
 	Name        string                 `yaml:"name"`
 	Description string                 `yaml:"description,omitempty"`
 	Inputs      map[string]yamlInput   `yaml:"inputs,omitempty"`
+	Triggers    []yamlTrigger          `yaml:"triggers,omitempty"`
 	Steps       []yamlStep             `yaml:"steps"`
 	Outputs     map[string]string      `yaml:"outputs,omitempty"`
+}
+
+type yamlTrigger struct {
+	ID       string         `yaml:"id"`
+	Cron     string         `yaml:"cron,omitempty"`
+	Timezone string         `yaml:"timezone,omitempty"`
+	Webhook  map[string]any `yaml:"webhook,omitempty"`
+	Inputs   map[string]any `yaml:"inputs,omitempty"`
 }
 
 type yamlInput struct {
@@ -89,9 +98,9 @@ func renderCronNotify(in RenderInput, slots map[string]any) (yamlDoc, error) {
 	args := slotObject(slots, "notify_args")
 	return yamlDoc{
 		ID: in.Slug, Name: in.Name, Description: in.Description,
-		Inputs: map[string]yamlInput{
-			"trigger_note": {Type: "string", Default: fmt.Sprintf("cron %s (trigger pending Slice 24)", cron)},
-		},
+		Triggers: []yamlTrigger{{
+			ID: "schedule", Cron: cron, Timezone: "UTC",
+		}},
 		Steps: []yamlStep{
 			{ID: "plan", Assign: map[string]string{"body": msg}},
 			{ID: "notify", Use: tool, Args: args, OnError: "fail"},
@@ -101,15 +110,17 @@ func renderCronNotify(in RenderInput, slots map[string]any) (yamlDoc, error) {
 }
 
 func renderWebhookForward(in RenderInput, slots map[string]any) (yamlDoc, error) {
-	path := slotString(slots, "webhook_path")
 	tool := slotString(slots, "forward_tool")
 	args := slotObject(slots, "forward_args")
 	return yamlDoc{
 		ID: in.Slug, Name: in.Name, Description: in.Description,
 		Inputs: map[string]yamlInput{
 			"payload": {Type: "object", Default: map[string]any{}},
-			"trigger_note": {Type: "string", Default: fmt.Sprintf("webhook /%s (trigger pending Slice 24)", path)},
 		},
+		Triggers: []yamlTrigger{{
+			ID: "inbound", Webhook: map[string]any{"enabled": true},
+			Inputs: map[string]any{"payload": map[string]any{}},
+		}},
 		Steps: []yamlStep{
 			{ID: "forward", Use: tool, Args: args, OnError: "fail"},
 		},

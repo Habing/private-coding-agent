@@ -71,7 +71,30 @@ func GraphFromDoc(doc *WorkflowDoc) *Graph {
 		return &Graph{Nodes: []GraphNode{}, Edges: []GraphEdge{}}
 	}
 	b := &graphBuilder{}
-	exits := b.runSteps(doc.Steps, []string{startNodeID}, "main")
+	preds := []string{startNodeID}
+	if len(doc.Triggers) > 0 {
+		preds = make([]string, 0, len(doc.Triggers))
+		for _, tr := range doc.Triggers {
+			nid := "trigger:" + tr.ID
+			label := tr.ID
+			kind := "trigger"
+			detail := ""
+			if tr.Cron != "" {
+				kind = "trigger-cron"
+				detail = tr.Cron
+				if tr.Timezone != "" && tr.Timezone != "UTC" {
+					detail += " (" + tr.Timezone + ")"
+				}
+			} else if tr.Webhook != nil {
+				kind = "trigger-webhook"
+				detail = "webhook"
+			}
+			b.nodes = append(b.nodes, GraphNode{ID: nid, Kind: kind, Label: label, Detail: detail})
+			b.addEdge(startNodeID, nid, "sequential", "trigger")
+			preds = append(preds, nid)
+		}
+	}
+	exits := b.runSteps(doc.Steps, preds, "main")
 	for _, from := range exits {
 		b.addEdge(from, endNodeID, "sequential", "")
 	}

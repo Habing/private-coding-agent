@@ -114,6 +114,40 @@ steps:
 	require.True(t, bDone)
 }
 
+func TestGraphFromYAML_Triggers(t *testing.T) {
+	src := `
+id: trig
+name: Trig
+triggers:
+  - id: schedule
+    cron: "0 9 * * *"
+  - id: inbound
+    webhook: {}
+steps:
+  - id: a
+    wait: 1ms
+`
+	g, err := workflow.GraphFromYAML(src)
+	require.NoError(t, err)
+	nodeIDs := map[string]bool{}
+	for _, n := range g.Nodes {
+		nodeIDs[n.ID] = true
+	}
+	require.True(t, nodeIDs["trigger:schedule"])
+	require.True(t, nodeIDs["trigger:inbound"])
+	var startCron, cronStep bool
+	for _, e := range g.Edges {
+		if e.From == "__start__" && e.To == "trigger:schedule" {
+			startCron = true
+		}
+		if e.From == "trigger:schedule" && e.To == "a" {
+			cronStep = true
+		}
+	}
+	require.True(t, startCron)
+	require.True(t, cronStep)
+}
+
 func TestGraphFromYAML_InvalidYAML(t *testing.T) {
 	_, err := workflow.GraphFromYAML("not: [valid")
 	require.Error(t, err)
