@@ -942,7 +942,7 @@ echo "$SNAP_AUDIT" | jq -e --arg t "$SNAP_ID" '.entries[] | select(.target==$t)'
 echo "  -> snapshot lifecycle ok (post-destroy session_id=null, audit recorded)"
 
 # ---- Slice 22c: seccomp profile blocks dangerous syscalls ----
-echo "[66/66] sandbox seccomp denies mount but permits normal syscalls ..."
+echo "[66/66] sandbox seccomp denies mount(2) but permits normal syscalls ..."
 
 # (a) fresh sandbox — clean slate so the SecurityOpt under test is what main
 #     boot loaded (PCA_SANDBOX_SECCOMP_ENABLED=true by default).
@@ -952,29 +952,48 @@ SEC_SID=$(echo "$SEC_SB" | jq -r .id)
 [[ -n "$SEC_SID" && "$SEC_SID" != "null" ]] \
   || { echo "seccomp probe sandbox create failed: $SEC_SB"; exit 1; }
 
-# (b) exec mount inside the sandbox — must be denied by seccomp (EPERM).
-#     `mount` is removed from every allow block in internal/sandbox/seccomp.json
-#     so the syscall hits the default ERRNO action.
+# (b) write a python ctypes probe into /workspace. Going through libc
+#     directly bypasses mount(8)'s userspace geteuid()!=0 precheck (which
+#     bails before any syscall fires) and reaches the actual mount(2)
+#     entry — where seccomp's SCMP_ACT_ERRNO returns EPERM.
+PROBE_PY=$(cat <<'PY'
+import ctypes, os, sys
+os.makedirs("/tmp/seccomp-probe", exist_ok=True)
+libc = ctypes.CDLL("libc.so.6", use_errno=True)
+ret = libc.mount(b"none", b"/tmp/seccomp-probe", b"tmpfs", 0, None)
+err = ctypes.get_errno()
+sys.stderr.write("mount(2) ret={} errno={} ({})\n".format(ret, err, os.strerror(err)))
+sys.exit(1 if ret != 0 else 2)
+PY
+)
+PROBE_B64=$(printf '%s' "$PROBE_PY" | base64 -w0 2>/dev/null || printf '%s' "$PROBE_PY" | base64)
+curl -fsS -X PUT "http://localhost:8080/sandbox/sessions/$SEC_SID/files?path=seccomp_probe.py" \
+  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d "{\"content_base64\":\"$PROBE_B64\"}" >/dev/null
+
+# (c) exec the probe — must be denied by seccomp (EPERM=1 / errno 1 →
+#     "Operation not permitted") and exit non-zero. exit=2 means the syscall
+#     UNEXPECTEDLY succeeded — fail loud.
 SEC_MOUNT=$(curl -fsS -X POST "http://localhost:8080/sandbox/sessions/$SEC_SID/exec" \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
-  -d '{"cmd":["mount","-t","tmpfs","none","/tmp/seccomp-probe"]}')
+  -d '{"cmd":["python3","/workspace/seccomp_probe.py"]}')
 SEC_EXIT=$(echo "$SEC_MOUNT" | jq -r .exit_code)
 SEC_ERR=$(echo "$SEC_MOUNT" | jq -r .stderr_base64 | base64 -d 2>/dev/null || true)
-[[ "$SEC_EXIT" -ne 0 ]] \
-  || { echo "expected mount to fail under seccomp, got exit=0: $SEC_MOUNT"; \
+[[ "$SEC_EXIT" -eq 1 ]] \
+  || { echo "expected mount(2) probe exit=1, got exit=$SEC_EXIT: $SEC_MOUNT"; \
        curl -fsS -X DELETE "http://localhost:8080/sandbox/sessions/$SEC_SID" -H "Authorization: Bearer $TOK" >/dev/null; \
        exit 1; }
-echo "$SEC_ERR" | grep -qiE "operation not permitted|permission denied|not permitted" \
-  || { echo "mount denied but stderr lacks EPERM marker: $SEC_ERR"; \
+echo "$SEC_ERR" | grep -qiE "operation not permitted" \
+  || { echo "mount(2) denied but stderr lacks EPERM marker: $SEC_ERR"; \
        curl -fsS -X DELETE "http://localhost:8080/sandbox/sessions/$SEC_SID" -H "Authorization: Bearer $TOK" >/dev/null; \
        exit 1; }
 
-# (c) regression guard — non-dangerous syscalls must still work. Write +
+# (d) regression guard — non-dangerous syscalls must still work. Write +
 #     read a workspace file through sh; if seccomp over-tightened (e.g.
 #     accidentally dropped openat/write), this whole flow would EPERM too.
 SEC_OK=$(curl -fsS -X POST "http://localhost:8080/sandbox/sessions/$SEC_SID/exec" \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
-  -d '{"cmd":["sh","-c","echo ok > /workspace/seccomp-probe && cat /workspace/seccomp-probe"]}')
+  -d '{"cmd":["sh","-c","echo ok > /workspace/seccomp-marker && cat /workspace/seccomp-marker"]}')
 OK_EXIT=$(echo "$SEC_OK" | jq -r .exit_code)
 OK_OUT=$(echo "$SEC_OK" | jq -r .stdout_base64 | base64 -d 2>/dev/null || true)
 [[ "$OK_EXIT" -eq 0 ]] \
@@ -986,11 +1005,11 @@ OK_OUT=$(echo "$SEC_OK" | jq -r .stdout_base64 | base64 -d 2>/dev/null || true)
        curl -fsS -X DELETE "http://localhost:8080/sandbox/sessions/$SEC_SID" -H "Authorization: Bearer $TOK" >/dev/null; \
        exit 1; }
 
-# (d) cleanup
+# (e) cleanup
 curl -fsS -X DELETE "http://localhost:8080/sandbox/sessions/$SEC_SID" \
   -H "Authorization: Bearer $TOK" >/dev/null
 
-echo "  -> mount denied (EPERM), sh+echo+cat regression ok"
+echo "  -> mount(2) denied (errno=EPERM), sh+echo+cat regression ok"
 
 echo
 echo "E2E PASS"

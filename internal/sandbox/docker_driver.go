@@ -355,6 +355,18 @@ func (d *DockerDriver) Destroy(ctx context.Context, tenantID, id uuid.UUID) (des
 	if err := d.repo.UpdateStatus(ctx, sb.ID, StatusDestroyed); err != nil {
 		return err
 	}
+	// 22b doc'd behavior: after the session is destroyed, snapshots that
+	// referenced it should report session_id=null. The schema FK is
+	// `ON DELETE SET NULL`, but Destroy is a status flip — not a row delete
+	// — so the FK never fires. Detach explicitly; tolerate failures (the
+	// snapshot row is still readable, just with a stale session_id) so a
+	// transient DB blip doesn't roll back a successful container teardown.
+	if d.snaps != nil {
+		if err := d.snaps.DetachSession(ctx, sb.TenantID, sb.ID); err != nil {
+			logx.FromCtx(ctx).Warn("sandbox destroy: detach snapshots",
+				"sandbox_id", sb.ID.String(), "err", err.Error())
+		}
+	}
 	if pcametrics.SandboxActive != nil {
 		pcametrics.SandboxActive.Add(ctx, -1)
 	}

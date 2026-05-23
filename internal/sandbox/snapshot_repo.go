@@ -122,6 +122,23 @@ LIMIT $2`, tenantID, limit)
 	return out, rows.Err()
 }
 
+// DetachSession nulls session_id on every snapshot row pointing at sessionID
+// (scoped to tenantID for safety). Called from DockerDriver.Destroy right
+// after the sandbox row transitions to destroyed, because the real Destroy
+// path leaves sandbox_sessions row in place — so the schema-level FK
+// `ON DELETE SET NULL` never fires. Without this hook, snapshots would keep
+// pointing at long-dead sessions and the public DTO would mislead operators.
+// Idempotent: zero matching rows is not an error.
+func (r *SnapshotRepo) DetachSession(ctx context.Context, tenantID, sessionID uuid.UUID) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE sandbox_snapshots SET session_id=NULL
+		 WHERE tenant_id=$1 AND session_id=$2`, tenantID, sessionID)
+	if err != nil {
+		return fmt.Errorf("detach session from snapshots: %w", err)
+	}
+	return nil
+}
+
 // Delete removes a snapshot row. Returns ErrSnapshotNotFound if no row
 // matched. Not exposed to HTTP in slice 22b; retained for 22b-v2 retention
 // tooling.
