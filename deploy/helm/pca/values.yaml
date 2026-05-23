@@ -85,11 +85,30 @@ config:
     maxCharsPerMessage: 500
     workerBuffer: 256
     workerTimeout: 5m
+  workflow:
+    runsRetentionDays: 90
+    retentionInterval: 24h
+    triggerPollInterval: 30s
+    triggerMaxDuePerTick: 32
+    triggerWebhookRatePerMinute: 60
   orchestrator:
     enabled: true
     injectHint: true
     defaultHint: ""
-    rules: []
+    rules:
+      - name: nl-workflow-author
+        match:
+          profile:
+            - coding
+            - workflow-authoring
+          content_regex: "(?i)(工作流|自动化|定时|每周|webhook|流程编排|workflow\\.propose)"
+        suggest:
+          type: sub_agent
+          target: workflow-authoring
+          hint: |
+            Routing hint: user may want a reusable workflow. Prefer workflow.propose
+            (template_id + slots or user_message) for common patterns; use
+            workflow.create only for custom DSL. Admin publishes via confirm — not workflow.publish from member runs.
   mcp:
     enabled: false
     heartbeatInterval: 60s

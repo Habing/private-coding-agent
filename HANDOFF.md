@@ -9,7 +9,7 @@
 | 当前 HEAD | `7c82c66` *(Slice 24 Triggers ✅；E2E **78/78**)* |
 | P1 规划 | **已落盘** — [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md) |
 | 工作区状态 | MVP-P1 17 ✅；Full-P1 18–22d2 ✅；19b/19d ✅；**Slice 24 ✅**；Compose Pilot ✅；E2E **78/78** |
-| 下一阶段 | **19c** 模板市场（可选）或 P0 并行：CI compose E2E + Helm orchestrator 同步 |
+| 下一阶段 | **19c** 模板市场（可选）或 Slice 25 Connectors |
 
 ---
 
@@ -467,8 +467,8 @@ Full P1 核心（18–22d2 + 19b + 19d）已交付；下列项在 spec / plan / 
 | # | 决策 | 现状 / 缺口 | 建议落点 |
 |---|------|-------------|----------|
 | 1 | **Workflow 触发器** | ~~无 `triggers:` DSL~~ | **Slice 24 ✅**（cron + webhook） |
-| 2 | **Helm ↔ compose 配置 parity** | `nl-workflow-author` 等 orchestrator 规则在 compose `config.example.yaml`，Helm values 未同步 | 运维债（非独立 slice） |
-| 3 | **Compose E2E 进 CI** | 本地 `test-e2e.sh` 75/75；无 GitHub Actions 自动回归 | 工程化 |
+| 2 | **Helm ↔ compose 配置 parity** | ~~`nl-workflow-author` 等 orchestrator 规则在 compose `config.example.yaml`，Helm values 未同步~~ | **✅**（`values.yaml` + configmap workflow/trigger） |
+| 3 | **Compose E2E 进 CI** | ~~本地 `test-e2e.sh` 78/78；无 GitHub Actions 自动回归~~ | **✅**（`.github/workflows/compose-e2e.yml`） |
 
 #### P1 — Workflow 产品线（19 系列延续）
 
@@ -539,7 +539,7 @@ Full P1 核心（18–22d2 + 19b + 19d）已交付；下列项在 spec / plan / 
 #### 建议执行顺序
 
 ```text
-P0: ~~Slice 24 Triggers~~ ✅ → Helm orchestrator 同步 → CI compose E2E
+P0: ~~Slice 24 Triggers~~ ✅ → ~~Helm orchestrator 同步~~ ✅ → ~~CI compose E2E~~ ✅
 P1: Slice 19c 模板市场 → proposal Admin 页 → Slice 25 Connectors
 P1: 19d-v2 run overlay / wait_event / 版本 diff（按产品需求择一）
 P2: 记忆 Hybrid + Tenant memory + 安全 cosign/trivy 深化

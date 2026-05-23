@@ -192,6 +192,10 @@ kind delete cluster --name pca-local
 
 CI 上的 `.github/workflows/kind-nightly.yml` 每天 03:17 UTC 跑同一脚本；手动触发 `gh workflow run kind-nightly.yml` 也行。
 
+Compose 全量 **78 步** E2E（docker driver）见 `.github/workflows/compose-e2e.yml`（PR/push main + 每日 04:30 UTC）。
+
+Helm `values.yaml` 已与 compose `config.example.yaml` 对齐 **workflow trigger** 与 **orchestrator `nl-workflow-author`** 规则（configmap 渲染）。
+
 `values-kind.yaml` 关键差异：`image.pullPolicy=Never`（依赖 kind load）、storageClassName=`standard`（kind 自带）、resources 缩小、log_level=debug、`secrets.jwtSecret` 是公开测试值（**禁止生产用**）。
 
 ---

@@ -63,6 +63,12 @@ data:
       max_chars_per_message: {{ .Values.config.reflection.maxCharsPerMessage }}
       worker_buffer: {{ .Values.config.reflection.workerBuffer }}
       worker_timeout: {{ .Values.config.reflection.workerTimeout }}
+    workflow:
+      runs_retention_days: {{ .Values.config.workflow.runsRetentionDays }}
+      retention_interval: {{ .Values.config.workflow.retentionInterval }}
+      trigger_poll_interval: {{ .Values.config.workflow.triggerPollInterval }}
+      trigger_max_due_per_tick: {{ .Values.config.workflow.triggerMaxDuePerTick }}
+      trigger_webhook_rate_per_minute: {{ .Values.config.workflow.triggerWebhookRatePerMinute }}
     orchestrator:
       enabled: {{ .Values.config.orchestrator.enabled }}
       inject_hint: {{ .Values.config.orchestrator.injectHint }}

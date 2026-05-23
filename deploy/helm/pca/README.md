@@ -41,5 +41,7 @@ within `pca-sandboxes`.
 | `sandbox.network` | internal | `internal` \| `bridge` \| `none` — affects which NP applies |
 | `networkPolicy.enabled` | true | false → skip every NP (dev only) |
 | `config.sandbox.k8s.namespace` | pca-sandboxes | Must equal `rbac.sandboxNamespace` |
+| `config.workflow.*` | see values.yaml | Slice 24 trigger scheduler + runs retention (mirrors compose) |
+| `config.orchestrator.rules` | nl-workflow-author | Pre-Run routing hints; extend in values override |
 
 See `docs/DEPLOY-K8S.md` for the full production checklist and troubleshooting.
