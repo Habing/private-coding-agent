@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pca.serverFullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "pca.serverSelectorLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "pca.serverSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pca.serverSelectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "pca.serviceAccountName" . }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: server
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.config.server.port }}
+              protocol: TCP
+          env:
+            - name: PCA_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pca.secretName" . }}
+                  key: db_password
+            - name: PCA_DB_DSN
+              value: "{{ include "pca.postgresDsn" . }}"
+            - name: PCA_REDIS_ADDR
+              value: "{{ include "pca.redisAddr" . }}"
+            - name: PCA_AUTH_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pca.secretName" . }}
+                  key: jwt_secret
+            {{- if .Values.secrets.oidcClientSecret }}
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pca.secretName" . }}
+                  key: oidc_client_secret
+            {{- end }}
+            {{- if .Values.secrets.snapshotAccessKey }}
+            - name: PCA_SNAPSHOT_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pca.secretName" . }}
+                  key: snapshot_access_key
+            {{- end }}
+            {{- if .Values.secrets.snapshotSecretKey }}
+            - name: PCA_SNAPSHOT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pca.secretName" . }}
+                  key: snapshot_secret_key
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config/config.yaml
+              subPath: config.yaml
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "pca.serverFullname" . }}-config
+            items:
+              - key: config.yaml
+                path: config.yaml
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

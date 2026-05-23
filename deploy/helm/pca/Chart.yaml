@@ -1,0 +1,15 @@
+apiVersion: v2
+name: pca
+description: Private Coding Agent — server + K8sDriver sandbox (slice 22d2)
+type: application
+version: 0.1.0
+appVersion: "22d2"
+kubeVersion: ">=1.30.0"
+keywords:
+  - llm
+  - coding-agent
+  - sandbox
+  - private
+home: https://github.com/anthropics/private-coding-agent
+maintainers:
+  - name: PCA Dev

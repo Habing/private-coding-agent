@@ -1,0 +1,10 @@
+{{- include "pca.assertions" . -}}
+{{- if and .Values.rbac.create .Values.rbac.createSandboxNamespace -}}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.rbac.sandboxNamespace }}
+  labels:
+    {{- include "pca.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox-namespace
+{{- end -}}

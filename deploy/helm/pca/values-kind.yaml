@@ -1,0 +1,49 @@
+# Overrides for the kind nightly workflow.
+#
+# Loaded via `helm install pca ./deploy/helm/pca -f values-kind.yaml` after
+# the workflow has `kind load docker-image`-ed pca-server:kind-latest and
+# pca/sandbox:base into the cluster.
+
+image:
+  repository: pca-server
+  tag: kind-latest
+  pullPolicy: Never             # image is pre-loaded; never try to pull
+
+replicaCount: 1
+
+# Fixed test JWT secret — 32+ chars, predictable so kind-e2e.sh can sign
+# its own tokens if needed. NEVER reuse in production.
+secrets:
+  jwtSecret: kind-nightly-jwt-secret-do-not-use-in-prod
+  dbPassword: changeme
+
+# Squeeze resources so the server fits comfortably on a single kind node
+# alongside PG, Redis, and the sandbox Pod.
+resources:
+  limits:
+    cpu: "1"
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+postgres:
+  enabled: true
+  storage:
+    size: 1Gi
+    storageClassName: standard  # kind ships with rancher.io/local-path
+
+redis:
+  enabled: true
+
+sandbox:
+  network: internal             # exercise NetworkPolicy=internal path
+
+networkPolicy:
+  enabled: true
+
+config:
+  observability:
+    logLevel: debug
+  quota:
+    sandboxMaxActive: 2

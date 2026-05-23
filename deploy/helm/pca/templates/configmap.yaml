@@ -1,0 +1,87 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pca.serverFullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "pca.serverSelectorLabels" . | nindent 4 }}
+data:
+  config.yaml: |
+    server:
+      port: {{ .Values.config.server.port }}
+      mode: {{ .Values.config.server.mode }}
+      ws_allowed_origins: {{ .Values.config.server.wsAllowedOrigins | toJson }}
+      read_timeout: {{ .Values.config.server.readTimeout }}
+      idle_timeout: {{ .Values.config.server.idleTimeout }}
+    # db.dsn / redis.addr are intentionally omitted from the ConfigMap so
+    # that the chart can compose them from Secret references at container
+    # startup via Pod-level env $(VAR) expansion. See the Deployment for
+    # PCA_DB_DSN / PCA_REDIS_ADDR.
+    auth:
+      jwt_ttl: {{ .Values.config.auth.jwtTtl }}
+      local_enabled: {{ .Values.config.auth.localEnabled }}
+      oidc:
+        enabled: {{ .Values.config.auth.oidc.enabled }}
+        issuer: {{ .Values.config.auth.oidc.issuer | quote }}
+        client_id: {{ .Values.config.auth.oidc.clientId | quote }}
+        client_secret_env: {{ .Values.config.auth.oidc.clientSecretEnv | quote }}
+        redirect_url: {{ .Values.config.auth.oidc.redirectUrl | quote }}
+        tenant_slug: {{ .Values.config.auth.oidc.tenantSlug | quote }}
+    telemetry:
+      service_name: {{ .Values.config.telemetry.serviceName | quote }}
+      otlp_endpoint: {{ .Values.config.telemetry.otlpEndpoint | quote }}
+    observability:
+      log_format: {{ .Values.config.observability.logFormat | quote }}
+      log_level: {{ .Values.config.observability.logLevel | quote }}
+      metrics_token: {{ .Values.config.observability.metricsToken | quote }}
+    skills:
+      enabled: {{ .Values.config.skills.enabled }}
+      dirs: {{ .Values.config.skills.dirs | toJson }}
+      default_skill_ids: {{ .Values.config.skills.defaultSkillIds | toJson }}
+      max_injected_chars: {{ .Values.config.skills.maxInjectedChars }}
+      max_skills_per_run: {{ .Values.config.skills.maxSkillsPerRun }}
+      hot_reload: {{ .Values.config.skills.hotReload }}
+    providers:
+      disallow_global_fallback: {{ .Values.config.providers.disallowGlobalFallback }}
+    quota:
+      llm_tokens_per_day: {{ .Values.config.quota.llmTokensPerDay }}
+      sandbox_max_active: {{ .Values.config.quota.sandboxMaxActive }}
+      tool_invoke_per_minute: {{ .Values.config.quota.toolInvokePerMinute }}
+    rate_limit:
+      per_minute: {{ .Values.config.rateLimit.perMinute }}
+    memory:
+      embedding_model: {{ .Values.config.memory.embeddingModel | quote }}
+      dedup_threshold: {{ .Values.config.memory.dedupThreshold }}
+      embed_on_write: {{ .Values.config.memory.embedOnWrite }}
+      inject_top_k: {{ .Values.config.memory.injectTopK }}
+      inject_max_chars: {{ .Values.config.memory.injectMaxChars }}
+    reflection:
+      enabled: {{ .Values.config.reflection.enabled }}
+      model: {{ .Values.config.reflection.model | quote }}
+      auto_approve_threshold: {{ .Values.config.reflection.autoApproveThreshold }}
+      max_messages_per_session: {{ .Values.config.reflection.maxMessagesPerSession }}
+      max_chars_per_message: {{ .Values.config.reflection.maxCharsPerMessage }}
+      worker_buffer: {{ .Values.config.reflection.workerBuffer }}
+      worker_timeout: {{ .Values.config.reflection.workerTimeout }}
+    orchestrator:
+      enabled: {{ .Values.config.orchestrator.enabled }}
+      inject_hint: {{ .Values.config.orchestrator.injectHint }}
+      default_hint: {{ .Values.config.orchestrator.defaultHint | quote }}
+      rules: {{ .Values.config.orchestrator.rules | toJson }}
+    mcp:
+      enabled: {{ .Values.config.mcp.enabled }}
+      heartbeat_interval: {{ .Values.config.mcp.heartbeatInterval }}
+      invoke_timeout: {{ .Values.config.mcp.invokeTimeout }}
+      list_tools_timeout: {{ .Values.config.mcp.listToolsTimeout }}
+    sandbox:
+      driver: {{ .Values.config.sandbox.driver | quote }}
+      seccomp_enabled: {{ .Values.config.sandbox.seccompEnabled }}
+      k8s:
+        namespace: {{ .Values.config.sandbox.k8s.namespace | quote }}
+        in_cluster: {{ .Values.config.sandbox.k8s.inCluster }}
+        kubeconfig: {{ .Values.config.sandbox.k8s.kubeconfig | quote }}
+        service_account: {{ .Values.config.sandbox.k8s.serviceAccount | quote }}
+        seccomp_localhost_profile: {{ .Values.config.sandbox.k8s.seccompLocalhostProfile | quote }}
+        pod_ready_timeout_sec: {{ .Values.config.sandbox.k8s.podReadyTimeoutSec }}
+    snapshot:
+      enabled: {{ .Values.config.snapshot.enabled }}

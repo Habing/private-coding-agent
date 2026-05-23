@@ -1,0 +1,44 @@
+{{- if .Values.networkPolicy.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "pca.fullname" . }}-sandbox-internal
+  namespace: {{ .Values.rbac.sandboxNamespace }}
+  labels:
+    {{- include "pca.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      pca.network: internal
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow server pod -> sandbox pod (SPDY exec via kube-apiserver does NOT
+    # transit pod network, but if user code in sandbox listens for callbacks
+    # from server we allow that here)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              {{- include "pca.serverSelectorLabels" . | nindent 14 }}
+  egress:
+    # DNS within cluster only
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Egress to server pod (release ns) only — block public internet
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              {{- include "pca.serverSelectorLabels" . | nindent 14 }}
+{{- end -}}

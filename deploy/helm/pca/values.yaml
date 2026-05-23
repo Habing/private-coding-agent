@@ -1,0 +1,197 @@
+# Production defaults for the pca Helm chart.
+#
+# Two namespaces are involved:
+#   - The release namespace (set via `helm install -n <ns>`) holds the server,
+#     ConfigMap, Secret, in-cluster PG/Redis (when enabled), and the server's
+#     ServiceAccount.
+#   - `rbac.sandboxNamespace` (default "pca-sandboxes") is where K8sDriver
+#     creates sandbox Pods. Server SA gets a Role only in that namespace.
+#
+# `config.sandbox.k8s.namespace` MUST equal `rbac.sandboxNamespace` —
+# templates/_helpers.tpl asserts this; mismatched values fail rendering.
+
+image:
+  repository: pca-server
+  tag: ""                       # default = Chart.AppVersion
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+replicaCount: 1
+
+serviceAccount:
+  create: true
+  name: ""                      # default = generated from fullname
+
+rbac:
+  create: true
+  sandboxNamespace: pca-sandboxes
+  # When true, chart owns the sandbox Namespace too. Set false if your
+  # platform team owns namespace lifecycle (sealed-secrets, GitOps, etc.).
+  createSandboxNamespace: true
+
+# Inline config rendered into the server's /app/config/config.yaml ConfigMap.
+# Field names mirror config/config.example.yaml. Secrets (jwt/db pw/etc.) are
+# pulled from env via the Secret block — never put them in `config`.
+config:
+  server:
+    port: 8080
+    mode: release
+    wsAllowedOrigins: ["*"]
+    readTimeout: 30s
+    idleTimeout: 120s
+  auth:
+    localEnabled: false
+    jwtTtl: 24h
+    oidc:
+      enabled: false
+      issuer: ""
+      clientId: ""
+      clientSecretEnv: OIDC_CLIENT_SECRET
+      redirectUrl: ""
+      tenantSlug: default
+  telemetry:
+    serviceName: private-coding-agent
+    otlpEndpoint: ""
+  observability:
+    logFormat: json
+    logLevel: info
+    metricsToken: ""
+  skills:
+    enabled: true
+    dirs: ["/app/skills"]
+    defaultSkillIds: []
+    maxInjectedChars: 24000
+    maxSkillsPerRun: 5
+    hotReload: false
+  providers:
+    disallowGlobalFallback: false
+  quota:
+    llmTokensPerDay: 200000
+    sandboxMaxActive: 5
+    toolInvokePerMinute: 120
+  rateLimit:
+    perMinute: 600
+  memory:
+    embeddingModel: default-mock:text
+    dedupThreshold: 0.92
+    embedOnWrite: true
+    injectTopK: 5
+    injectMaxChars: 4000
+  reflection:
+    enabled: false
+    model: default-mock:gpt-4o
+    autoApproveThreshold: 0.85
+    maxMessagesPerSession: 20
+    maxCharsPerMessage: 500
+    workerBuffer: 256
+    workerTimeout: 5m
+  orchestrator:
+    enabled: true
+    injectHint: true
+    defaultHint: ""
+    rules: []
+  mcp:
+    enabled: false
+    heartbeatInterval: 60s
+    invokeTimeout: 30s
+    listToolsTimeout: 10s
+  sandbox:
+    driver: k8s
+    # In K8s mode, seccompEnabled is ignored — use seccompLocalhostProfile.
+    seccompEnabled: false
+    k8s:
+      namespace: pca-sandboxes
+      inCluster: true
+      kubeconfig: ""
+      serviceAccount: ""
+      seccompLocalhostProfile: ""
+      podReadyTimeoutSec: 60
+  snapshot:
+    enabled: false              # K8sDriver always returns ErrSnapshotDisabled
+
+# Secrets handed to the server via env. When `existing` is non-empty, the
+# chart skips its own Secret and pulls every env var from the referenced
+# Secret instead — recommended for prod with sealed-secrets / external-secrets.
+secrets:
+  existing: ""
+  # Required when existing is empty. Must be at least 32 chars; the server
+  # rejects shorter or placeholder values on boot.
+  jwtSecret: ""
+  dbPassword: changeme
+  oidcClientSecret: ""
+  snapshotAccessKey: ""
+  snapshotSecretKey: ""
+
+postgres:
+  enabled: true
+  image: pgvector/pgvector:pg16
+  storage:
+    size: 5Gi
+    storageClassName: ""
+  externalDsn: ""               # non-empty → chart-managed PG is skipped
+
+redis:
+  enabled: true
+  image: redis:7-alpine
+  storage:
+    size: 1Gi
+    storageClassName: ""
+  externalAddr: ""              # non-empty → chart-managed Redis is skipped
+
+sandbox:
+  # Sandbox container image used by K8sDriver.buildPod. Must be present on
+  # every node (preload via `kind load` / private registry pull secret).
+  image: pca/sandbox:base
+  # K8sDriver labels each Pod with `pca.network=<mode>`; the matching
+  # NetworkPolicy template applies. `bridge` skips NP entirely.
+  network: internal             # internal | bridge | none
+
+networkPolicy:
+  enabled: true
+  # Server pod needs egress to the LLM provider / OIDC issuer / external MCP
+  # endpoints. Flip to false for strict isolation (air-gap or offline-only
+  # deployments using only chart-managed PG/Redis).
+  allowExternalEgress: true
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources:
+  limits:
+    cpu: "2"
+    memory: 1Gi
+  requests:
+    cpu: 200m
+    memory: 256Mi
+
+probes:
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    failureThreshold: 3
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    failureThreshold: 3
+
+# Reserved for future ServiceMonitor / PodDisruptionBudget / HPA — 22d-v2.
+serviceMonitor:
+  enabled: false
+podDisruptionBudget:
+  enabled: false
+
+# Extra env vars injected verbatim into the server container. Useful for
+# DASHSCOPE_API_KEY or other provider keys that don't fit the secrets block.
+extraEnv: []
+# - name: DASHSCOPE_API_KEY
+#   valueFrom:
+#     secretKeyRef:
+#       name: dashscope
+#       key: api-key
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
