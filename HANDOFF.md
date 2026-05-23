@@ -6,10 +6,10 @@
 | 项目根 | `F:\project\private-coding-agent` |
 | Git module | `github.com/yourorg/private-coding-agent` |
 | 当前日期 | 2026-05-24 |
-| 当前 HEAD | `31c147f` *(19d Viz + 19b NL + backlog 文档；compose E2E **75/75**)* |
+| 当前 HEAD | `537280e` *(Full P1 核心 ✅；**Slice 24 Triggers** spec/plan 已落盘)* |
 | P1 规划 | **已落盘** — [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md) |
-| 工作区状态 | MVP-P1 17 ✅；Full-P1 18–22d2 ✅；Slice 19b NL ✅；**Slice 19d Viz ✅**；Compose Pilot #11–#15 ✅；compose E2E **75/75** + kind nightly 6 步独立 |
-| 下一阶段 | **Slice 24** triggers（cron/webhook）或 **19c** 模板市场（可选）；19d-v2 run overlay；Helm orchestrator 规则同步 |
+| 工作区状态 | MVP-P1 17 ✅；Full-P1 18–22d2 ✅；19b/19d ✅；Compose Pilot ✅；E2E **75/75** |
+| 下一阶段 | **Slice 24** Workflow Triggers（cron + webhook）→ Task 1 migration；并行：CI E2E + Helm orchestrator 同步 |
 
 ---
 
@@ -546,7 +546,9 @@ P2: 记忆 Hybrid + Tenant memory + 安全 cosign/trivy 深化
 P3: 12c / LDAP / logs UI / 可视化编辑器（除非战略转向）
 ```
 
-与 §5.1「下一阶段」一致：**Slice 24** 或 **19c** 二选一开工；**19d-v2**、Helm 同步可并行小步交付。
+与 §5.1「下一阶段」一致：**Slice 24** 为主线；**19c** 让位；Helm 同步 / CI E2E 可并行。
+
+**Slice 24 入口：** [`plans/2026-05-24-slice-24-workflow-triggers.md`](docs/superpowers/plans/2026-05-24-slice-24-workflow-triggers.md) Task 1（migration）。
 
 ---
 

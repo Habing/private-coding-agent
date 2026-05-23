@@ -66,8 +66,9 @@ Gate (G1–G4) ──► Slice 13–17 MVP-P1 ──► Slice 18–23 Full P1
 | **21** | 编排路由 + External MCP | 18, 19 | [`plans/2026-05-21-slice-21-orchestration-mcp.md`](superpowers/plans/2026-05-21-slice-21-orchestration-mcp.md) |
 | **22** | K8s + 安全深化 | 14, MVP | [`plans/2026-05-21-slice-22-k8s-production.md`](superpowers/plans/2026-05-21-slice-22-k8s-production.md) |
 | **23** | N8N（可选） | 19 | [`plans/2026-05-21-slice-23-n8n-optional.md`](superpowers/plans/2026-05-21-slice-23-n8n-optional.md) — **⏭️ 跳过**（2026-05-23，非硬需求） |
+| **24** | Workflow Triggers | 19b | [`plans/2026-05-24-slice-24-workflow-triggers.md`](superpowers/plans/2026-05-24-slice-24-workflow-triggers.md) — **🚧 主线** |
 
-**19 可拆**：19a Engine ✅ + **19b Web UI ✅** + **19b NL Authoring (B+C) ✅** [`plans/2026-05-23-slice-19b-nl-workflow-authoring.md`](superpowers/plans/2026-05-23-slice-19b-nl-workflow-authoring.md) + **19d Visualization ✅** [`plans/2026-05-24-slice-19d-workflow-visualization.md`](superpowers/plans/2026-05-24-slice-19d-workflow-visualization.md) + **19c（可选：模板市场 + 版本 diff）**。  
+**19 可拆**：19a Engine ✅ + **19b Web UI ✅** + **19b NL Authoring (B+C) ✅** + **19d Visualization ✅** + **24 Triggers（进行中）** [`plans/2026-05-24-slice-24-workflow-triggers.md`](superpowers/plans/2026-05-24-slice-24-workflow-triggers.md) + **19c（可选：模板市场 + 版本 diff）**。  
 **23 可选**：不做仍可达 Full P1「核心」；需法务确认 N8N 许可证。
 
 ---

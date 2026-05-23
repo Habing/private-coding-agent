@@ -272,7 +272,7 @@ ToolBus 提供 4 个 admin-only 工具供 Agent 在会话里写 DSL 草稿，**p
 - **NL→DSL**：`workflow.propose` / `workflow.create` + 模板 catalog（Slice 19b NL）；publish 走 confirm / `workflow.publish`
 - **没有 versions 表**：单行 + `version int` 单调递增；历史靠 audit + `workflow_runs.version_at_run` 还原
 - **没有 `wait_event`**：事件挂起节点要等 Slice 20 Reflection 配套
-- **没有 trigger**：cron/webhook/event 触发等 P2
+- **没有 trigger（v1）**：cron/webhook 见 **Slice 24**（[`§10`](#10-触发器-slice-24-进行中)）；event 触发仍 P2
 - **没有 step-level trace 落盘**：详情靠 OTel；workflow_runs 不存每节点日志
 - **表达式简化**：不支持算术 / 字符串函数 / 嵌套括号；现实负载够用
 
@@ -336,7 +336,7 @@ B+C 混合：**模板填槽（C）** + **自由 DSL（B）** → Dry-Run → 对
 
 ### 8.5 已知限制 / 后续
 
-- 无 cron/webhook **triggers**（Slice 24）
+- 无 cron/webhook **triggers**（→ Slice 24 §10）
 - 模板 notify 占位 `llm.chat`；Slack 等连接器（Slice 25）
 - template classify v1 为关键词规则；embedding 分类推 P2
 - 无 `workflow_proposal` 专用 SSE 事件（Web UI 解析 `tool_result`）
@@ -383,6 +383,41 @@ curl -s -X POST http://localhost:8080/admin/workflows/graph-preview \
   -d '{"dsl_yaml":"id: x\nname: X\nsteps:\n  - id: a\n    assign:\n      v: \"1\"\n"}' \
   | jq '.nodes | length'   # 期望 ≥3（start + a + end）
 ```
+
+---
+
+## 10. 触发器（Slice 24 🚧）
+
+> **状态：** spec/plan 已批准，实现进行中。设计：[`2026-05-24-slice-24-workflow-triggers-design.md`](superpowers/specs/2026-05-24-slice-24-workflow-triggers-design.md)
+
+### 10.1 DSL（计划）
+
+```yaml
+triggers:
+  - id: weekday-morning
+    cron: "0 9 * * 1-5"
+    timezone: UTC
+    inputs:
+      channel: team
+  - id: inbound-hook
+    webhook: {}
+    inputs:
+      payload: {}
+```
+
+### 10.2 计划 API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| — | `POST /hooks/workflow/:token` | Webhook 触发（无 JWT） |
+| GET | `/admin/workflows/:slug/triggers` | 列表 + webhook URL |
+| POST | `/admin/workflows/:slug/triggers/:id/run` | 手动触发（调试） |
+
+Publish 时从 DSL 同步 `workflow_triggers` 表；unpublish 禁用触发器。
+
+### 10.3 E2E
+
+compose 步骤 **76–78**（见 plan Task 9）。
 
 ---
 
