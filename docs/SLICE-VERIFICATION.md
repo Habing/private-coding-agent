@@ -327,15 +327,15 @@ cd deploy/compose
 | 计划 | [`superpowers/plans/2026-05-24-slice-19d-workflow-visualization.md`](superpowers/plans/2026-05-24-slice-19d-workflow-visualization.md) |
 | 状态 | **✅**（2026-05-24）；commits `833f110` + `d192a77` |
 
-### 切片 24 — Workflow Triggers（🚧 主线）
+### 切片 24 — Workflow Triggers（✅）
 
 | 项 | 验证 |
 |----|------|
 | 设计 | [`specs/2026-05-24-slice-24-workflow-triggers-design.md`](superpowers/specs/2026-05-24-slice-24-workflow-triggers-design.md) |
 | 计划 | [`plans/2026-05-24-slice-24-workflow-triggers.md`](superpowers/plans/2026-05-24-slice-24-workflow-triggers.md) |
-| L3 增量 | E2E **[76–78]**（cron auto-run、webhook POST、unpublish 失效） |
-| 范围 | DSL `triggers:`；`workflow_triggers` 表；scheduler；`POST /hooks/workflow/:token` |
-| 状态 | **spec/plan 已批准；Task 1 待开工** |
+| L3 增量 | E2E **[76–78]**（cron manual run、webhook POST、unpublish 失效） |
+| 范围 | DSL `triggers:`；`workflow_triggers`；scheduler；`POST /hooks/workflow/:token`；Web UI 触发器面板 |
+| 状态 | **✅**（2026-05-24）；commits `6086c45`…`7c82c66` + Task 8–9 |
 
 ### 切片 19c — 模板市场（可选，未开工）
 
@@ -438,7 +438,7 @@ cd deploy/compose
 | 19b-web | —（Workflows/Toolbox Web UI；L1/L2 + 手工冒烟） |
 | 19b-nl | 70–75 |
 | 19d-viz | —（只读流程图；L1/L2 + [`WORKFLOW.md`](WORKFLOW.md) §9.3 手工） |
-| 24-triggers | 76–78（待实现） |
+| 24-triggers | 76–78 ✅ |
 | 19c | —（可选：模板市场；未开工） |
 | 20 | 61 |
 | 21a | 62 |
@@ -449,4 +449,4 @@ cd deploy/compose
 | 22d1 | 67 |
 | 22d2 | — (Helm chart + kind nightly；compose 步号不增) |
 | 23 | 68+（可选） |
-| **Full P1 全量** | **1–75**（24 完成后 **1–78**） |
+| **Full P1 全量** | **1–78** |

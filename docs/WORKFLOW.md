@@ -386,11 +386,11 @@ curl -s -X POST http://localhost:8080/admin/workflows/graph-preview \
 
 ---
 
-## 10. 触发器（Slice 24 🚧）
+## 10. 触发器（Slice 24 ✅）
 
-> **状态：** spec/plan 已批准，实现进行中。设计：[`2026-05-24-slice-24-workflow-triggers-design.md`](superpowers/specs/2026-05-24-slice-24-workflow-triggers-design.md)
+> 设计：[`2026-05-24-slice-24-workflow-triggers-design.md`](superpowers/specs/2026-05-24-slice-24-workflow-triggers-design.md)
 
-### 10.1 DSL（计划）
+### 10.1 DSL
 
 ```yaml
 triggers:
@@ -400,24 +400,42 @@ triggers:
     inputs:
       channel: team
   - id: inbound-hook
-    webhook: {}
+    webhook:
+      enabled: true
     inputs:
       payload: {}
+steps:
+  - id: notify
+    use: llm.chat
+    args: { message: "${inputs.payload}" }
 ```
 
-### 10.2 计划 API
+规则：`triggers[].id` 与 step id 不冲突；每条 **cron 或 webhook 二选一**；webhook token 由服务端 publish 时生成（不出现在 YAML）。
+
+### 10.2 API
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| — | `POST /hooks/workflow/:token` | Webhook 触发（无 JWT） |
+| POST | `/hooks/workflow/:token` | Webhook 触发（无 JWT；body JSON merge 进 inputs） |
 | GET | `/admin/workflows/:slug/triggers` | 列表 + webhook URL |
-| POST | `/admin/workflows/:slug/triggers/:id/run` | 手动触发（调试） |
+| POST | `/admin/workflows/:slug/triggers/:triggerId/run` | 手动 fire（调试 / E2E） |
+| POST | `/admin/workflows/:slug/triggers/:triggerId/rotate-token` | 轮换 webhook token |
 
-Publish 时从 DSL 同步 `workflow_triggers` 表；unpublish 禁用触发器。
+Publish 从 DSL upsert `workflow_triggers` 并计算 cron `next_run_at`；unpublish 设 `enabled=false`。
 
-### 10.3 E2E
+### 10.3 调度
 
-compose 步骤 **76–78**（见 plan Task 9）。
+进程内 scheduler（默认 **30s** tick，`FOR UPDATE SKIP LOCKED`）对 due cron 行调用 `Service.Invoke`；actor 为 tenant 首个 admin 用户。
+
+配置：`workflow.trigger_poll_interval`、`trigger_max_due_per_tick`、`trigger_webhook_rate_per_minute`（见 `config.example.yaml`）。
+
+### 10.4 Web UI
+
+`/workflows` 编辑侧栏 **触发器** 面板：未发布时从 DSL 解析摘要；发布后 GET triggers + 复制 webhook URL + 手动触发。
+
+### 10.5 E2E
+
+compose 步骤 **76–78**（cron manual run、webhook POST、unpublish 后 webhook 409/404）。
 
 ---
 
@@ -425,5 +443,5 @@ compose 步骤 **76–78**（见 plan Task 9）。
 
 - 设计 spec：[`docs/superpowers/specs/2026-05-22-slice-19-workflow-engine-design.md`](superpowers/specs/2026-05-22-slice-19-workflow-engine-design.md)
 - 归档 plan：[`docs/superpowers/plans/2026-05-22-slice-19-workflow-engine.md`](superpowers/plans/2026-05-22-slice-19-workflow-engine.md)
-- E2E 用例：`deploy/compose/test-e2e.sh` 步骤 57–60（19a Engine）、**70–75**（19b NL Authoring）；19d 无增量 E2E（L1/L2 + 手工 §9.3）
+- E2E 用例：`deploy/compose/test-e2e.sh` 步骤 57–60（19a）、**70–75**（19b NL）、**76–78**（24 Triggers）；19d 无增量 E2E
 - README Workflow section：[`README.md`](../README.md#workflow-子系统)

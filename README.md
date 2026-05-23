@@ -84,7 +84,7 @@ curl http://localhost:8080/healthz
 
 ```powershell
 cd deploy\compose
-./test-e2e.sh    # Git Bash / WSL，推荐（75 步全量；含切片 13–20 + 19b NL 70–75）
+./test-e2e.sh    # Git Bash / WSL，推荐（78 步全量；含切片 13–20 + 19b NL 70–75 + 24 Triggers 76–78）
 # pwsh ./test-e2e.ps1   # 仅覆盖早期切片，完整验收请用 .sh
 ```
 
