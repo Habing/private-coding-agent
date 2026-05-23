@@ -1,0 +1,11 @@
+# Trivy CVE allow-list for pca/sandbox:base.
+#
+# Format: one CVE ID per line (e.g. CVE-2024-12345). Lines starting with #
+# are comments. Each entry should be accompanied by a date and reason — a
+# silent allow-list rots into a security debt without context.
+#
+# Default empty: rely on debian:12-slim being kept current. Add entries
+# only when a HIGH (warn-only) escalates to CRITICAL and you've validated
+# the path is not reachable from sandbox tenants (e.g., unused subcommand
+# of a CLI we install but never invoke). Reviewing this file is a checklist
+# item for slice 22c-v2 / quarterly security pass.

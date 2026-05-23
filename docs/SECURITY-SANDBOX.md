@@ -1,6 +1,6 @@
 # 沙箱安全模型
 
-> 适用范围：MVP-P1（DockerDriver）。K8sDriver / seccomp / trivy / 镜像签名留给 [`p1-full-enterprise-design.md`](superpowers/specs/2026-05-21-p1-full-enterprise-design.md) 切片 22。
+> 适用范围：MVP-P1（DockerDriver）。K8sDriver / 镜像签名留给 [`p1-full-enterprise-design.md`](superpowers/specs/2026-05-21-p1-full-enterprise-design.md) 切片 22d。seccomp profile + trivy CI gate 自 22c 起已交付（见 §2 / §9）。
 
 沙箱是本项目最大的攻击面：Agent 的 shell.exec / fs.write 一旦失控，宿主机即被波及。本文交代当前 DockerDriver 的硬化措施、已知坑、以及哪些必须等切片 22。
 
@@ -10,7 +10,7 @@
 |--------|------|------|
 | 同租户的合法用户 | 任意 prompt + tool call | tenant_id 隔离、quota、audit |
 | 跨租户的合法用户 | 拿到的 JWT 只有自己 tenant_id | 所有 repo query 强制 `WHERE tenant_id=$claims`；沙箱 label 也带 tenant_id |
-| 沙箱内逃逸者 | 在沙箱内执行任意命令 | 见 §2 容器硬化；目前无 seccomp，依赖 cap 限制 |
+| 沙箱内逃逸者 | 在沙箱内执行任意命令 | 见 §2 容器硬化：CapDrop ALL + 自定义 seccomp profile（禁 `mount/ptrace/keyctl/bpf/userfaultfd/perf_event_open` 等）防御纵深 |
 | 拿到宿主 SSH 的人 | 直接读 docker.sock | 见 §3——这是 MVP 阶段最大的妥协 |
 | 网络攻击者 | 从外网打 server | TLS 应在反向代理层；OIDC + JWT；rate limit |
 
@@ -25,7 +25,7 @@
 | `Tmpfs["/tmp"]` | `size=1g` | 软件常用临时区；同上 |
 | `CapDrop` | `["ALL"]` | 默认丢弃所有 Linux capability |
 | `CapAdd` | `CHOWN, DAC_OVERRIDE, SETUID, SETGID, FOWNER` | 仅为让 `npm install`/`pip install` 之类工作；不含 `NET_ADMIN`/`SYS_ADMIN`/`SYS_PTRACE` |
-| `SecurityOpt` | `no-new-privileges:true` | 阻断 setuid 提权链 |
+| `SecurityOpt` | `no-new-privileges:true` + `seccomp=<自定义 profile>` | 阻断 setuid 提权链；seccomp 在 syscall 层拒绝 `mount/umount/pivot_root/ptrace/process_vm_*/keyctl/add_key/bpf/init_module/kexec_load/userfaultfd/perf_event_open` 等约 16 个高危调用（即便 CapDrop 配置错也兜底）。profile 由 `//go:embed internal/sandbox/seccomp.json` 内嵌，server 启动期一次加载。可通过 `PCA_SANDBOX_SECCOMP_ENABLED=false` 应急回退到 Docker 默认 profile |
 | `Memory` | 默认 512MB，上限 4GB | OOM kill 兜底 |
 | `NanoCPUs` | 默认 1.0，上限 4.0 | CPU 配额 |
 | `PidsLimit` | 默认 256，上限 1024 | fork bomb 防护 |
@@ -103,19 +103,20 @@ quota:
 
 自动化的 trivy + signing 在切片 22 落。
 
-## 9. 已知未做（明确出栈到切片 22）
+## 9. 已知未做（明确出栈到切片 22 / P2）
 
-| 项 | 当前状态 | 切片 22 落点 |
+| 项 | 当前状态 | 后续落点 |
 |----|----------|-------------|
-| seccomp profile | docker 默认 profile（已收紧 capabilities） | 自定义 profile，禁止 `mount/ptrace/userfaultfd` 等 |
-| AppArmor / SELinux | 跟随宿主 | 显式 profile |
-| 镜像 trivy 扫描 | 手动 | CI gate |
-| Snapshot / rootfs immutability check | ReadonlyRootfs 是唯一防线 | dm-verity 或 image digest pin |
-| K8s + ServiceAccount 替换 docker.sock | 未做 | K8sDriver 上线 |
-| egress 策略 | NetworkMode 三档 + compose 网络 | NetworkPolicy / egress proxy |
-| audit hash chain | 朴素 append | 区块链式 SHA chain |
+| seccomp profile | ✅ 22c：自定义 profile，禁 `mount/ptrace/keyctl/bpf/userfaultfd/perf_event_open` 等 16 个 syscall | profile runtime override / 外挂文件（22c-v2，按需） |
+| 镜像 trivy 扫描 | ✅ 22c：GitHub Actions `.github/workflows/security.yml`，PR + push to main 触发；CRITICAL 阻塞 merge / HIGH 仅 warn | nightly schedule + server 镜像扫描（22c-v2） |
+| AppArmor / SELinux | 跟随宿主 | 显式 profile（P2） |
+| audit hash chain | ✅ 22a：每条 audit 记录链式 SHA-256（`prev_hash → curr_hash`），admin `/audit/verify` 端点全表校验 | — |
+| Snapshot / rootfs immutability check | ReadonlyRootfs 是唯一防线；22b Sandbox→MinIO snapshot 仅做导出，不做完整性校验 | dm-verity 或 image digest pin（22c-v2 / P2） |
+| K8s + ServiceAccount 替换 docker.sock | 未做 | K8sDriver + Helm chart（22d） |
+| egress 策略 | NetworkMode 三档 + compose 网络 | NetworkPolicy / egress proxy（22d） |
+| 镜像 cosign 签名 | 未做 | 22d / P2 |
 
-**所以**：MVP-P1 的沙箱**适合"内部工程师试点 + 单租户/可信多租户"**，不适合"公网开放 + 不可信用户"。要后者请等切片 22。
+**所以**：MVP-P1 的沙箱**适合"内部工程师试点 + 单租户/可信多租户"**，不适合"公网开放 + 不可信用户"。22c 起 syscall 与镜像 CVE 层都有了硬控；要"K8s ServiceAccount 替换 docker.sock"请等切片 22d。
 
 ## 10. 生产上线建议
 
@@ -137,6 +138,16 @@ docker inspect $(docker ps -q --filter label=pca.sandbox_id) \
   --format '{{.Config.User}} {{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}}'
 # 期望: 10001:10001 true [ALL]
 
+# seccomp profile 已注入（22c）
+docker inspect $(docker ps -q --filter label=pca.sandbox_id) \
+  --format '{{range .HostConfig.SecurityOpt}}{{println .}}{{end}}'
+# 期望两行: no-new-privileges:true / seccomp={"defaultAction":"SCMP_ACT_ERRNO",...}
+
+# 沙箱内 mount 被 seccomp 拒（22c）
+docker exec $(docker ps -q --filter label=pca.sandbox_id) \
+  sh -c 'mount -t tmpfs none /tmp/x 2>&1; echo exit=$?'
+# 期望: stderr 含 "Operation not permitted" 且 exit != 0
+
 # 沙箱无外网
 docker exec $(docker ps -q --filter label=pca.sandbox_id) \
   sh -c 'curl -m 3 -fsS https://example.com || echo OFFLINE_OK'
@@ -156,4 +167,4 @@ done; wait
 # 期望: 多数请求 429 + body 含 quota_exceeded / sandbox.active
 ```
 
-E2E 步骤 43 自动跑配额验证；步骤 4-8 跑沙箱生命周期。
+E2E 步骤 43 自动跑配额验证；步骤 4-8 跑沙箱生命周期；步骤 66 跑 seccomp mount 拒绝实证 + 非危险 syscall 正常工作回归（22c）。

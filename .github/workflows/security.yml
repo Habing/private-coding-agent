@@ -1,0 +1,58 @@
+name: security
+
+# Slice 22c: trivy scan on the sandbox base image. Runs on PRs that touch
+# the sandbox Dockerfile or this workflow, and on every push to main. The
+# CRITICAL job exits non-zero (blocks merge); the HIGH job is informational
+# only — it prints a table to the run logs but never fails the build.
+#
+# Not run on every PR — debian:12-slim image rebuilds take ~3 minutes and
+# CVE state only changes when the Dockerfile or upstream base does.
+
+on:
+  pull_request:
+    paths:
+      - 'sandbox/image/**'
+      - '.github/workflows/security.yml'
+      - '.trivyignore'
+  push:
+    branches: [main]
+    paths:
+      - 'sandbox/image/**'
+      - '.github/workflows/security.yml'
+      - '.trivyignore'
+
+jobs:
+  trivy-sandbox-image:
+    name: trivy scan pca/sandbox:base
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build sandbox image
+        run: docker build -t pca/sandbox:base ./sandbox/image
+
+      - name: Trivy scan — CRITICAL (fail build)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: pca/sandbox:base
+          format: table
+          severity: CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          trivyignores: .trivyignore
+
+      - name: Trivy scan — HIGH (informational)
+        if: always()
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: pca/sandbox:base
+          format: table
+          severity: HIGH
+          exit-code: '0'
+          ignore-unfixed: true
+          vuln-type: os,library
+          trivyignores: .trivyignore
