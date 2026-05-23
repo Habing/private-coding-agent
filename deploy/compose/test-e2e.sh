@@ -46,8 +46,12 @@ ON CONFLICT (tenant_id, email) DO NOTHING;
 -- Reset app-level state so the script is idempotent across reruns
 -- (compose_pgdata persists by default). Memories/sessions accumulate
 -- otherwise and would dedup against prior-run rows (step 39).
-TRUNCATE memories, messages, sessions, sandbox_sessions, audit_log, memory_proposals RESTART IDENTITY CASCADE;
+TRUNCATE memories, messages, sessions, sandbox_sessions, audit_log, memory_proposals,
+  workflow_runs, workflow_proposals, workflows RESTART IDENTITY CASCADE;
 SQL
+# RepublishAll runs at boot from DB; restart so ToolBus drops stale workflow.* tools.
+docker compose restart server >/dev/null
+sleep 12
 
 echo "[3/75] login ..."
 LOGIN=$(curl -fsS -X POST http://localhost:8080/auth/login \
@@ -119,7 +123,7 @@ docker compose exec -T postgres psql -U app -d app -t -c \
 echo "[13/75] list tools ..."
 TOOLS=$(curl -fsS http://localhost:8080/tools -H "Authorization: Bearer $TOK")
 NAMES=$(echo "$TOOLS" | jq -r '.tools[].name' | sort | tr '\n' ',')
-[[ "$NAMES" == "agent.delegate,fs.glob,fs.list,fs.read,fs.write,grep,llm.chat,llm.embed,memory.delete,memory.list,memory.save,memory.search,shell.exec,workflow.create,workflow.get,workflow.list,workflow.update," ]] \
+[[ "$NAMES" == "agent.delegate,fs.glob,fs.list,fs.read,fs.write,grep,llm.chat,llm.embed,memory.delete,memory.list,memory.save,memory.search,shell.exec,workflow.create,workflow.get,workflow.list,workflow.propose,workflow.publish,workflow.update," ]] \
   || { echo "tools list mismatch: $NAMES"; exit 1; }
 
 echo "[14/75] fs.write + fs.read round-trip ..."
@@ -1116,6 +1120,11 @@ curl -fsS -H "Authorization: Bearer $TOK" http://localhost:8080/tools \
 echo "  -> status=$CONF_ST tool registered"
 
 echo "[73/75] member proposal -> confirm pending -> admin approve ..."
+MTOK=$(curl -fsS -X POST http://localhost:8080/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"tenant":"default","email":"member@example.com","password":"demo123"}' | jq -r .token)
+[[ -n "$MTOK" && "$MTOK" != "null" ]] \
+  || { echo "member re-login failed before step 73"; exit 1; }
 MPROP=$(curl -fsS -X POST http://localhost:8080/agent/workflow/proposals \
   -H "Authorization: Bearer $MTOK" -H 'Content-Type: application/json' \
   -d '{
@@ -1159,7 +1168,7 @@ WPR=$(curl -fsS -X POST http://localhost:8080/agent/run \
 WP_TOOL=$(echo "$WPR" | jq -r '[.events[] | select(.kind=="tool_call")][0].tool_name')
 [[ "$WP_TOOL" == "workflow.propose" ]] \
   || { echo "expected workflow.propose tool_call, got $WP_TOOL: $WPR"; exit 1; }
-WP_PID=$(echo "$WPR" | jq -r '[.events[] | select(.kind=="tool_result" and .tool_name=="workflow.propose")][0].tool_output | fromjson | .proposal_id')
+WP_PID=$(echo "$WPR" | jq -r '[.events[] | select(.kind=="tool_result" and .tool_name=="workflow.propose")][0].tool_output | if type=="string" then fromjson else . end | .proposal_id')
 [[ -n "$WP_PID" && "$WP_PID" != "null" ]] \
   || { echo "workflow.propose tool_result missing proposal_id: $WPR"; exit 1; }
 WPFINAL=$(echo "$WPR" | jq -r '.events[-1].text')
@@ -1179,7 +1188,7 @@ WFF=$(curl -fsS -X POST http://localhost:8080/agent/run \
 FF_TOOL=$(echo "$WFF" | jq -r '[.events[] | select(.kind=="tool_call")][0].tool_name')
 [[ "$FF_TOOL" == "workflow.propose" ]] \
   || { echo "freeform: expected workflow.propose, got $FF_TOOL: $WFF"; exit 1; }
-FF_SLUG=$(echo "$WFF" | jq -r '[.events[] | select(.kind=="tool_result" and .tool_name=="workflow.propose")][0].tool_output | fromjson | .slug')
+FF_SLUG=$(echo "$WFF" | jq -r '[.events[] | select(.kind=="tool_result" and .tool_name=="workflow.propose")][0].tool_output | if type=="string" then fromjson else . end | .slug')
 [[ "$FF_SLUG" == "e2e-nl-agent" ]] \
   || { echo "freeform: expected slug e2e-nl-agent, got $FF_SLUG: $WFF"; exit 1; }
 FFFINAL=$(echo "$WFF" | jq -r '.events[-1].text')
