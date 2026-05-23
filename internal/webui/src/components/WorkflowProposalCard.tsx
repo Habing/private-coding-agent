@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
+import { WorkflowGraphMini } from '@/components/WorkflowGraph'
 import { ApiError, api } from '@/lib/api'
 import { isAdmin } from '@/lib/roles'
 import type { WorkflowProposalPayload } from '@/lib/workflowProposal'
@@ -91,6 +92,12 @@ export function WorkflowProposalCard({ payload }: WorkflowProposalCardProps) {
         <p className="mt-1 text-[10px] text-muted-foreground">
           状态：{proposalStatusLabel(payload.status)}
         </p>
+
+        {payload.proposal_id && payload.dry_run_ok && (
+          <div className="mt-3">
+            <WorkflowGraphMini proposalId={payload.proposal_id} />
+          </div>
+        )}
 
         <div className="mt-3 flex flex-wrap gap-2">
           {canAct && (

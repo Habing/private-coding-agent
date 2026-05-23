@@ -26,6 +26,11 @@ vi.mock('@/components/YamlEditor', () => ({
   ),
 }))
 
+vi.mock('@/components/WorkflowGraph', () => ({
+  WorkflowGraph: () => <div data-testid="workflow-graph">graph</div>,
+  WorkflowGraphMini: () => null,
+}))
+
 import { Workflows } from './Workflows'
 
 function makeWorkflow(over: Partial<Workflow> = {}): Workflow {

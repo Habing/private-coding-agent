@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 
 import { YamlEditor } from '@/components/YamlEditor'
+import { WorkflowGraph } from '@/components/WorkflowGraph'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -330,8 +331,8 @@ function EditPane({
     dsl !== (workflow.dsl_yaml ?? '')
 
   return (
-    <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_320px]">
-      <div className="flex flex-col gap-2">
+    <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_1fr_320px]">
+      <div className="flex flex-col gap-2 xl:col-span-1">
         <Label htmlFor="dsl">DSL（YAML）</Label>
         <YamlEditor value={dsl} onChange={setDsl} />
         <Button
@@ -342,6 +343,10 @@ function EditPane({
         >
           {saving ? '保存中…' : '保存（将重置为未发布）'}
         </Button>
+      </div>
+      <div className="flex flex-col gap-2 xl:col-span-1">
+        <Label>流程图（只读预览）</Label>
+        <WorkflowGraph dsl={dsl} />
       </div>
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-1">

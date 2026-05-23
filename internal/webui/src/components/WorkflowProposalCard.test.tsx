@@ -10,6 +10,10 @@ import { server } from '@/test/mswServer'
 
 import { WorkflowProposalCard } from './WorkflowProposalCard'
 
+vi.mock('@/components/WorkflowGraph', () => ({
+  WorkflowGraphMini: () => <div data-testid="proposal-mini-graph">mini</div>,
+}))
+
 function renderCard(role: 'admin' | 'member') {
   useAuthStore.getState().setAuth('tok', {
     id: 'u1',
@@ -55,6 +59,11 @@ describe('<WorkflowProposalCard />', () => {
     renderCard('member')
     expect(screen.getByRole('button', { name: '提交审批' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: '在工作流页编辑' })).not.toBeInTheDocument()
+  })
+
+  it('shows mini graph when dry run passed', () => {
+    renderCard('admin')
+    expect(screen.getByTestId('proposal-mini-graph')).toBeInTheDocument()
   })
 
   it('admin confirm calls REST confirm and shows toast', async () => {
