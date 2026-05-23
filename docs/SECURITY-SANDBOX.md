@@ -145,11 +145,11 @@ quota:
 | AppArmor / SELinux | 跟随宿主 | 显式 profile（P2） |
 | audit hash chain | ✅ 22a：每条 audit 记录链式 SHA-256（`prev_hash → curr_hash`），admin `/audit/verify` 端点全表校验 | — |
 | Snapshot / rootfs immutability check | ReadonlyRootfs 是唯一防线；22b Sandbox→MinIO snapshot 仅做导出，不做完整性校验 | dm-verity 或 image digest pin（22c-v2 / P2） |
-| K8s + ServiceAccount 替换 docker.sock | 未做 | K8sDriver + Helm chart（22d） |
-| egress 策略 | NetworkMode 三档 + compose 网络 | NetworkPolicy / egress proxy（22d） |
-| 镜像 cosign 签名 | 未做 | 22d / P2 |
+| K8s + ServiceAccount 替换 docker.sock | ✅ 22d1 K8sDriver + 22d2 Helm chart（kind nightly 6 步）；compose 默认仍 `driver=docker` | compose 切 k8s driver（按需） |
+| egress 策略 | ✅ 22d2 NetworkPolicy（internal/none + server 出站 allowlist）；compose 仍 NetworkMode 三档 | egress proxy（P2） |
+| 镜像 cosign 签名 | 未做 | 22c-v2 / P2 |
 
-**所以**：MVP-P1 的沙箱**适合"内部工程师试点 + 单租户/可信多租户"**，不适合"公网开放 + 不可信用户"。22c 起 syscall 与镜像 CVE 层都有了硬控；要"K8s ServiceAccount 替换 docker.sock"请等切片 22d。
+**所以**：MVP-P1 的沙箱**适合「内部工程师试点 + 单租户/可信多租户」**，不适合「公网开放 + 不可信用户」。22c 起 syscall 与镜像 CVE 层都有了硬控；**K8s 路径**见 [`docs/DEPLOY-K8S.md`](DEPLOY-K8S.md)（Helm + NetworkPolicy）；compose 试点仍可用 docker.sock。
 
 ## 10. 生产上线建议
 

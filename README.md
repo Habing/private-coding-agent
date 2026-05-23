@@ -84,7 +84,7 @@ curl http://localhost:8080/healthz
 
 ```powershell
 cd deploy\compose
-./test-e2e.sh    # Git Bash / WSL，推荐（61 步全量；含切片 13–20）
+./test-e2e.sh    # Git Bash / WSL，推荐（75 步全量；含切片 13–20 + 19b NL 70–75）
 # pwsh ./test-e2e.ps1   # 仅覆盖早期切片，完整验收请用 .sh
 ```
 
@@ -467,9 +467,10 @@ React + Vite + Tailwind + shadcn/ui SPA，源码在 `internal/webui/`，由 `go:
 | `/audit` | admin | 审计日志查询 |
 | `/admin/skills` | admin | 租户 Skill CRUD + Profile binding（切片 17） |
 | `/workflows` | admin | Workflow DSL CRUD（Monaco YAML + **只读流程图预览** Slice 19d）+ publish/unpublish + invoke（含 dry_run）+ 最近 runs 抽屉 |
-| `/admin/memory-proposals` | admin | Reflection 候选审核（切片 20）：pending/auto_approved/approved/rejected 4 个 tab + Approve dialog 可覆盖 |
+| `/admin/memory-proposals` | admin | Reflection 候选审核（切片 20） |
+| `/admin/mcp-servers` | admin | 外部 MCP 管理（切片 21b） |
 
-`/workflows` 与 `/toolbox` 是切片 19b 新增。Monaco Editor 通过 `@monaco-editor/react` 走 CDN worker，首屏 bundle 不含编辑器主体；首次进编辑视图时 ~150ms 冷启动。
+`/workflows` 与 `/toolbox` 是切片 19b 新增；19d 在编辑页增加只读流程图。Monaco Editor 通过 CDN worker，首屏 bundle 不含编辑器主体。
 
 ### 本地开发（前后端分离）
 
