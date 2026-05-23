@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -51,23 +52,35 @@ type BusRegistrar interface {
 // owns the audit + run-log instrumentation so the admin handler and the
 // workflow.<slug> Bus tool share one execution path.
 type Service struct {
-	repo     *Repo
-	triggers *TriggerRepo
-	engine   *Engine
-	bus      BusRegistrar
-	audit    audit.Sink
+	repo         *Repo
+	triggers     *TriggerRepo
+	engine       *Engine
+	bus          BusRegistrar
+	audit        audit.Sink
+	tenantAdmins TenantAdminLookup
+	adminMu      sync.Mutex
+	adminCache   map[uuid.UUID]uuid.UUID
 }
 
 // NewService wires a Service. bus may be nil for unit tests that exercise only
 // CRUD + Invoke (publishing requires a real bus).
 func NewService(repo *Repo, engine *Engine, bus BusRegistrar, sink audit.Sink) *Service {
 	return &Service{
-		repo:     repo,
-		triggers: NewTriggerRepo(repo),
-		engine:   engine,
-		bus:      bus,
-		audit:    sink,
+		repo:       repo,
+		triggers:   NewTriggerRepo(repo),
+		engine:     engine,
+		bus:        bus,
+		audit:      sink,
+		adminCache: map[uuid.UUID]uuid.UUID{},
 	}
+}
+
+// SetTenantAdminLookup wires the tenant admin resolver used by cron/webhook triggers.
+func (s *Service) SetTenantAdminLookup(l TenantAdminLookup) *Service {
+	if s != nil {
+		s.tenantAdmins = l
+	}
+	return s
 }
 
 // WithAuditSink swaps the audit sink after construction. Allows main.go to
@@ -273,6 +286,94 @@ func (s *Service) ListRuns(ctx context.Context, tenantID uuid.UUID, slug string,
 		return nil, err
 	}
 	return s.repo.ListRuns(ctx, tenantID, wf.ID, limit)
+}
+
+// ListTriggers returns persisted trigger rows for a workflow slug.
+func (s *Service) ListTriggers(ctx context.Context, tenantID uuid.UUID, slug string) ([]WorkflowTrigger, error) {
+	wf, err := s.repo.Get(ctx, tenantID, slug)
+	if err != nil {
+		return nil, err
+	}
+	return s.triggers.ListByWorkflow(ctx, tenantID, wf.ID)
+}
+
+// RunTriggerManual fires one trigger using its default inputs (admin debug).
+func (s *Service) RunTriggerManual(ctx context.Context, tenantID, userID uuid.UUID, slug, triggerID string) (*InvokeResult, error) {
+	wf, err := s.repo.Get(ctx, tenantID, slug)
+	if err != nil {
+		return nil, err
+	}
+	tr, err := s.triggers.GetByWorkflowTrigger(ctx, tenantID, wf.ID, triggerID)
+	if err != nil {
+		return nil, err
+	}
+	if !tr.Enabled {
+		return nil, fmt.Errorf("trigger %q is disabled", triggerID)
+	}
+	inputs, err := parseDefaultInputs(tr.DefaultInputs)
+	if err != nil {
+		return nil, err
+	}
+	res, err := s.Invoke(ctx, tenantID, userID, slug, inputs, false)
+	if err != nil {
+		return nil, err
+	}
+	action := "workflow.trigger.webhook"
+	if tr.Kind == TriggerKindCron {
+		action = "workflow.trigger.cron"
+	}
+	s.auditTriggerFire(tenantID, userID, slug, action, map[string]any{
+		"trigger_id": triggerID,
+		"run_id":     res.RunID.String(),
+		"manual":     true,
+	})
+	return res, nil
+}
+
+// RotateWebhookToken replaces the webhook URL token for one trigger.
+func (s *Service) RotateWebhookToken(ctx context.Context, tenantID uuid.UUID, slug, triggerID string) (string, error) {
+	wf, err := s.repo.Get(ctx, tenantID, slug)
+	if err != nil {
+		return "", err
+	}
+	token, err := s.triggers.RotateWebhookToken(ctx, tenantID, wf.ID, triggerID)
+	if err != nil {
+		return "", err
+	}
+	s.auditAdmin(tenantID, slug, "workflow.trigger.rotate_token",
+		map[string]any{"trigger_id": triggerID})
+	return token, nil
+}
+
+func (s *Service) resolveTriggerActor(ctx context.Context, tenantID uuid.UUID) (uuid.UUID, error) {
+	s.adminMu.Lock()
+	if id, ok := s.adminCache[tenantID]; ok && id != uuid.Nil {
+		s.adminMu.Unlock()
+		return id, nil
+	}
+	s.adminMu.Unlock()
+	if s.tenantAdmins == nil {
+		return uuid.Nil, ErrNotFound
+	}
+	id, err := s.tenantAdmins.FirstAdminID(ctx, tenantID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	s.adminMu.Lock()
+	s.adminCache[tenantID] = id
+	s.adminMu.Unlock()
+	return id, nil
+}
+
+func (s *Service) auditTriggerFire(tenantID, userID uuid.UUID, slug, action string, meta map[string]any) {
+	if s.audit == nil {
+		return
+	}
+	tid := tenantID
+	uid := userID
+	audit.Detached(s.audit, audit.Entry{
+		TenantID: &tid, UserID: &uid, Action: action, Target: slug, Metadata: meta,
+	}, nil)
 }
 
 // RepublishAll re-registers every published workflow into the Bus on boot.

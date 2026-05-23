@@ -103,3 +103,18 @@ SELECT `+userSelectCols+`
 FROM users WHERE id=$1`, id)
 	return scanUser(row)
 }
+
+// FirstAdminID returns the oldest admin user for a tenant (cron trigger actor).
+func (r *Repo) FirstAdminID(ctx context.Context, tenantID uuid.UUID) (uuid.UUID, error) {
+	var id uuid.UUID
+	err := r.pool.QueryRow(ctx, `
+SELECT id FROM users WHERE tenant_id=$1 AND role=$2 ORDER BY created_at ASC LIMIT 1`,
+		tenantID, string(RoleAdmin)).Scan(&id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, ErrNotFound
+		}
+		return uuid.Nil, fmt.Errorf("first admin: %w", err)
+	}
+	return id, nil
+}

@@ -174,8 +174,11 @@ type ReflectionConfig struct {
 
 // WorkflowConfig tunes workflow engine housekeeping (pilot tech-debt #14).
 type WorkflowConfig struct {
-	RunsRetentionDays int           `mapstructure:"runs_retention_days"`
-	RetentionInterval time.Duration `mapstructure:"retention_interval"`
+	RunsRetentionDays           int           `mapstructure:"runs_retention_days"`
+	RetentionInterval         time.Duration `mapstructure:"retention_interval"`
+	TriggerPollInterval       time.Duration `mapstructure:"trigger_poll_interval"`
+	TriggerMaxDuePerTick        int           `mapstructure:"trigger_max_due_per_tick"`
+	TriggerWebhookRatePerMinute int           `mapstructure:"trigger_webhook_rate_per_minute"`
 }
 
 // ProvidersConfig controls the model-provider registry (slice 13).
@@ -307,6 +310,15 @@ func applyPilotDefaults(c *Config) {
 	}
 	if c.Workflow.RetentionInterval <= 0 {
 		c.Workflow.RetentionInterval = 24 * time.Hour
+	}
+	if c.Workflow.TriggerPollInterval <= 0 {
+		c.Workflow.TriggerPollInterval = 30 * time.Second
+	}
+	if c.Workflow.TriggerMaxDuePerTick <= 0 {
+		c.Workflow.TriggerMaxDuePerTick = 32
+	}
+	if c.Workflow.TriggerWebhookRatePerMinute <= 0 {
+		c.Workflow.TriggerWebhookRatePerMinute = 60
 	}
 	if c.Reflection.MaxAttempts <= 0 {
 		c.Reflection.MaxAttempts = 3

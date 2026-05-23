@@ -316,7 +316,8 @@ func run() error {
 
 	// Standard auth/tenant/user wiring
 	tenantLookup := tenant.NewLookup(tenant.NewRepo(pool))
-	userSvc := user.NewService(user.NewRepo(pool))
+	userRepo := user.NewRepo(pool)
+	userSvc := user.NewService(userRepo)
 	jwtCfg := auth.JWTConfig{Secret: cfg.Auth.JWTSecret, TTL: cfg.Auth.JWTTTL}
 	if err := auth.ValidateJWTConfig(jwtCfg); err != nil {
 		return fmt.Errorf("auth config: %w", err)
@@ -365,7 +366,8 @@ func run() error {
 	// Bus so process restarts don't drop workflow.<slug> tools.
 	workflowRepo := workflow.NewRepo(pool)
 	workflowEngine := workflow.NewEngine(workflow.BusStepRunner{Bus: toolBus}, workflow.DefaultConfig())
-	workflowService := workflow.NewService(workflowRepo, workflowEngine, toolBus, auditRepo)
+	workflowService := workflow.NewService(workflowRepo, workflowEngine, toolBus, auditRepo).
+		SetTenantAdminLookup(userRepo)
 	proposalRepo := workflow.NewProposalRepo(pool)
 	proposalService := workflow.NewProposalService(proposalRepo, workflowService, auditRepo)
 	for _, t := range workflow.NewAdminTools(workflowService) {
@@ -382,6 +384,10 @@ func run() error {
 		slog.Warn("workflow: republish on boot", "err", err.Error())
 	}
 	workflow.StartRunsRetention(ctx, workflowRepo, cfg.Workflow.RunsRetentionDays, cfg.Workflow.RetentionInterval)
+	workflow.StartTriggerScheduler(ctx, workflowService, workflow.TriggerSchedulerConfig{
+		PollInterval:  cfg.Workflow.TriggerPollInterval,
+		MaxDuePerTick: cfg.Workflow.TriggerMaxDuePerTick,
+	})
 	slog.Info("workflow retention",
 		"runs_retention_days", cfg.Workflow.RunsRetentionDays,
 		"interval", cfg.Workflow.RetentionInterval)
@@ -544,6 +550,7 @@ func run() error {
 			slog.Error("audit append", "err", err.Error())
 		}))
 		authHandler.Register(r)
+		workflow.NewWebhookHandler(workflowService, cfg.Workflow.TriggerWebhookRatePerMinute).Register(r)
 
 		protected := r.Group("/")
 		protected.Use(auth.Middleware(jwtSvc, auth.WithRevoker(jwtRevoker)))
@@ -571,6 +578,7 @@ func run() error {
 			skills.NewAdminHandler(skillDBRepo).WithAuditSink(auditRepo).Register(adminGroup)
 		}
 		workflow.NewAdminHandler(workflowService).Register(adminGroup)
+		workflow.NewTriggerAdminHandler(workflowService).Register(adminGroup)
 		workflow.NewProposalHandler(proposalService).RegisterAdmin(adminGroup)
 		memory.NewAdminHandler(memoryService).WithAuditSink(auditRepo).Register(adminGroup)
 		if reflectionAdmin != nil {

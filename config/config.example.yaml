@@ -117,6 +117,10 @@ workflow:
   # Purge workflow_runs older than N days (0 disables). Runs once at boot + daily.
   runs_retention_days: 90
   retention_interval: 24h
+  # Slice 24: cron scheduler tick + webhook rate cap (per token, per minute).
+  trigger_poll_interval: 30s
+  trigger_max_due_per_tick: 32
+  trigger_webhook_rate_per_minute: 60
 
 orchestrator:
   # Slice 21a: pre-Run routing pass. Inspects the latest user message and
