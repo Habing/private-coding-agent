@@ -3,6 +3,7 @@ package workflow_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -70,6 +71,42 @@ func TestTriggerRepo_SyncOnPublish(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, token, got.WebhookToken)
 	require.True(t, got.Enabled)
+}
+
+func TestTriggerRepo_ClaimDueCron(t *testing.T) {
+	p := newPool(t)
+	repo := workflow.NewRepo(p)
+	triggers := workflow.NewTriggerRepo(repo)
+	ctx := context.Background()
+	tid := seedTenant(t, p)
+
+	w, err := repo.Create(ctx, tid, "trig-flow", "Triggers", "", triggersDSL)
+	require.NoError(t, err)
+	require.NoError(t, repo.SetPublished(ctx, tid, "trig-flow", true))
+
+	doc, err := workflow.Parse(triggersDSL)
+	require.NoError(t, err)
+	require.NoError(t, triggers.SyncTriggersFromDoc(ctx, tid, w.ID, doc))
+
+	_, err = p.Exec(ctx, `
+UPDATE workflow_triggers SET next_run_at = now() - interval '1 minute'
+ WHERE workflow_id=$1 AND trigger_id='every-minute'`, w.ID)
+	require.NoError(t, err)
+
+	claims, err := triggers.ClaimDueCron(ctx, 8)
+	require.NoError(t, err)
+	require.Len(t, claims, 1)
+	require.Equal(t, "every-minute", claims[0].TriggerID)
+	require.Equal(t, "trig-flow", claims[0].WorkflowSlug)
+
+	rows, err := triggers.ListByWorkflow(ctx, tid, w.ID)
+	require.NoError(t, err)
+	for _, r := range rows {
+		if r.TriggerID == "every-minute" {
+			require.NotNil(t, r.NextRunAt)
+			require.True(t, r.NextRunAt.After(time.Now().UTC().Add(-time.Minute)))
+		}
+	}
 }
 
 func TestTriggerRepo_SyncRemovesStaleTrigger(t *testing.T) {
