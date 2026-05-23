@@ -1,0 +1,11 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: pca-nightly
+nodes:
+  - role: control-plane
+    # Single-node cluster is enough for sandbox-lifecycle + NetworkPolicy
+    # exercise. CNI is kindnetd (NetworkPolicy v1 supported).
+    image: kindest/node:v1.30.0
+networking:
+  # Disable default CNI install step is unnecessary — kindnetd is fine.
+  apiServerAddress: "127.0.0.1"

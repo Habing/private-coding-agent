@@ -1,0 +1,108 @@
+name: kind-nightly
+
+# Slice 22d2: nightly K8s sandbox driver e2e. Spins up a single-node kind
+# cluster, builds + loads the server and sandbox images, helm-installs the
+# pca chart, and runs deploy/helm/pca/test/kind-e2e.sh (sandbox lifecycle +
+# NetworkPolicy=internal external-egress denial). Independent from the
+# compose ./test-e2e.sh path which exercises the docker driver.
+#
+# Cron is 03:17 UTC — off the :00/:30 spike, and ~11:17 Asia/Shanghai so
+# failures land on the maintainer's morning rather than during the
+# overnight window.
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  kind-e2e:
+    name: kind sandbox e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: pca-server:kind-latest
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build sandbox image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./sandbox/image
+          tags: pca/sandbox:base
+          load: true
+          cache-from: type=gha,scope=sandbox
+          cache-to: type=gha,mode=max,scope=sandbox
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: pca-nightly
+          config: deploy/helm/pca/test/kind-config.yaml
+          wait: 60s
+
+      - name: Load images into kind
+        run: |
+          kind load docker-image pca-server:kind-latest --name pca-nightly
+          kind load docker-image pca/sandbox:base       --name pca-nightly
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.4
+
+      - name: Create namespaces
+        run: |
+          kubectl create namespace pca-system
+          # rbac.createSandboxNamespace=true in values-kind.yaml; chart owns it.
+
+      - name: helm install pca
+        run: |
+          helm install pca ./deploy/helm/pca \
+            --namespace pca-system \
+            --values ./deploy/helm/pca/values-kind.yaml \
+            --wait \
+            --timeout 5m
+
+      - name: Wait for server ready
+        run: |
+          kubectl -n pca-system wait \
+            --for=condition=available \
+            --timeout=180s \
+            deploy/pca-server
+
+      - name: Run kind e2e
+        run: ./deploy/helm/pca/test/kind-e2e.sh
+
+      - name: Dump diagnostics on failure
+        if: failure()
+        run: |
+          echo "=== pods (pca-system) ==="
+          kubectl -n pca-system get pods -o wide || true
+          echo "=== pods (pca-sandboxes) ==="
+          kubectl -n pca-sandboxes get pods -o wide || true
+          echo "=== server logs ==="
+          kubectl -n pca-system logs -l app.kubernetes.io/component=server --tail=300 || true
+          echo "=== postgres logs ==="
+          kubectl -n pca-system logs -l app.kubernetes.io/component=postgres --tail=100 || true
+          echo "=== events (pca-system) ==="
+          kubectl -n pca-system get events --sort-by=.lastTimestamp | tail -50 || true
+          echo "=== events (pca-sandboxes) ==="
+          kubectl -n pca-sandboxes get events --sort-by=.lastTimestamp | tail -50 || true
+          echo "=== networkpolicies ==="
+          kubectl -n pca-system get netpol -o yaml || true
+          kubectl -n pca-sandboxes get netpol -o yaml || true
