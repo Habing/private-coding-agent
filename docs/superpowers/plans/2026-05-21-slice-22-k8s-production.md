@@ -7,7 +7,7 @@
 > - **22b — Snapshot → MinIO** ✅ 已落地（HEAD `a533657`，E2E 步骤 65）
 > - **22c — seccomp + trivy CI** ✅ 已落地（HEAD `5425039`，E2E 步骤 66）
 > - **22d1 — K8sDriver Runtime + fake-client L1** ✅ 已落地（HEAD `7981073` + C3 closeout，E2E 步骤 67）
-> - **22d2 — Helm chart + kind nightly**（pending）
+> - **22d2 — Helm chart + kind nightly + DEPLOY-K8S.md** ✅ 已落地（HEAD `48bf11c` + C3 closeout；compose E2E 步号不增，kind 6 步 nightly 独立 PASS）
 
 **Design:** Full P1 spec §22 + HANDOFF 技术债
 
@@ -87,11 +87,21 @@
 
 **22d1 不做（留 22d2 / 22d-v2）：** Helm chart（22d2）、kind nightly + DEPLOY-K8S.md（22d2）、NetworkPolicy YAML（22d2 chart）、K8sDriver.Snapshot 实现（22d-v2 kaniko / K8s-native）、PidsLimit Pod spec（22d-v2，K8s 1.31+ alpha gate）、RuntimeClass kata/gvisor 选择字段（22d-v2）、in-cluster watch 重连退避（22d-v2）、K8s 模式 reconciliation（22d-v2 用 informer/watch 替换 sandbox.RunReconciler）
 
-## 22d2 — Helm chart + kind nightly（pending）
+## 22d2 — Helm chart + kind nightly + DEPLOY-K8S.md ✅
 
-- [ ] `deploy/helm/pca` chart：Deployment + Service + ConfigMap + Secret + RBAC（pods.create/delete/get/list/exec/pods/exec/log）+ NetworkPolicy internal\|bridge\|none 三模板
-- [ ] kind nightly workflow（拉起单节点 → `helm install` → 跑 e2e 子集真 SPDY exec/files/destroy）
-- [ ] `docs/DEPLOY-K8S.md`
+> 落地：commits `74781e7` → `48bf11c` → (C3 closeout)；compose `./test-e2e.sh` 1–67 不变；`.github/workflows/kind-nightly.yml` workflow_dispatch + 03:17 UTC schedule，`deploy/helm/pca/test/kind-e2e.sh` 6 步全 PASS
+
+- [x] `deploy/helm/pca/Chart.yaml`（appVersion `22d2`，kubeVersion `>=1.30.0`）+ `values.yaml` 生产默认 + `values-kind.yaml` nightly overrides + `README.md` 一页速查
+- [x] 13 个模板：`_helpers.tpl`（含 `pca.assertions` 渲染期硬拦截：jwtSecret ≥32 字符、namespace 一致性、sandbox.network ∈ internal|bridge|none、driver ∈ docker|k8s）+ `namespace.yaml`（rbac.createSandboxNamespace 时托管 sandbox ns）+ `serviceaccount.yaml` + `rbac.yaml`（Role scope 限定 `rbac.sandboxNamespace`，verbs 仅 `pods{create,get,list,delete}` + `pods/exec{create}` + `pods/log{get}`）+ `configmap.yaml`（1:1 镜射 config.example.yaml；故意省略 db.dsn/redis.addr）+ `secret.yaml`（gated by `not .Values.secrets.existing`）+ `service.yaml`（ClusterIP:8080）+ `deployment.yaml`（PCA_DB_DSN 走 Pod-spec env `$(PCA_DB_PASSWORD)` 展开 + PCA_REDIS_ADDR + PCA_AUTH_JWT_SECRET + securityContext runAsNonRoot=65532+readOnlyRootFilesystem+capDrop ALL+seccompProfile RuntimeDefault）+ `postgres.yaml`（StatefulSet + PVC，gated）+ `redis.yaml`（Deployment + optional PVC，gated）+ `networkpolicy-server.yaml`（出站 allowlist：DNS + kube-apiserver + chart PG/Redis + 公网由 allowExternalEgress 控制）+ `networkpolicy-sandbox-internal.yaml`（podSelector `pca.network=internal`，egress 仅 release ns server pod）+ `networkpolicy-sandbox-none.yaml`（deny-all）
+- [x] `.github/workflows/kind-nightly.yml`：cron `17 3 * * *`（避 :00/:30 高峰）+ workflow_dispatch；步骤：checkout → setup-buildx → build server + sandbox images（gha cache）→ helm/kind-action@v1 kindest/node:v1.30.0 单节点 → `kind load docker-image` → azure/setup-helm@v4 v3.14.4 → 创 namespace + `helm install --wait --timeout 5m` → `kubectl wait deploy/pca-server` → 跑 `kind-e2e.sh` → failure 时 dump pods/logs/events/netpols
+- [x] `deploy/helm/pca/test/kind-config.yaml` 单 control-plane 节点
+- [x] `deploy/helm/pca/test/kind-e2e.sh`（+x，bash strict mode）6 步：(1) psql exec bootstrap demo user 到 PG StatefulSet —— 复用 compose e2e 的 bcrypt hash；(2) `kubectl port-forward svc/pca-server :18080` + /healthz 等就绪；(3) /auth/login → /sandbox/sessions 必返回 `status=running` 且 `kubectl -n pca-sandboxes get pods` 非空（实证 K8sDriver buildPod 落到正确 ns）；(4) PUT /files + POST /exec via SPDY 双向 round-trip `hello kind`；(5) NetworkPolicy=internal 实证：`curl https://1.1.1.1` 退出码必 != 0；(6) DELETE session → 再 exec 必 404
+- [x] `docs/DEPLOY-K8S.md` 新增 10 段：部署形态选择（compose vs K8s 对照表，指向 SECURITY-SANDBOX §3 docker.sock 妥协对照）+ 前置条件 + 镜像准备 + 快速开始 + values 字段速查 + 生产 checklist（sealed-secrets / digest / external PG/Redis / seccompLocalhostProfile / OIDC）+ 升级（rolling，沙箱 Pod 不受影响）+ 回滚（DB schema forward-only 警告）+ Troubleshooting + 本地 kind 实验
+- [x] `docs/DEPLOY.md` §1 形态表加 "K8s / Helm（22d2 ✅）" 行 + 顶部范围声明指向 DEPLOY-K8S
+- [x] `docs/SECURITY-SANDBOX.md` §3.1 新增 K8sDriver + chart RBAC 已替换 docker.sock 妥协路径的注，列出 server SA scope 限制 + Pod securityContext + NetworkPolicy 实证手段
+- [x] HANDOFF + SLICE-VERIFICATION + 本 plan 更新；compose `./test-e2e.sh` 1–67 不变（回归保护）
+
+**22d2 不做（留 22d-v2 / 22e）：** ServiceMonitor + PrometheusRule（chart 留 stub）、HPA / PodDisruptionBudget、Ingress / TLS（chart 仅 ClusterIP）、K8sDriver.Snapshot + MinIO chart（22d-v2 kaniko-based）、multi-arch image build、helm chart cosign sign / OCI registry push（22e）、kind 上跑全量 67 步 e2e（需 mock-provider/mock-oidc/mock-mcp/minio 全 chart 化，超 22d2 体量）
 
 ---
 

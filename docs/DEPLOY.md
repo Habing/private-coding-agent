@@ -1,18 +1,16 @@
 # 部署 Runbook
 
-> 适用范围：MVP-P1（切片 1–17）。Full P1（切片 18–23）的 K8s/Helm/审计哈希链留给 [`p1-full-enterprise-design.md`](superpowers/specs/2026-05-21-p1-full-enterprise-design.md) 切片 22。
+> 适用范围：MVP-P1（切片 1–17）+ Full-P1 切片 22d2 的 Helm 形态。审计哈希链等 Full-P1 剩余进度见 [`p1-full-enterprise-design.md`](superpowers/specs/2026-05-21-p1-full-enterprise-design.md)。
 
-本文聚焦"从 dev compose 到生产试点"的差异：必须切换的开关、不能放弃的硬指标、上线前 checklist。
+本文聚焦"从 dev compose 到生产试点"的差异：必须切换的开关、不能放弃的硬指标、上线前 checklist。K8s/Helm 部署单独见 [`DEPLOY-K8S.md`](DEPLOY-K8S.md)。
 
 ## 1. 部署形态
 
-当前只交付一种打包形态：
-
 | 形态 | 入口 | 适合 |
 |------|------|------|
-| `deploy/compose/docker-compose.yml` | `docker compose up -d --build` | 单机试点（≤ 50 并发用户） |
+| `deploy/compose/docker-compose.yml` | `docker compose up -d --build` | 单机试点（≤ 50 并发用户）；用 docker.sock 妥协 |
 | 二进制 + 自带 Postgres/Redis/Docker | `bin/server -config /etc/pca/config.yaml` | 已有 Postgres/Redis 集群的内网环境 |
-| K8s / Helm | — | **切片 22 才交付**；MVP 阶段不要尝试 |
+| K8s / Helm（22d2 ✅） | `helm install pca ./deploy/helm/pca` | 生产试点 / 多用户；K8sDriver 走 SA + RBAC，无 docker.sock |
 
 二进制路径由 [`Dockerfile`](../Dockerfile) 构出，使用 distroless **以 root 运行**——见 [`SECURITY-SANDBOX.md`](SECURITY-SANDBOX.md)。
 

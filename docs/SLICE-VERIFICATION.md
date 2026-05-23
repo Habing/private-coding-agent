@@ -295,11 +295,16 @@ cd deploy/compose
 | 审计 | 无新增 audit action（driver 切换是 boot 期决策，沙箱生命周期 audit 走原 `sandbox.create/destroy/exec/snapshot.*` 与 driver 无关） |
 | 配置/部署 | 新增 `SandboxConfig.Driver` + `SandboxK8sConfig{Namespace,InCluster,Kubeconfig,ServiceAccount,SeccompLocalhostProfile,PodReadyTimeoutSec}`；`config.example.yaml` 加 `sandbox.driver` + `sandbox.k8s.*` 段附说明；`PCA_SANDBOX_DRIVER` / `PCA_SANDBOX_K8S_*` env 绑定；`httpx.Deps.Info` 新增 map（boot 期 server 注入 `{"sandbox":{"driver":...}}`，/healthz body 合并）；`go.mod` 加 `k8s.io/{api,apimachinery,client-go} v0.32.0` |
 
-### 切片 22d2 — Helm chart + kind nightly（待办）
+### 切片 22d2 — Helm chart + kind nightly + DEPLOY-K8S.md
 
 | 项 | 验证 |
 |----|------|
-| L3 | kind 集群单节点 + `helm install pca` + 在 cluster 内跑 e2e 子集（真 SPDY exec/ReadFile/WriteFile/Destroy）+ NetworkPolicy internal\|bridge\|none 三档实证 |
+| L1 | `deploy/helm/pca/templates/_helpers.tpl` 的 `pca.assertions` 在 helm 渲染期硬拦截：(a) `secrets.jwtSecret` 空且 `secrets.existing` 空 → fail；(b) `secrets.jwtSecret` 非空且 < 32 字符 → fail；(c) `config.sandbox.k8s.namespace != rbac.sandboxNamespace` → fail；(d) `sandbox.network` 不在 `internal\|bridge\|none` → fail；(e) `config.sandbox.driver` 不在 `docker\|k8s` → fail；本地无 helm 也可 `bash -n deploy/helm/pca/test/kind-e2e.sh` 校验脚本语法 |
+| L2 | `helm lint ./deploy/helm/pca` 干净；`helm template ./deploy/helm/pca -f ./deploy/helm/pca/values-kind.yaml \| kubectl apply --dry-run=client -f -` 全部 manifest schema-valid；server Deployment env 段必含 `PCA_DB_PASSWORD`（valueFrom secretKeyRef）+ `PCA_DB_DSN`（值含 `$(PCA_DB_PASSWORD)`）+ `PCA_REDIS_ADDR` + `PCA_AUTH_JWT_SECRET` |
+| L3 | `.github/workflows/kind-nightly.yml` 在 `workflow_dispatch` 手动触发 + 03:17 UTC 定时下绿通；`deploy/helm/pca/test/kind-e2e.sh` 六步全 PASS — 1) psql exec bootstrap demo user / 2) port-forward `svc/pca-server :18080` 起来 / 3) 登录 + create sandbox → status=running 且 `kubectl -n pca-sandboxes get pods` 非空 / 4) PUT /files + POST /exec via SPDY 来回 `hello kind` / 5) NetworkPolicy=internal 让 `curl https://1.1.1.1` exit != 0（外网拒）/ 6) DELETE session 后再 exec 必 404 |
+| 不变量 | (a) Helm chart `values.config.sandbox.k8s.namespace` 必须 == `values.rbac.sandboxNamespace`（_helpers.tpl assert）；(b) `templates/rbac.yaml` Role 只含 `pods{create,get,list,delete}` + `pods/exec{create}` + `pods/log{get}`，scope 限定 `rbac.sandboxNamespace`；server SA 在自己的 release ns 无任何 K8s API 权限；(c) `db.dsn` / `redis.addr` 不出现在 ConfigMap（viper 不解析 `$(VAR)`）；server 通过 Pod-spec env `$(PCA_DB_PASSWORD)` 在 admission 期由 K8s 展开拼 `PCA_DB_DSN`，viper.AutomaticEnv 让 env 覆盖 config.db.dsn；(d) NetworkPolicy `pca-sandbox-internal` 通过 podSelector `pca.network=internal` 拦截，对 K8sDriver 在 buildPod 打的同名 label 生效；`pca-sandbox-none` 是 `ingress: []` + `egress: []` deny-all；server NP 出站允许 DNS(53) + kube-apiserver(443/6443) + chart-managed PG/Redis(5432/6379)，公网由 `networkPolicy.allowExternalEgress` 控制 |
+| 审计 | 无新增 audit action；K8s 部署形态下的沙箱生命周期 audit 仍走原 `sandbox.create/destroy/exec/snapshot.*` |
+| 配置/部署 | 新增 `deploy/helm/pca` chart（13 模板 + Chart.yaml + values.yaml + values-kind.yaml + README.md）；新增 `.github/workflows/kind-nightly.yml` 单 job + `deploy/helm/pca/test/kind-config.yaml` + `deploy/helm/pca/test/kind-e2e.sh`（+x）；`docs/DEPLOY-K8S.md` 新增（10 段：部署形态选择 / 前置 / 镜像 / 快速开始 / values 速查 / 生产 checklist / 升级 / 回滚 / Troubleshooting / kind 本地实验）；`docs/DEPLOY.md` §1 形态表加 K8s/Helm 行；`docs/SECURITY-SANDBOX.md` §3.1 注明 K8s + chart RBAC 已替换 docker.sock 妥协路径 |
 
 ### 切片 23 — N8N（可选）
 
@@ -326,6 +331,7 @@ cd deploy/compose
 | Full P1（含 22b） | `./test-e2e.sh` | 1–65（slice 22b 完成后） |
 | Full P1（含 22c） | `./test-e2e.sh` | 1–66（slice 22c 完成后） |
 | Full P1（含 22d1） | `./test-e2e.sh` | 1–67（slice 22d1 完成后） |
+| Full P1（含 22d2） | `./test-e2e.sh` + nightly `kind-e2e.sh` | compose 1–67 不变；kind 6 步独立 PASS |
 
 ```powershell
 go test ./... -count=1
@@ -381,6 +387,6 @@ cd deploy/compose
 | 22b | 65 |
 | 22c | 66 |
 | 22d1 | 67 |
-| 22d2 | 68+（待办） |
+| 22d2 | — (Helm chart + kind nightly；compose 步号不增) |
 | 23 | 68+（可选） |
 | **Full P1 全量** | **1–70+** |

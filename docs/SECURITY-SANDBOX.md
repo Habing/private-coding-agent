@@ -71,6 +71,17 @@ K8sDriver.Snapshot 在 22d1 阶段直接返回 `ErrSnapshotDisabled`（admin /sn
 
 **如果客户环境对 docker.sock 不可接受，必须等切片 22。** 不要试图把 server 切到 nonroot 而保留 sock 挂载——会拿不到 sock 权限。
 
+### 3.1 已落地的替代路径（切片 22d1/22d2）
+
+K8sDriver + Helm chart（`deploy/helm/pca/`）已交付，构成 docker.sock 妥协的**对照消除**路径：
+
+- server Pod 通过 ServiceAccount 调 kube-apiserver；**集群内不需要 docker.sock**
+- chart RBAC Role 仅绑 `pca-sandboxes` ns，verbs 是 `pods{create,get,list,delete}` + `pods/exec{create}` + `pods/log{get}`——server 进程被 RCE 时，攻击者拿到的 SA token 也只能在 sandbox ns 里建/exec Pod，**拿不到 nodes、secrets、cluster-admin**
+- server Pod 自身 securityContext：`runAsNonRoot=true` + `readOnlyRootFilesystem=true` + `cap drop ALL` + `seccompProfile RuntimeDefault`，与 compose 形态的 root server 形成对比
+- NetworkPolicy `pca-sandbox-internal` 把 sandbox 出站锁到 release ns 内的 server pod；外网 egress 在 nightly e2e（`./deploy/helm/pca/test/kind-e2e.sh`）实证被拒
+
+部署细节见 [`DEPLOY-K8S.md`](DEPLOY-K8S.md)；客户环境对 docker.sock 不可接受时走 K8s 形态。
+
 ## 4. 网络隔离
 
 `networkModeFor` 把 API 的 `NetworkMode` 映射为 Docker 网络：
