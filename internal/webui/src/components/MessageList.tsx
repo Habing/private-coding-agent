@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react'
 
 import { ToolCallCard } from '@/components/ToolCallCard'
+import { WorkflowProposalCard } from '@/components/WorkflowProposalCard'
 import { TypingIndicator } from '@/components/TypingIndicator'
 import { shouldShowWaitingIndicator } from '@/lib/chatWaiting'
+import { parseWorkflowProposalFromResult } from '@/lib/workflowProposal'
 import { cn } from '@/lib/utils'
 import type { AgentEvent, Message } from '@/types/api'
 
@@ -121,6 +123,10 @@ function buildEventItems(events: AgentEvent[]): RenderItem[] {
       const id = ev.tool_call_id ?? `idx-${i}`
       const at = items.length
       callIndex.set(id, at)
+      const toolName = ev.tool ?? (ev as AgentEvent & { tool_name?: string }).tool_name
+      if (toolName === 'workflow.propose') {
+        return
+      }
       items.push({
         key: `ev-${i}`,
         node: <ToolCallCard call={ev} />,
@@ -129,6 +135,14 @@ function buildEventItems(events: AgentEvent[]): RenderItem[] {
     }
     if (ev.kind === 'tool_result') {
       const id = ev.tool_call_id ?? ''
+      const proposal = parseWorkflowProposalFromResult(ev)
+      if (proposal) {
+        items.push({
+          key: `ev-${i}-proposal`,
+          node: <WorkflowProposalCard payload={proposal} />,
+        })
+        return
+      }
       const at = id ? callIndex.get(id) : undefined
       if (at !== undefined) {
         const prev = items[at]
