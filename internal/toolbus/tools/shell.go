@@ -18,7 +18,7 @@ func NewShellExec(rt Runtime) toolbus.Tool { return &shellExec{rt: rt} }
 func (t *shellExec) Name() string       { return "shell.exec" }
 func (t *shellExec) IsMutating() bool   { return true }
 func (t *shellExec) Description() string {
-	return "Run a shell command inside the sandbox. Returns exit code, stdout, stderr."
+	return "在沙箱内执行 shell 命令，返回退出码、标准输出与标准错误。"
 }
 func (t *shellExec) Schema() json.RawMessage {
 	return json.RawMessage(`{

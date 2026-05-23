@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ApiError, api } from '@/lib/api'
+import { memoryTypeLabel } from '@/lib/uiLabels'
 import { useAuthStore } from '@/stores/auth'
 import type {
   ApproveMemoryProposalRequest,
@@ -153,12 +154,12 @@ export function MemoryProposals() {
                 <div className="mb-1 flex items-center justify-between gap-2">
                   <div className="flex flex-col">
                     <span className="font-mono text-xs text-muted-foreground">
-                      {p.type} · conf {p.confidence.toFixed(2)} ·{' '}
+                      {memoryTypeLabel(p.type)} · 置信度 {p.confidence.toFixed(2)} ·{' '}
                       {new Date(p.created_at).toLocaleString()}
                     </span>
                     {p.tags.length > 0 && (
                       <span className="text-xs text-muted-foreground">
-                        tags: {p.tags.join(', ')}
+                        标签: {p.tags.join(', ')}
                       </span>
                     )}
                   </div>
@@ -185,7 +186,7 @@ export function MemoryProposals() {
                 <p className="whitespace-pre-wrap text-sm">{p.content}</p>
                 {p.memory_id && (
                   <p className="mt-1 font-mono text-xs text-muted-foreground">
-                    memory_id: {p.memory_id}
+                    记忆 ID: {p.memory_id}
                   </p>
                 )}
               </li>
@@ -216,7 +217,7 @@ export function MemoryProposals() {
                 >
                   {TYPES.map((t) => (
                     <option key={t} value={t}>
-                      {t}
+                      {memoryTypeLabel(t)}
                     </option>
                   ))}
                 </select>

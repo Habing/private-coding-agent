@@ -147,15 +147,15 @@ export function SkillsAdmin() {
 
       <Card>
         <CardHeader>
-          <CardTitle>新建 Skill</CardTitle>
+          <CardTitle>新建技能</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div className="flex flex-wrap gap-3">
             <div className="flex flex-col gap-1">
-              <Label htmlFor="skill-key">Skill Key</Label>
+              <Label htmlFor="skill-key">技能 Key</Label>
               <Input
                 id="skill-key"
-                placeholder="lowercase-hyphen-only"
+                placeholder="小写连字符，如 my-skill"
                 value={draft.skill_key}
                 onChange={(e) => setDraft({ ...draft, skill_key: e.target.value })}
                 className="w-64"
@@ -172,13 +172,13 @@ export function SkillsAdmin() {
             </div>
           </div>
           <div className="flex flex-col gap-1">
-            <Label htmlFor="skill-body">Skill Body</Label>
+            <Label htmlFor="skill-body">技能正文</Label>
             <textarea
               id="skill-body"
               className="min-h-[120px] rounded-md border bg-background p-2 font-mono text-sm"
               value={draft.body}
               onChange={(e) => setDraft({ ...draft, body: e.target.value })}
-              placeholder="注入到 system prompt 的纯文本"
+              placeholder="注入到 system prompt 的 Markdown 或纯文本"
             />
           </div>
           <Button
@@ -227,7 +227,7 @@ export function SkillsAdmin() {
                 )}
             </div>
             <div className="flex flex-1 flex-col gap-1 min-w-[260px]">
-              <Label htmlFor="binding-keys">Skill Keys (空格或逗号分隔)</Label>
+              <Label htmlFor="binding-keys">技能 Key（空格或逗号分隔）</Label>
               <Input
                 id="binding-keys"
                 value={bindingDraft}
@@ -250,7 +250,7 @@ export function SkillsAdmin() {
 
       <Card className="flex-1">
         <CardHeader>
-          <CardTitle>Skill 列表</CardTitle>
+          <CardTitle>技能列表</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading && <p className="text-sm text-muted-foreground">加载中…</p>}
@@ -258,7 +258,7 @@ export function SkillsAdmin() {
             <p className="text-sm text-destructive">加载失败：{(listErr as Error).message}</p>
           )}
           {!isLoading && skills.length === 0 && (
-            <p className="text-sm text-muted-foreground">暂无租户 Skill</p>
+            <p className="text-sm text-muted-foreground">暂无租户技能</p>
           )}
           <ul className="flex flex-col gap-3">
             {skills.map((s) => (
@@ -299,7 +299,7 @@ function SkillRow({
         <div className="flex flex-col">
           <span className="font-mono text-xs text-muted-foreground">{skill.skill_key}</span>
           <span className="text-xs text-muted-foreground">
-            hash {skill.content_hash.slice(0, 12)} ·{' '}
+            哈希 {skill.content_hash.slice(0, 12)} ·{' '}
             {new Date(skill.updated_at).toLocaleString()}
           </span>
         </div>

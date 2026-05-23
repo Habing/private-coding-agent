@@ -26,7 +26,7 @@ func NewLLMChat(gw Gateway) toolbus.Tool { return &llmChat{gw: gw} }
 
 func (t *llmChat) Name() string { return "llm.chat" }
 func (t *llmChat) Description() string {
-	return "Send a Chat Completion request to the configured LLM provider. Returns the assistant message."
+	return "调用已配置的大模型完成一次对话补全，返回 assistant 回复文本。"
 }
 func (t *llmChat) Schema() json.RawMessage {
 	return json.RawMessage(`{
@@ -89,7 +89,7 @@ func NewLLMEmbed(gw Gateway) toolbus.Tool { return &llmEmbed{gw: gw} }
 
 func (t *llmEmbed) Name() string { return "llm.embed" }
 func (t *llmEmbed) Description() string {
-	return "Compute embedding vectors for one or more text strings."
+	return "对一段或多段文本计算 embedding 向量。"
 }
 func (t *llmEmbed) Schema() json.RawMessage {
 	return json.RawMessage(`{

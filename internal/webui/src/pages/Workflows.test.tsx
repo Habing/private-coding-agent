@@ -80,8 +80,8 @@ describe('<Workflows />', () => {
     renderPage()
     await screen.findByText('a')
     expect(screen.getByText('b')).toBeInTheDocument()
-    expect(screen.getByText('published')).toBeInTheDocument()
-    expect(screen.getByText('draft')).toBeInTheDocument()
+    expect(screen.getByText('已发布')).toBeInTheDocument()
+    expect(screen.getByText('草稿')).toBeInTheDocument()
   })
 
   it('creates a workflow and refreshes the list', async () => {
@@ -96,9 +96,9 @@ describe('<Workflows />', () => {
       }),
     )
     renderPage()
-    await screen.findByText(/还没有 Workflow/)
+    await screen.findByText(/还没有工作流/)
 
-    await userEvent.type(screen.getByLabelText('slug'), 'fresh')
+    await userEvent.type(screen.getByLabelText(/标识 \(slug\)/), 'fresh')
     await userEvent.click(screen.getByRole('button', { name: '创建' }))
 
     await waitFor(() => expect(screen.queryByText('fresh')).toBeInTheDocument())
@@ -147,7 +147,7 @@ describe('<Workflows />', () => {
     // keyboard parser would interpret as key descriptors.
     fireEvent.change(editor, { target: { value: 'id: edit-me\nname: changed\nsteps: []\n' } })
 
-    const saveBtn = await screen.findByRole('button', { name: /保存（重置/ })
+    const saveBtn = await screen.findByRole('button', { name: /保存（将重置/ })
     await userEvent.click(saveBtn)
     // After save, the row’s version label updates from v1 to v2.
     await waitFor(() => expect(screen.getByText(/v2/)).toBeInTheDocument())

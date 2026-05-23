@@ -51,11 +51,12 @@ describe('<Toolbox />', () => {
     )
     renderToolbox()
 
-    await screen.findByText('fs.write')
+    await screen.findByText('写入文件')
     expect(screen.getByText('fs.read')).toBeInTheDocument()
+    expect(screen.getByText('读取文件')).toBeInTheDocument()
 
     // Mutating badge appears exactly once (only fs.write).
-    const badges = screen.getAllByText('Mutating')
+    const badges = screen.getAllByText('可变更')
     expect(badges).toHaveLength(1)
   })
 
@@ -68,13 +69,13 @@ describe('<Toolbox />', () => {
       ),
     )
     renderToolbox()
-    await screen.findByText('fs.write')
+    await screen.findByText('写入文件')
 
-    const input = screen.getByPlaceholderText(/按 name/)
-    await userEvent.type(input, 'memor')
+    const input = screen.getByPlaceholderText(/按名称/)
+    await userEvent.type(input, '记忆')
 
-    expect(screen.queryByText('fs.write')).not.toBeInTheDocument()
-    expect(screen.getByText('memory.search')).toBeInTheDocument()
+    expect(screen.queryByText('写入文件')).not.toBeInTheDocument()
+    expect(screen.getByText('搜索记忆')).toBeInTheDocument()
   })
 
   it('toggles schema panel on click', async () => {
@@ -82,10 +83,11 @@ describe('<Toolbox />', () => {
       http.get('/tools', () => HttpResponse.json({ tools: [tool('fs.read', false)] })),
     )
     renderToolbox()
-    await screen.findByText('fs.read')
+    await screen.findByText('读取文件')
+    expect(screen.getByText('fs.read')).toBeInTheDocument()
 
     expect(screen.queryByText(/"type": "object"/)).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: /查看 schema/ }))
+    await userEvent.click(screen.getByRole('button', { name: /查看参数/ }))
     expect(screen.getByText(/"type": "object"/)).toBeInTheDocument()
   })
 })

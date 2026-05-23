@@ -66,7 +66,7 @@ func TestTool_Name_PrefixesSlugAndTool(t *testing.T) {
 
 func TestTool_Description_FallsBackWhenEmpty(t *testing.T) {
 	empty := newTestTool(t, "http://unused", uuid.New(), mcp.ToolSchema{Name: "echo"})
-	assert.Equal(t, "External MCP tool from mock", empty.Description())
+	assert.Equal(t, "外部 MCP 工具（服务 mock）", empty.Description())
 
 	filled := newTestTool(t, "http://unused", uuid.New(), mcp.ToolSchema{
 		Name: "echo", Description: "echoes the input verbatim",

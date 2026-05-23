@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ApiError, api } from '@/lib/api'
+import { workflowPublishLabel, workflowRunStatusLabel } from '@/lib/uiLabels'
 import { useAuthStore } from '@/stores/auth'
 import type {
   CreateWorkflowRequest,
@@ -95,21 +96,21 @@ export function Workflows() {
 
       <Card>
         <CardHeader>
-          <CardTitle>新建 Workflow</CardTitle>
+          <CardTitle>新建工作流</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
-            <Label htmlFor="wf-slug">slug</Label>
+            <Label htmlFor="wf-slug">标识 (slug)</Label>
             <Input
               id="wf-slug"
-              placeholder="kebab-case-slug"
+              placeholder="kebab-case，如 my-flow"
               value={newSlug}
               onChange={(e) => setNewSlug(e.target.value)}
               className="w-64"
             />
           </div>
           <div className="flex flex-1 flex-col gap-1 min-w-[200px]">
-            <Label htmlFor="wf-name">name（可选，默认同 slug）</Label>
+            <Label htmlFor="wf-name">名称（可选，默认同标识）</Label>
             <Input
               id="wf-name"
               value={newName}
@@ -128,7 +129,7 @@ export function Workflows() {
 
       <Card className="flex-1">
         <CardHeader>
-          <CardTitle>Workflow 列表</CardTitle>
+          <CardTitle>工作流列表</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {listQ.isLoading && <p className="text-sm text-muted-foreground">加载中…</p>}
@@ -136,7 +137,7 @@ export function Workflows() {
             <p className="text-sm text-destructive">加载失败：{(listQ.error as Error).message}</p>
           )}
           {!listQ.isLoading && (listQ.data?.workflows.length ?? 0) === 0 && (
-            <p className="text-sm text-muted-foreground">还没有 Workflow，用上方表单创建一个。</p>
+            <p className="text-sm text-muted-foreground">还没有工作流，用上方表单创建一个。</p>
           )}
           <ul className="flex flex-col gap-3">
             {(listQ.data?.workflows ?? []).map((wf) => (
@@ -232,7 +233,7 @@ function WorkflowRow({
   })
 
   function confirmDelete() {
-    if (window.confirm(`确认删除 workflow "${workflow.slug}"？此操作不可恢复。`)) {
+    if (window.confirm(`确认删除工作流「${workflow.slug}」？此操作不可恢复。`)) {
       deleteMut.mutate()
     }
   }
@@ -245,9 +246,9 @@ function WorkflowRow({
           <span className="text-xs text-muted-foreground">
             {workflow.name} · v{workflow.version} ·{' '}
             {workflow.published ? (
-              <span className="text-green-600">published</span>
+              <span className="text-green-600">{workflowPublishLabel(true)}</span>
             ) : (
-              <span>draft</span>
+              <span>{workflowPublishLabel(false)}</span>
             )}{' '}
             · {new Date(workflow.updated_at).toLocaleString()}
           </span>
@@ -331,7 +332,7 @@ function EditPane({
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_320px]">
       <div className="flex flex-col gap-2">
-        <Label htmlFor="dsl">DSL (YAML)</Label>
+        <Label htmlFor="dsl">DSL（YAML）</Label>
         <YamlEditor value={dsl} onChange={setDsl} />
         <Button
           size="sm"
@@ -339,12 +340,12 @@ function EditPane({
           disabled={!dirty || saving}
           onClick={() => onSave({ name, description, dsl_yaml: dsl })}
         >
-          {saving ? '保存中…' : '保存（重置 published=false）'}
+          {saving ? '保存中…' : '保存（将重置为未发布）'}
         </Button>
       </div>
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-1">
-          <Label htmlFor="wf-name-edit">name</Label>
+          <Label htmlFor="wf-name-edit">名称</Label>
           <Input
             id="wf-name-edit"
             value={name}
@@ -352,7 +353,7 @@ function EditPane({
           />
         </div>
         <div className="flex flex-col gap-1">
-          <Label htmlFor="wf-desc-edit">description</Label>
+          <Label htmlFor="wf-desc-edit">描述</Label>
           <textarea
             id="wf-desc-edit"
             className="min-h-[60px] rounded-md border bg-background p-2 text-sm"
@@ -408,7 +409,7 @@ function InvokePanel({ slug }: { slug: string }) {
 
   return (
     <div className="flex flex-col gap-2 rounded-md border p-3">
-      <Label className="font-semibold">Invoke</Label>
+      <Label className="font-semibold">试运行</Label>
       <textarea
         className="min-h-[80px] rounded-md border bg-background p-2 font-mono text-xs"
         value={inputsText}
@@ -421,7 +422,7 @@ function InvokePanel({ slug }: { slug: string }) {
           checked={dryRun}
           onChange={(e) => setDryRun(e.target.checked)}
         />
-        Dry-Run（mutating 工具不真正执行）
+        Dry-Run（可变更工具不真正执行）
       </label>
       <Button
         size="sm"
@@ -458,14 +459,14 @@ function RunsPanel({ slug }: { slug: string }) {
         className="flex items-center justify-between text-left"
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="font-semibold text-sm">最近 Run</span>
+        <span className="font-semibold text-sm">最近运行</span>
         <span className="text-xs text-muted-foreground">{open ? '收起' : '展开'}</span>
       </button>
       {open && (
         <div className="flex flex-col gap-1">
           {runsQ.isLoading && <p className="text-xs text-muted-foreground">加载中…</p>}
           {!runsQ.isLoading && runs.length === 0 && (
-            <p className="text-xs text-muted-foreground">没有 run。</p>
+            <p className="text-xs text-muted-foreground">暂无运行记录。</p>
           )}
           {runs.map((r) => (
             <RunRow key={r.id} run={r} />
@@ -490,22 +491,23 @@ function RunRow({ run }: { run: WorkflowRun }) {
         onClick={() => setOpen((v) => !v)}
       >
         <span className="font-mono">
-          {new Date(run.started_at).toLocaleString()} · <span className={color}>{run.status}</span>
-          {run.dry_run && <span className="ml-1 text-muted-foreground">[dry]</span>}
+          {new Date(run.started_at).toLocaleString()} ·{' '}
+          <span className={color}>{workflowRunStatusLabel(run.status)}</span>
+          {run.dry_run && <span className="ml-1 text-muted-foreground">[试运行]</span>}
         </span>
         <span className="text-muted-foreground">{run.duration_ms}ms</span>
       </button>
       {open && (
         <div className="mt-1 flex flex-col gap-1">
-          {run.error_text && <p className="text-destructive">error: {run.error_text}</p>}
+          {run.error_text && <p className="text-destructive">错误：{run.error_text}</p>}
           <details>
-            <summary className="cursor-pointer text-muted-foreground">inputs</summary>
+            <summary className="cursor-pointer text-muted-foreground">输入</summary>
             <pre className="overflow-auto rounded bg-muted p-1 font-mono">
               {JSON.stringify(inputs, null, 2)}
             </pre>
           </details>
           <details>
-            <summary className="cursor-pointer text-muted-foreground">outputs</summary>
+            <summary className="cursor-pointer text-muted-foreground">输出</summary>
             <pre className="overflow-auto rounded bg-muted p-1 font-mono">
               {JSON.stringify(outputs, null, 2)}
             </pre>

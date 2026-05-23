@@ -44,7 +44,7 @@ export function TopBar() {
               to="/admin/skills"
               className="text-muted-foreground hover:text-foreground"
             >
-              Skills
+              技能
             </Link>
             <Link
               to="/workflows"
@@ -56,7 +56,7 @@ export function TopBar() {
               to="/admin/mcp-servers"
               className="text-muted-foreground hover:text-foreground"
             >
-              MCP
+              MCP 服务
             </Link>
             <Link
               to="/admin/memory-proposals"

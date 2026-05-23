@@ -73,9 +73,9 @@ func (t *DelegateTool) IsMutating() bool { return true }
 
 // Description is surfaced to the LLM via the Tool Bus list.
 func (t *DelegateTool) Description() string {
-	return "Delegate a subtask to a different Agent Profile (review / research / workflow-authoring). " +
-		"The child Run inherits the parent's sandbox, tenant, user and model; only its final answer is returned. " +
-		"Use this when a task naturally belongs to another persona (e.g. code review) rather than your own."
+	return "将子任务委派给其他智能体类型（如代码评审、资料调研、工作流编写）。" +
+		"子智能体继承同一沙箱、租户、用户与模型，仅返回最终答案。" +
+		"适合需要其他角色专长时使用（例如让评审智能体做 code review）。"
 }
 
 // Schema returns the JSON schema for input arguments. The profile enum is

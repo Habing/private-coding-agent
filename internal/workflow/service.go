@@ -344,7 +344,7 @@ func descrOrDefault(wf *Workflow, doc *WorkflowDoc) string {
 	if doc.Description != "" {
 		return doc.Description
 	}
-	return "Published workflow: " + wf.Slug
+	return "已发布的工作流：" + wf.Slug
 }
 
 func orEmptyMap(m map[string]any) map[string]any {

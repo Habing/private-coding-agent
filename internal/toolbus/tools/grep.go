@@ -20,7 +20,7 @@ func NewGrep(rt Runtime) toolbus.Tool { return &grepTool{rt: rt} }
 
 func (t *grepTool) Name() string { return "grep" }
 func (t *grepTool) Description() string {
-	return "Search file contents in the sandbox using regex. Returns lines matching the pattern with file:line context."
+	return "在沙箱内用正则搜索文件内容，返回匹配行及文件:行号。"
 }
 func (t *grepTool) Schema() json.RawMessage {
 	return json.RawMessage(`{

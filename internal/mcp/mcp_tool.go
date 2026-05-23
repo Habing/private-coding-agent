@@ -51,7 +51,7 @@ func (t *Tool) Name() string { return "mcp." + t.serverSlug + "." + t.schema.Nam
 // to a generic line so LLMs always see something.
 func (t *Tool) Description() string {
 	if t.schema.Description == "" {
-		return "External MCP tool from " + t.serverSlug
+		return "外部 MCP 工具（服务 " + t.serverSlug + "）"
 	}
 	return t.schema.Description
 }

@@ -34,7 +34,7 @@ func NewFSRead(rt Runtime) toolbus.Tool { return &fsRead{rt: rt} }
 
 func (t *fsRead) Name() string { return "fs.read" }
 func (t *fsRead) Description() string {
-	return "Read a UTF-8 text file from the sandbox workspace. Path is relative to /workspace."
+	return "读取沙箱工作区 /workspace 内的 UTF-8 文本文件。路径相对于 workspace 根目录。"
 }
 func (t *fsRead) Schema() json.RawMessage {
 	return json.RawMessage(`{
@@ -84,7 +84,7 @@ func NewFSWrite(rt Runtime) toolbus.Tool { return &fsWrite{rt: rt} }
 func (t *fsWrite) Name() string       { return "fs.write" }
 func (t *fsWrite) IsMutating() bool   { return true }
 func (t *fsWrite) Description() string {
-	return "Write content to a file in the sandbox workspace. Creates intermediate directories. Overwrites if exists."
+	return "向沙箱工作区写入文件，自动创建中间目录；若文件已存在则覆盖。"
 }
 func (t *fsWrite) Schema() json.RawMessage {
 	return json.RawMessage(`{
@@ -130,7 +130,7 @@ func NewFSList(rt Runtime) toolbus.Tool { return &fsList{rt: rt} }
 
 func (t *fsList) Name() string { return "fs.list" }
 func (t *fsList) Description() string {
-	return "List files and directories under a sandbox path. Non-recursive."
+	return "列出沙箱指定目录下的文件和子目录（非递归）。"
 }
 func (t *fsList) Schema() json.RawMessage {
 	return json.RawMessage(`{
@@ -220,7 +220,7 @@ func NewFSGlob(rt Runtime) toolbus.Tool { return &fsGlob{rt: rt} }
 
 func (t *fsGlob) Name() string { return "fs.glob" }
 func (t *fsGlob) Description() string {
-	return "Find files in the sandbox matching a glob pattern (e.g. '**/*.go', 'src/**/*.test.ts')."
+	return "按 glob 模式匹配沙箱内文件，例如 **/*.go、src/**/*.test.ts。"
 }
 func (t *fsGlob) Schema() json.RawMessage {
 	return json.RawMessage(`{

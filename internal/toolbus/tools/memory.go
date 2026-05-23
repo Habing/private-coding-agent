@@ -42,7 +42,7 @@ func NewMemorySave(svc MemoryService) toolbus.Tool { return &memorySave{svc: svc
 func (t *memorySave) Name() string       { return "memory.save" }
 func (t *memorySave) IsMutating() bool   { return true }
 func (t *memorySave) Description() string {
-	return "Persist a memory entry (profile/preference/knowledge/lesson) for the current user. Returns the new entry's id."
+	return "为当前用户保存一条记忆（画像/偏好/知识/经验），返回新记录 ID。"
 }
 func (t *memorySave) Schema() json.RawMessage {
 	return json.RawMessage(`{
@@ -97,7 +97,7 @@ func NewMemorySearch(svc MemoryService) toolbus.Tool { return &memorySearch{svc:
 
 func (t *memorySearch) Name() string { return "memory.search" }
 func (t *memorySearch) Description() string {
-	return "Search the current user's memories. Default mode runs cosine similarity over content embeddings; pass mode='keyword' for ILIKE fallback. At least one of query/type/tags is required."
+	return "检索当前用户的记忆。默认向量语义搜索；mode=keyword 时用关键词匹配。至少需提供 query、type 或 tags 之一。"
 }
 func (t *memorySearch) Schema() json.RawMessage {
 	return json.RawMessage(`{
@@ -162,7 +162,7 @@ func NewMemoryList(svc MemoryService) toolbus.Tool { return &memoryList{svc: svc
 
 func (t *memoryList) Name() string { return "memory.list" }
 func (t *memoryList) Description() string {
-	return "List the current user's memories, optionally filtered by type / tag. Use this for browsing; use memory.search to find a specific entry."
+	return "浏览当前用户的记忆列表，可按类型、标签过滤；精确查找请用 memory.search。"
 }
 func (t *memoryList) Schema() json.RawMessage {
 	return json.RawMessage(`{
@@ -216,7 +216,7 @@ func NewMemoryDelete(svc MemoryService) toolbus.Tool { return &memoryDelete{svc:
 func (t *memoryDelete) Name() string       { return "memory.delete" }
 func (t *memoryDelete) IsMutating() bool   { return true }
 func (t *memoryDelete) Description() string {
-	return "Delete one memory entry by id."
+	return "按 ID 删除一条记忆。"
 }
 func (t *memoryDelete) Schema() json.RawMessage {
 	return json.RawMessage(`{

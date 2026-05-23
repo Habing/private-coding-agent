@@ -89,7 +89,7 @@ describe('<Audit />', () => {
     renderAudit()
     await waitFor(() => expect(lastURL).not.toBeNull())
     const user = userEvent.setup()
-    await user.type(screen.getByLabelText(/Action/i), 'auth.login')
+    await user.type(screen.getByLabelText(/操作前缀/), 'auth.login')
     await user.click(screen.getByRole('button', { name: '筛选' }))
     await waitFor(() => {
       expect(lastURL?.searchParams.get('action')).toBe('auth.login')

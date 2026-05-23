@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { api } from '@/lib/api'
+import { memoryTypeLabel } from '@/lib/uiLabels'
 import { useAuthStore } from '@/stores/auth'
 import type {
   CreateMemoryRequest,
@@ -88,7 +89,7 @@ export function Memories() {
               >
                 {TYPES.map((t) => (
                   <option key={t} value={t}>
-                    {t}
+                    {memoryTypeLabel(t)}
                   </option>
                 ))}
               </select>
@@ -177,7 +178,7 @@ function MemoryRow({
   return (
     <li className="rounded-md border p-3 text-sm">
       <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="font-medium text-muted-foreground">{memory.type}</span>
+        <span className="font-medium text-muted-foreground">{memoryTypeLabel(memory.type)}</span>
         <div className="flex gap-2">
           <Button
             size="sm"

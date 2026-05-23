@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ApiError, api } from '@/lib/api'
+import { authTypeLabel, mcpEnabledLabel } from '@/lib/uiLabels'
 import { useAuthStore } from '@/stores/auth'
 import type {
   CreateMcpServerRequest,
@@ -86,21 +87,21 @@ export function McpServers() {
 
       <Card>
         <CardHeader>
-          <CardTitle>注册外部 MCP Server</CardTitle>
+          <CardTitle>注册 MCP 服务</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
-            <Label htmlFor="mcp-slug">slug</Label>
+            <Label htmlFor="mcp-slug">标识 (slug)</Label>
             <Input
               id="mcp-slug"
-              placeholder="kebab-case-slug"
+              placeholder="kebab-case，如 my-mcp"
               value={newSlug}
               onChange={(e) => setNewSlug(e.target.value)}
               className="w-56"
             />
           </div>
           <div className="flex flex-col gap-1 min-w-[180px]">
-            <Label htmlFor="mcp-name">name（可选）</Label>
+            <Label htmlFor="mcp-name">名称（可选）</Label>
             <Input
               id="mcp-name"
               value={newName}
@@ -108,7 +109,7 @@ export function McpServers() {
             />
           </div>
           <div className="flex flex-1 flex-col gap-1 min-w-[260px]">
-            <Label htmlFor="mcp-url">url</Label>
+            <Label htmlFor="mcp-url">地址 (URL)</Label>
             <Input
               id="mcp-url"
               placeholder="http://mcp.example.com:8083"
@@ -117,7 +118,7 @@ export function McpServers() {
             />
           </div>
           <div className="flex flex-col gap-1">
-            <Label htmlFor="mcp-auth">auth_type</Label>
+            <Label htmlFor="mcp-auth">认证方式</Label>
             <select
               id="mcp-auth"
               className="h-9 rounded-md border bg-background px-2 text-sm"
@@ -126,13 +127,13 @@ export function McpServers() {
                 setNewAuthType(e.target.value as 'none' | 'bearer')
               }
             >
-              <option value="none">none</option>
-              <option value="bearer">bearer</option>
+              <option value="none">{authTypeLabel('none')}</option>
+              <option value="bearer">{authTypeLabel('bearer')}</option>
             </select>
           </div>
           {newAuthType === 'bearer' && (
             <div className="flex flex-col gap-1 min-w-[200px]">
-              <Label htmlFor="mcp-token">auth_token</Label>
+              <Label htmlFor="mcp-token">Bearer 令牌</Label>
               <Input
                 id="mcp-token"
                 type="password"
@@ -155,7 +156,7 @@ export function McpServers() {
 
       <Card className="flex-1">
         <CardHeader>
-          <CardTitle>MCP Server 列表</CardTitle>
+          <CardTitle>MCP 服务列表</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {listQ.isLoading && (
@@ -168,7 +169,7 @@ export function McpServers() {
           )}
           {!listQ.isLoading && (listQ.data?.servers.length ?? 0) === 0 && (
             <p className="text-sm text-muted-foreground">
-              还没有 MCP Server，用上方表单注册一个。
+              还没有 MCP 服务，用上方表单注册一个。
             </p>
           )}
           <ul className="flex flex-col gap-3">
@@ -244,7 +245,7 @@ function ServerRow({
   function confirmDelete() {
     if (
       window.confirm(
-        `确认删除 MCP server "${server.slug}"？相关 tool 将立即从 Bus 下线。`,
+        `确认删除 MCP 服务「${server.slug}」？相关工具将立即从 Bus 下线。`,
       )
     ) {
       deleteMut.mutate()
@@ -262,20 +263,20 @@ function ServerRow({
           <span className="font-mono text-sm">
             {server.slug}{' '}
             <span className="text-xs text-muted-foreground">
-              ({server.tools_cache.length} tools)
+              ({server.tools_cache.length} 个工具)
             </span>
           </span>
           <span className="text-xs text-muted-foreground">
             {server.name} ·{' '}
             {server.enabled ? (
-              <span className="text-green-600">enabled</span>
+              <span className="text-green-600">{mcpEnabledLabel(true)}</span>
             ) : (
-              <span>disabled</span>
+              <span>{mcpEnabledLabel(false)}</span>
             )}{' '}
-            · last_seen: {seenAt}
+            · 最近连接: {seenAt}
             {server.last_error && (
               <span className="ml-2 text-destructive">
-                err: {truncate(server.last_error, 60)}
+                错误: {truncate(server.last_error, 60)}
               </span>
             )}
           </span>
@@ -417,11 +418,11 @@ function EditPane({
     <div className="grid grid-cols-1 gap-3 border-t p-3 lg:grid-cols-[1fr_320px]">
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-1">
-          <Label>name</Label>
+          <Label>名称</Label>
           <Input value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div className="flex flex-col gap-1">
-          <Label>description</Label>
+          <Label>描述</Label>
           <textarea
             className="min-h-[60px] rounded-md border bg-background p-2 text-sm"
             value={description}
@@ -429,12 +430,12 @@ function EditPane({
           />
         </div>
         <div className="flex flex-col gap-1">
-          <Label>url</Label>
+          <Label>地址 (URL)</Label>
           <Input value={url} onChange={(e) => setUrl(e.target.value)} />
         </div>
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
-            <Label>auth_type</Label>
+            <Label>认证方式</Label>
             <select
               className="h-9 rounded-md border bg-background px-2 text-sm"
               value={authType}
@@ -442,24 +443,24 @@ function EditPane({
                 setAuthType(e.target.value as 'none' | 'bearer')
               }
             >
-              <option value="none">none</option>
-              <option value="bearer">bearer</option>
+              <option value="none">{authTypeLabel('none')}</option>
+              <option value="bearer">{authTypeLabel('bearer')}</option>
             </select>
           </div>
           {authType === 'bearer' && (
             <div className="flex flex-1 flex-col gap-1 min-w-[200px]">
-              <Label>auth_token（留空保留原值）</Label>
+              <Label>Bearer 令牌（留空保留原值）</Label>
               <Input
                 type="password"
                 value={authToken}
                 onChange={(e) => setAuthToken(e.target.value)}
-                placeholder="*** (current secret hidden)"
+                placeholder="***（当前密钥已隐藏）"
               />
             </div>
           )}
         </div>
         <div className="flex flex-col gap-1">
-          <Label>headers (JSON object)</Label>
+          <Label>请求头 (JSON 对象)</Label>
           <textarea
             className="min-h-[80px] rounded-md border bg-background p-2 font-mono text-xs"
             value={headersText}
@@ -513,7 +514,7 @@ function EditPane({
                 )}
                 <details className="mt-1">
                   <summary className="cursor-pointer text-muted-foreground">
-                    schema
+                    参数结构
                   </summary>
                   <pre className="mt-1 max-h-40 overflow-auto rounded bg-background p-1 font-mono text-[10px]">
                     {JSON.stringify(t.inputSchema, null, 2)}

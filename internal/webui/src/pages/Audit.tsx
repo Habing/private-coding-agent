@@ -62,7 +62,7 @@ export function Audit() {
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
-            <Label htmlFor="audit-action">Action 前缀</Label>
+            <Label htmlFor="audit-action">操作前缀</Label>
             <Input
               id="audit-action"
               placeholder="如 auth.login 或 sandbox."
@@ -72,7 +72,7 @@ export function Audit() {
             />
           </div>
           <div className="flex flex-col gap-1">
-            <Label htmlFor="audit-uid">User ID</Label>
+            <Label htmlFor="audit-uid">用户 ID</Label>
             <Input
               id="audit-uid"
               placeholder="UUID"
@@ -130,11 +130,11 @@ export function Audit() {
                 <thead className="border-b text-xs uppercase text-muted-foreground">
                   <tr>
                     <th className="py-2 pr-3">时间</th>
-                    <th className="py-2 pr-3">Action</th>
-                    <th className="py-2 pr-3">Target</th>
-                    <th className="py-2 pr-3">User</th>
-                    <th className="py-2 pr-3">Status</th>
-                    <th className="py-2 pr-3">Duration (ms)</th>
+                    <th className="py-2 pr-3">操作</th>
+                    <th className="py-2 pr-3">目标</th>
+                    <th className="py-2 pr-3">用户</th>
+                    <th className="py-2 pr-3">状态</th>
+                    <th className="py-2 pr-3">耗时 (ms)</th>
                   </tr>
                 </thead>
                 <tbody>

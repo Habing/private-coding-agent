@@ -107,7 +107,7 @@ var _ toolbus.Mutating = (*CreateTool)(nil)
 func (t *CreateTool) Name() string         { return "workflow.create" }
 func (t *CreateTool) IsMutating() bool     { return true }
 func (t *CreateTool) Description() string {
-	return "Draft a new Workflow DSL in the current tenant (admin only). The workflow is created unpublished — a human still has to publish it via the admin REST API. Slug must be kebab-case [a-z0-9-]; the DSL's id field must equal the slug."
+	return "起草新工作流 DSL（仅 admin）。创建后为未发布状态，需管理员在 REST 或 Web 管理页发布。slug 须为 kebab-case，DSL 内 id 须与 slug 一致。"
 }
 
 func (t *CreateTool) Schema() json.RawMessage {
@@ -183,7 +183,7 @@ var _ toolbus.Mutating = (*UpdateTool)(nil)
 func (t *UpdateTool) Name() string         { return "workflow.update" }
 func (t *UpdateTool) IsMutating() bool     { return true }
 func (t *UpdateTool) Description() string {
-	return "Replace a Workflow's name/description/dsl_yaml (admin only). Version is bumped; if the workflow was published it is force-unpublished so the live tool is not silently swapped — a human must re-publish via admin REST."
+	return "更新工作流的名称、描述或 DSL（仅 admin）。版本号递增；若曾发布会强制取消发布，需人工重新发布。"
 }
 
 func (t *UpdateTool) Schema() json.RawMessage {
@@ -249,7 +249,7 @@ var _ toolbus.Tool = (*ListTool)(nil)
 
 func (t *ListTool) Name() string         { return "workflow.list" }
 func (t *ListTool) Description() string {
-	return "List the current tenant's workflows (admin only). Returns slug, name, version, published status; not the DSL body — use workflow.get for that."
+	return "列出本租户全部工作流（仅 admin）：slug、名称、版本、发布状态，不含 DSL 正文；详情用 workflow.get。"
 }
 
 func (t *ListTool) Schema() json.RawMessage {
@@ -303,7 +303,7 @@ var _ toolbus.Tool = (*GetTool)(nil)
 
 func (t *GetTool) Name() string         { return "workflow.get" }
 func (t *GetTool) Description() string {
-	return "Fetch one workflow including its DSL body (admin only). Use this before workflow.update so you have the current DSL to modify."
+	return "获取单个工作流详情含 DSL 正文（仅 admin），适合在 workflow.update 前先读取当前内容。"
 }
 
 func (t *GetTool) Schema() json.RawMessage {
