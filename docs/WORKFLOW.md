@@ -264,35 +264,37 @@ ToolBus 提供 4 个 admin-only 工具供 Agent 在会话里写 DSL 草稿，**p
 
 ## 7. 限制（v1 不做）
 
-- **没有 Web UI**：CRUD/发布/调用全靠 REST；Web 前端入口在 Slice 19b
-- **NL→DSL 已可用**：Agent 在 `workflow-authoring` 或 `coding` profile 下直接 `tool_call workflow.create` 起草 DSL；publish 仍走 REST
+- **Web UI（admin）**：`/workflows` CRUD + `/toolbox` 工具浏览（Slice 19b Web UI）；NL 建流对话卡片见 §8
+- **NL→DSL**：`workflow.propose` / `workflow.create` + 模板 catalog（Slice 19b NL）；publish 走 confirm / `workflow.publish`
 - **没有 versions 表**：单行 + `version int` 单调递增；历史靠 audit + `workflow_runs.version_at_run` 还原
 - **没有 `wait_event`**：事件挂起节点要等 Slice 20 Reflection 配套
 - **没有 trigger**：cron/webhook/event 触发等 P2
 - **没有 step-level trace 落盘**：详情靠 OTel；workflow_runs 不存每节点日志
 - **表达式简化**：不支持算术 / 字符串函数 / 嵌套括号；现实负载够用
 
-## 8. NL 建流（Slice 19b，进行中）
+## 8. NL 建流（Slice 19b NL Authoring ✅）
 
-B+C 混合：**模板填槽（C）** + **自由 DSL（B）** → Dry-Run → 确认发布。
+B+C 混合：**模板填槽（C）** + **自由 DSL（B）** → Dry-Run → 对话/REST 确认发布。
 
-### 8.1 已落地（Task 1–2，库层，无 HTTP）
+计划：[`docs/superpowers/plans/2026-05-23-slice-19b-nl-workflow-authoring.md`](superpowers/plans/2026-05-23-slice-19b-nl-workflow-authoring.md)
+
+### 8.1 数据与模板层
 
 | 组件 | 说明 |
 |------|------|
 | `workflow_proposals` 表 | 迁移 `0024`；草案 + dry_run 快照 + 审批状态 |
 | `ProposalService` | `Create` / `CreateFromTemplate` / `Confirm` / `Approve` / `Reject` |
-| `internal/workflow/template` | 5 内置模板 + slot 校验 + render + 关键词填槽 |
+| `internal/workflow/template` | 5 内置模板 + slot 校验 + render + 关键词填槽（`ClassifyAndExtract`） |
 
-**流程（程序内）：**
+**流程：**
 
-1. `CreateFromTemplate(template_id, slots, slug, …)` 或 `Create(dsl_yaml, …)`
+1. `CreateFromTemplate(template_id, slots, slug, …)` 或 `Create(dsl_yaml, …)` 或 REST `user_message` 自动 classify
 2. 自动写入 draft `workflows` 行并 `Invoke(dry_run=true)`
 3. admin `Confirm` → `Publish`；member `Confirm` → `pending_approval` → admin `Approve`
 
-**审计（已实现）：** `workflow.proposal.create` / `workflow.proposal.confirm` / `workflow.proposal.reject`
+**审计：** `workflow.proposal.create` / `workflow.proposal.confirm` / `workflow.proposal.reject`
 
-### 8.2 已接线 API（Task 3–4）
+### 8.2 HTTP + ToolBus
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -305,11 +307,36 @@ B+C 混合：**模板填槽（C）** + **自由 DSL（B）** → Dry-Run → 确
 
 **ToolBus：** `workflow.propose`（登录用户）、`workflow.publish`（仅 admin）
 
-**Profile：** `coding` 含 propose+publish；`workflow-authoring` 含 propose
+**Profile：** `coding` 含 propose+publish + delegate；`workflow-authoring` 含 propose（无 publish）
 
-### 8.3 待做（Task 5+）
+**Skill：** `workflow-template-authoring`（Path C 填槽规则）；复杂 DSL 走 `workflow-dsl-authoring` + Path B
 
-计划：[`docs/superpowers/plans/2026-05-23-slice-19b-nl-workflow-authoring.md`](superpowers/plans/2026-05-23-slice-19b-nl-workflow-authoring.md)
+### 8.3 Orchestrator + Web UI
+
+| 组件 | 说明 |
+|------|------|
+| `nl-workflow-author` 规则 | `config.example.yaml`；识别「建自动化/工作流」意图 → hint 建议 `workflow.propose` 或 delegate `workflow-authoring` |
+| `WorkflowProposalCard` | 聊天页解析 `workflow.propose` 的 `tool_result`，展示 Dry-Run 结果；admin「确认发布」/ member「提交审批」 |
+| 审批 UI | 无独立 admin 列表页（同 Reflection 的 `/admin/memory-proposals` 可后续补）；当前 REST + 对话卡片 |
+
+### 8.4 E2E（compose 步骤 70–75）
+
+| 步 | 场景 |
+|----|------|
+| 70 | templates ≥5 + `E2E_NL_WF_AUTHOR_V1` orchestrator hint |
+| 71 | template `llm-summarize-notify` → dry_run_ok |
+| 72 | admin confirm → `workflow.e2e-nl-template` 进 `/tools` |
+| 73 | member confirm → pending → admin approve |
+| 74 | `E2E_WF_PROPOSAL_V1` → `workflow.propose` tool_call |
+| 75 | `E2E_WF_FREEFORM_V1` → freeform DSL propose（mock 短路 Path B） |
+
+### 8.5 已知限制 / 后续
+
+- 无 cron/webhook **triggers**（Slice 24）
+- 模板 notify 占位 `llm.chat`；Slack 等连接器（Slice 25）
+- template classify v1 为关键词规则；embedding 分类推 P2
+- 无 `workflow_proposal` 专用 SSE 事件（Web UI 解析 `tool_result`）
+- Helm values 未同步 `nl-workflow-author` 规则（compose 镜像内置 `config.example.yaml`）
 
 ---
 
@@ -317,5 +344,5 @@ B+C 混合：**模板填槽（C）** + **自由 DSL（B）** → Dry-Run → 确
 
 - 设计 spec：[`docs/superpowers/specs/2026-05-22-slice-19-workflow-engine-design.md`](superpowers/specs/2026-05-22-slice-19-workflow-engine-design.md)
 - 归档 plan：[`docs/superpowers/plans/2026-05-22-slice-19-workflow-engine.md`](superpowers/plans/2026-05-22-slice-19-workflow-engine.md)
-- E2E 用例：`deploy/compose/test-e2e.sh` 步骤 57–60
+- E2E 用例：`deploy/compose/test-e2e.sh` 步骤 57–60（19a Engine）、**70–75**（19b NL Authoring）
 - README Workflow section：[`README.md`](../README.md#workflow-子系统)

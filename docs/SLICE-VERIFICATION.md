@@ -306,15 +306,15 @@ cd deploy/compose
 | 审计 | 无新增 audit action；K8s 部署形态下的沙箱生命周期 audit 仍走原 `sandbox.create/destroy/exec/snapshot.*` |
 | 配置/部署 | 新增 `deploy/helm/pca` chart（13 模板 + Chart.yaml + values.yaml + values-kind.yaml + README.md）；新增 `.github/workflows/kind-nightly.yml` 单 job + `deploy/helm/pca/test/kind-config.yaml` + `deploy/helm/pca/test/kind-e2e.sh`（+x）；`docs/DEPLOY-K8S.md` 新增（10 段：部署形态选择 / 前置 / 镜像 / 快速开始 / values 速查 / 生产 checklist / 升级 / 回滚 / Troubleshooting / kind 本地实验）；`docs/DEPLOY.md` §1 形态表加 K8s/Helm 行；`docs/SECURITY-SANDBOX.md` §3.1 注明 K8s + chart RBAC 已替换 docker.sock 妥协路径 |
 
-### 切片 19b — NL Workflow Authoring（B+C，进行中）
+### 切片 19b — NL Workflow Authoring（B+C ✅）
 
 | 项 | 验证 |
 |----|------|
 | L1 Task 1 | 迁移 `0024_workflow_proposals` migrate 成功；`go test ./internal/workflow/... -run Proposal -count=1` PASS |
 | L1 Task 3–4 | `workflow.propose` / `workflow.publish` 注册；`GET /agent/workflow/templates`；proposal confirm/approve handler 单测 PASS |
-| L2 | `go test ./internal/workflow/... ./internal/agent/... -count=1` |
+| L2 | `go test ./internal/workflow/... ./internal/agent/... -count=1`；`cd internal/webui && npm test -- --run` |
 | L3 | E2E **[70–75]**：templates ≥5；template propose dry_run；admin confirm；member 审批链；`E2E_WF_PROPOSAL_V1` / `E2E_WF_FREEFORM_V1` agent.run；NL orchestrator `E2E_NL_WF_AUTHOR_V1` |
-| 状态 | **Task 1–7 ✅**（2026-05-23）；Task 8 文档收尾可选 |
+| 状态 | **Task 1–8 ✅**（2026-05-23）；compose E2E **75/75** PASS |
 
 ### 切片 23 — N8N（可选）
 
@@ -325,7 +325,7 @@ cd deploy/compose
 ### Compose Pilot — 单实例运维收口（P2 tech-debt #11–#15）
 
 > 计划：[`docs/P2-COMPOSE-PILOT.md`](P2-COMPOSE-PILOT.md) · 实施：[`superpowers/plans/2026-05-22-compose-pilot-tech-debt.md`](superpowers/plans/2026-05-22-compose-pilot-tech-debt.md)  
-> **纪律：每项 Task 改完必跑下表 L1 + compose E2E 69/69，再勾选 plan。**
+> **纪律：每项 Task 改完必跑下表 L1 + compose E2E 75/75，再勾选 plan。**
 
 | 项 | 验证 |
 |----|------|
@@ -407,7 +407,8 @@ cd deploy/compose
 | **MVP-P1 全量** | **1–55** |
 | 18 | 50 |
 | 19a | 57–60 |
-| 19b | — (纯前端 + L1/L2，无 E2E 步号) |
+| 19b-web | —（Workflows/Toolbox Web UI；L1/L2 + 手工冒烟） |
+| 19b-nl | 70–75 |
 | 20 | 61 |
 | 21a | 62 |
 | 21b | 63 |
@@ -417,4 +418,4 @@ cd deploy/compose
 | 22d1 | 67 |
 | 22d2 | — (Helm chart + kind nightly；compose 步号不增) |
 | 23 | 68+（可选） |
-| **Full P1 全量** | **1–70+** |
+| **Full P1 全量** | **1–75** |

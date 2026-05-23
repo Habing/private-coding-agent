@@ -34,7 +34,8 @@
 
 - [x] 切片 18：Sub-Agents + `agent.delegate`（review / research / workflow-authoring profile + 父子 Agent 协作）
 - [x] 切片 19a：Workflow Engine（YAML DSL + DAG executor + `workflow.<slug>` 注册到 ToolBus + Dry-Run mock mutating tools）
-- [x] 切片 19b：Workflows & Tools Web UI（`/workflows` admin 管理页 + `/toolbox` 工具浏览页 + `GET /tools` 暴露 `mutating` 标志）
+- [x] 切片 19b（Web UI）：Workflows & Tools Web UI（`/workflows` admin 管理页 + `/toolbox` 工具浏览页 + `GET /tools` 暴露 `mutating` 标志）
+- [x] 切片 19b（NL Authoring）：自然语言建流 B+C（模板 catalog + `workflow.propose` + 对话确认卡片 + member 审批链 + E2E 70–75）
 - [x] 切片 20：Reflection Agent（异步 worker + `memory_proposals` 表 + admin 审核 + auto-approve 阈值 + WebUI `/admin/memory-proposals`）
 - [x] 切片 21a：Orchestration Router（YAML 规则 + 命中后注入 routing hint system msg + `pca_orchestrator_routes_total` + audit `orchestrator.route`）
 - [x] 切片 21b：External MCP Manager（`mcp_servers` 表 + 2024-11-05 JSON-RPC client + Manager 心跳 + `mcp.<slug>.<tool>` 注册到 ToolBus + `/admin/mcp-servers` REST + WebUI + mock-mcp 容器）

@@ -36,7 +36,7 @@
 - [x] Web UI：`WorkflowProposalCard` + 聊天流嵌入（MessageList）*(Task 6)*
 - [x] Skill：`skills/workflow/workflow-template-authoring/SKILL.md` + profile 接线 *(Task 5)*
 - [x] mock-provider markers：`E2E_WF_PROPOSAL_V1`、`E2E_WF_FREEFORM_V1`、`E2E_NL_WF_AUTHOR_V1` *(Task 5)*
-- [x] E2E 步骤 **70–75** *(Task 7)*；`docs/WORKFLOW.md` §8 已有；`SLICE-VERIFICATION.md` 待同步
+- [x] E2E 步骤 **70–75** *(Task 7)*；`docs/WORKFLOW.md` §8；`SLICE-VERIFICATION.md` 已同步
 
 ---
 
@@ -195,7 +195,7 @@ Web 聊天 WorkflowProposalCard
 1. `{ "user_message": "每周一..." }` — 服务端 classify template + extract + render
 2. `{ "template_id", "slots", "slug", "name" }` — Agent 显式填槽
 
-- [ ] handler 单测：401/403/404/409
+- [ ] handler 单测：401/403/404/409（可选；happy path + member 链已有 `proposal_handler_test.go`）
 - [ ] classify：关键词 + template 描述 embedding（v1 可用 rules，embedding 推 P2）
 
 ---
@@ -266,10 +266,10 @@ Web 聊天 WorkflowProposalCard
 
 ## Task 8 — 文档
 
-- [ ] `docs/WORKFLOW.md` — 新增 §8「自然语言建流（B+C）」
-- [ ] `docs/SLICE-VERIFICATION.md` — Slice 19b 行
-- [ ] `HANDOFF.md` — 19b 状态
-- [ ] `README.md` — 切片进度（可选勾选 19b）
+- [x] `docs/WORKFLOW.md` — §8「自然语言建流（B+C）」
+- [x] `docs/SLICE-VERIFICATION.md` — Slice 19b NL 行 + E2E 步号表
+- [x] `HANDOFF.md` — 19b NL 状态
+- [x] `README.md` — 切片进度勾选 19b NL
 
 ---
 
@@ -287,13 +287,13 @@ go build ./...
 
 ## Acceptance checklist
 
-- [ ] 用户仅对话即可生成 proposal（C 或 B）
-- [ ] 发布前必有 Dry-Run 成功记录
-- [ ] admin 对话内 confirm 后 `workflow.<slug>` 立即可 invoke
-- [ ] member 不可直接 publish；审批链 audit 完整
-- [ ] 模板渲染 DSL 100% 过 validate（单测覆盖）
-- [ ] orchestrator 规则 + E2E marker 证明 hint 注入
-- [ ] 中文 UI 卡片 + 工具箱/workflow 页描述一致
+- [x] 用户仅对话即可生成 proposal（C 或 B）— E2E 74/75
+- [x] 发布前必有 Dry-Run 成功记录
+- [x] admin 对话内 confirm 后 `workflow.<slug>` 立即可 invoke — E2E 72
+- [x] member 不可直接 publish；审批链 audit 完整 — E2E 73
+- [x] 模板渲染 DSL 100% 过 validate（单测覆盖）
+- [x] orchestrator 规则 + E2E marker 证明 hint 注入 — E2E 70
+- [x] 中文 UI 卡片 + 工具箱/workflow 页描述一致（i18n commit）
 
 ---
 

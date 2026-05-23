@@ -67,7 +67,7 @@ Gate (G1–G4) ──► Slice 13–17 MVP-P1 ──► Slice 18–23 Full P1
 | **22** | K8s + 安全深化 | 14, MVP | [`plans/2026-05-21-slice-22-k8s-production.md`](superpowers/plans/2026-05-21-slice-22-k8s-production.md) |
 | **23** | N8N（可选） | 19 | [`plans/2026-05-21-slice-23-n8n-optional.md`](superpowers/plans/2026-05-21-slice-23-n8n-optional.md) — **⏭️ 跳过**（2026-05-23，非硬需求） |
 
-**19 可拆**：19a Engine ✅ + **19b NL Authoring (B+C)** [`plans/2026-05-23-slice-19b-nl-workflow-authoring.md`](superpowers/plans/2026-05-23-slice-19b-nl-workflow-authoring.md) + 19c（可选：模板市场）。  
+**19 可拆**：19a Engine ✅ + **19b Web UI ✅** + **19b NL Authoring (B+C) ✅** [`plans/2026-05-23-slice-19b-nl-workflow-authoring.md`](superpowers/plans/2026-05-23-slice-19b-nl-workflow-authoring.md) + 19c（可选：模板市场）。  
 **23 可选**：不做仍可达 Full P1「核心」；需法务确认 N8N 许可证。
 
 ---

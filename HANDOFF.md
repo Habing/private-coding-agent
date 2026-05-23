@@ -6,10 +6,10 @@
 | 项目根 | `F:\project\private-coding-agent` |
 | Git module | `github.com/yourorg/private-coding-agent` |
 | 当前日期 | 2026-05-23 |
-| 当前 HEAD | `689466a` *(Compose Pilot #11–#15：backup/restore 脚本、workflow retention、Reflection 持久队列、admin re-embed、Docker snapshot restore + workspace sidecar tar；E2E **69/69**)* |
+| 当前 HEAD | `338f99e` *(Slice 19b NL Authoring Task 1–8 ✅ + i18n；compose E2E **75/75**)* |
 | P1 规划 | **已落盘** — [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md) |
-| 工作区状态 | MVP-P1 17 ✅；Full-P1 18–22d2 ✅；Compose Pilot #11–#15 ✅；compose E2E **69/69** + kind nightly 6 步独立 |
-| 下一阶段 | **Slice 19b** Task 1–7 ✅ → Task 8 文档收尾 / compose E2E 75/75 验证 |
+| 工作区状态 | MVP-P1 17 ✅；Full-P1 18–22d2 ✅；Slice 19b NL ✅；Compose Pilot #11–#15 ✅；compose E2E **75/75** + kind nightly 6 步独立 |
+| 下一阶段 | **Slice 24** triggers（cron/webhook）或 **19c** 模板市场（可选）；Helm orchestrator 规则同步 |
 
 ---
 
@@ -163,6 +163,7 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 | 18 Sub-Agents + delegate | ✅ | 50 | review/research/workflow-authoring profile + `agent.delegate` + ctx-based RunCtx |
 | 19a Workflow Engine | ✅ | 57–60 | YAML DSL + DAG executor (tool/assign/if/foreach/parallel/wait) + `workflow.<slug>` 注册到 ToolBus + Dry-Run mock mutating tools |
 | 19b Workflows & Tools Web UI | ✅ | — | `/workflows` admin（Monaco YAML 编辑器 + CRUD + publish/invoke/dry_run + runs 抽屉）+ `/toolbox`（只读工具列表 + Mutating 徽标）；`GET /tools` 暴露 `mutating bool` |
+| 19b NL Workflow Authoring | ✅ | 70–75 | B+C：`workflow_proposals` + 5 模板 catalog + `workflow.propose`/`publish` + REST confirm/approve + orchestrator `nl-workflow-author` + 聊天 `WorkflowProposalCard` + skill `workflow-template-authoring`；E2E 75/75 PASS |
 | 20 Reflection | ✅ | 61 | `session.archive` → in-process worker → Reflector LLM 抽取 → `memory_proposals`（pending/auto_approved）→ admin `/admin/memory-proposals` 审核 → `memory.Service.Create`（0.92 dedup 复用）；mock-provider `REFLECTION_TASK_V1` canned JSON；5 个 audit action + `pca_reflection_proposals_total{outcome=…}`；WebUI `/admin/memory-proposals` |
 | 21a Orchestration Router | ✅ | 62 | `internal/orchestrator` 规则引擎 + `agent.Engine.WithRouter` Shadow + Hint 注入；YAML 规则 `match{profile,content_regex,content_contains}` + `suggest{type,target,hint}`；audit `orchestrator.route` + `pca_orchestrator_routes_total{outcome,target_type}`；mock-provider `ORCHESTRATOR_E2E_HINT_DELIVERED` canned → `"orchestrator-hint-ok"` |
 | 21b External MCP Manager | ✅ | 63 | 0020 `mcp_servers` 表 + `internal/mcp` HTTP JSON-RPC client (2024-11-05) + Manager 心跳 + `mcp.<slug>.<tool>` Bus 注册 + `/admin/mcp-servers` CRUD + `mock-mcp:8083` 容器 + WebUI `/admin/mcp-servers`；6 audit + 3 metric |
@@ -248,7 +249,7 @@ Full P1 核心 + Compose Pilot 已交付。按 [`docs/PILOT-RUNBOOK.md`](docs/PI
 1. **备份** — `deploy/compose/backup/backup.sh`
 2. **恢复** — `restore.sh`（破坏性，仅试点环境）
 3. **Re-embed SOP** — 换 embedding 模型 → restart → `POST /admin/memories/re-embed`
-4. **回归** — `./test-e2e.sh` 69/69（可选）
+4. **回归** — `./test-e2e.sh` 75/75（可选）
 
 ```bash
 cd deploy/compose && docker compose up -d
@@ -265,21 +266,22 @@ cd backup && ./backup.sh
 5. ~~**Slice 17** — Skills 12b~~ ✅（MVP-P1 收口）
 6. ~~**Slice 18** — Sub-Agents + delegate~~ ✅（Full-P1 起步）
 7. ~~**Slice 19a** — Workflow Engine~~ ✅（YAML DSL + Bus.Register workflow.<slug> + Dry-Run）
-8. ~~**Slice 19b** — Workflows & Tools Web UI~~ ✅（`/workflows` Monaco 编辑 + `/toolbox` 工具列表 + `GET /tools` mutating 标志）
-9. ~~**Slice 20** — Reflection~~ ✅（异步 Reflector worker + `memory_proposals` 表 + admin 审核 + auto-approve 阈值 + 5 audit + mock-provider canned JSON + WebUI `/admin/memory-proposals`）
-10. ~~**Slice 21a** — Orchestration Router~~ ✅（`internal/orchestrator` 规则引擎 + `agent.Engine.WithRouter` Shadow + Hint 注入 + `orchestrator.route` audit + `pca_orchestrator_routes_total` counter + mock-provider `ORCHESTRATOR_E2E_HINT_DELIVERED` canned）
-11. ~~**Slice 21b** — External MCP Manager~~ ✅（`internal/mcp` 2024-11-05 JSON-RPC client + 0020 `mcp_servers` 表 + Manager 心跳 + `mcp.<slug>.<tool>` Bus 注册 + `/admin/mcp-servers` REST + WebUI + `mock-mcp` 容器 + 6 audit + 3 metric + E2E 63）
-12. ~~**Slice 22a** — Audit Hash Chain~~ ✅（`internal/audit/hash.go` SHA-256 canonical RS=0x1E 分隔 + 0021 `audit_log.prev_hash/entry_hash` BYTEA + `Repo.Append` 走 `BeginTx + pg_advisory_xact_lock(hashtext('audit_log'))` 跨副本串行化 + `Repo.Verify(ctx, fromID)` 流式 prev/entry 双校验 + `GET /audit/verify` admin-only + E2E 64 篡改 metadata → `entry_hash_mismatch` 定位 + 还原幂等）
-13. ~~**Slice 22b** — Snapshot → MinIO~~ ✅（0022 `sandbox_snapshots(session_id NULL on FK delete)` + `SnapshotRepo` + dockertest 6 例 + `internal/objstore` 包封 minio-go/v7 `Put` 流式 multipart `PartSize=64<<20` + `DockerDriver.Snapshot` 真实：`ContainerCommit(Pause=true)` → `ImageSave` → `objstore.Put` → `SnapshotRepo.Insert` → 可选 `ImageRemove` + `SnapshotConfig` + `PCA_SNAPSHOT_*` env + main.go gating `EnsureBucket` + `SetSnapshotDeps` + `Handler.WithSnapshotRepo` + `POST /sandbox/sessions/:id/snapshot` 替换 501 + `GET /sandbox/snapshots(?session_id=&limit=)` + `GET /sandbox/snapshots/:id` + 3 个 `sandbox.snapshot.{create,list,get}` audit Detached + compose `minio:RELEASE.2025-04-08T15-41-24Z` + 命名卷 `miniodata` + healthcheck + server `depends_on minio:service_healthy` + E2E 65 create→write file→snapshot→list→destroy→still visible w/ session_id=null→audit）
-14. ~~**Slice 22c** — Seccomp + Trivy CI~~ ✅（`internal/sandbox/seccomp.json` 派生自 Docker default profile v25.0.5，allow 名单移除 `mount/umount/umount2/pivot_root/name_to_handle_at/open_by_handle_at/mount_setattr/move_mount/open_tree/fsconfig/fsmount/fsopen/fspick/ptrace/process_vm_readv/process_vm_writev/process_madvise/pidfd_getfd/kcmp/keyctl/add_key/request_key/bpf/init_module/delete_module/finit_module/create_module/kexec_load/kexec_file_load/userfaultfd/perf_event_open/fanotify_init/lookup_dcookie/quotactl/quotactl_fd/setdomainname/sethostname/syslog/iopl/acct` 共 16 类约 40 个高危 syscall；保留 `setns/unshare/clone3` + `//go:embed seccomp.json` + `LoadSeccompProfile` 启动期解析 `defaultAction==SCMP_ACT_ERRNO` 并返回 JSON 字符串 + `DockerDriverConfig.SeccompProfile` + helper `securityOpts(profile)` 注入 `SecurityOpt: ["no-new-privileges:true","seccomp=<json>"]` + `SandboxConfig.SeccompEnabled` 默认 true（viper.SetDefault 在 ReadInConfig 前注册以让 `PCA_SANDBOX_SECCOMP_ENABLED=false` 应急回退生效）+ `.github/workflows/security.yml` `aquasecurity/trivy-action@master` 双 job CRITICAL exit-code=1 阻塞 / HIGH exit-code=0 仅 table，触发 sandbox/image/** + workflow + .trivyignore 路径 PR + push to main + `.trivyignore` placeholder + SECURITY-SANDBOX.md §1 适用范围 + §2 SecurityOpt 表新行 + §9 已知未做表（seccomp/trivy/audit hash chain 标 ✅、snapshot/K8s/cosign/nightly 推 22d 或 22c-v2）+ §11 docker inspect SecurityOpt + docker exec mount → "Operation not permitted" + E2E 66 mount denial + `sh -c "echo ok > /workspace/seccomp-probe && cat"` 回归保护）
-15. ~~**Slice 22d1** — K8sDriver Runtime + fake-client L1~~ ✅（`internal/sandbox/k8s_driver{,_exec,_fs}.go` Pod=sandbox + SPDY exec + tar-pipe FS + 13 fake-clientset L1；`SandboxConfig.Driver` + `SandboxK8sConfig`；`cmd/server/main.go` boot 期 driver switch；`httpx.Deps.Info` + /healthz `sandbox.driver`；`k8s.io/{api,apimachinery,client-go} v0.32.0`；E2E 步骤 67 校验 `sandbox.driver=docker`）
-16. ~~**Slice 22d2** — Helm chart + kind nightly + DEPLOY-K8S.md~~ ✅（`deploy/helm/pca/` 13 模板 chart + RBAC scope=`pca-sandboxes`/verbs=pods+pods/exec+pods/log + PCA_DB_DSN 走 Pod env `$(VAR)` 展开 + 3 张 NetworkPolicy 模板 + `_helpers.tpl` 5 条渲染期 assert + `.github/workflows/kind-nightly.yml` 03:17 UTC + workflow_dispatch + `deploy/helm/pca/test/kind-e2e.sh` 6 步含 NetworkPolicy=internal 外网拒实证 + `docs/DEPLOY-K8S.md` 10 段 + `docs/DEPLOY.md` §1 K8s 行 + `docs/SECURITY-SANDBOX.md` §3.1 docker.sock 妥协对照消除注；compose E2E 1–67 不变）
+8. ~~**Slice 19b Web UI** — Workflows & Tools Web UI~~ ✅（`/workflows` Monaco 编辑 + `/toolbox` 工具列表 + `GET /tools` mutating 标志）
+9. ~~**Slice 19b NL** — NL Workflow Authoring (B+C)~~ ✅（`workflow.propose` + 模板 catalog + 对话确认卡片 + E2E 70–75）
+10. ~~**Slice 20** — Reflection~~ ✅（异步 Reflector worker + `memory_proposals` 表 + admin 审核 + auto-approve 阈值 + 5 audit + mock-provider canned JSON + WebUI `/admin/memory-proposals`）
+11. ~~**Slice 21a** — Orchestration Router~~ ✅（`internal/orchestrator` 规则引擎 + `agent.Engine.WithRouter` Shadow + Hint 注入 + `orchestrator.route` audit + `pca_orchestrator_routes_total` counter + mock-provider `ORCHESTRATOR_E2E_HINT_DELIVERED` canned）
+12. ~~**Slice 21b** — External MCP Manager~~ ✅（`internal/mcp` 2024-11-05 JSON-RPC client + 0020 `mcp_servers` 表 + Manager 心跳 + `mcp.<slug>.<tool>` Bus 注册 + `/admin/mcp-servers` REST + WebUI + `mock-mcp` 容器 + 6 audit + 3 metric + E2E 63）
+13. ~~**Slice 22a** — Audit Hash Chain~~ ✅（`internal/audit/hash.go` SHA-256 canonical RS=0x1E 分隔 + 0021 `audit_log.prev_hash/entry_hash` BYTEA + `Repo.Append` 走 `BeginTx + pg_advisory_xact_lock(hashtext('audit_log'))` 跨副本串行化 + `Repo.Verify(ctx, fromID)` 流式 prev/entry 双校验 + `GET /audit/verify` admin-only + E2E 64 篡改 metadata → `entry_hash_mismatch` 定位 + 还原幂等）
+14. ~~**Slice 22b** — Snapshot → MinIO~~ ✅（0022 `sandbox_snapshots(session_id NULL on FK delete)` + `SnapshotRepo` + dockertest 6 例 + `internal/objstore` 包封 minio-go/v7 `Put` 流式 multipart `PartSize=64<<20` + `DockerDriver.Snapshot` 真实：`ContainerCommit(Pause=true)` → `ImageSave` → `objstore.Put` → `SnapshotRepo.Insert` → 可选 `ImageRemove` + `SnapshotConfig` + `PCA_SNAPSHOT_*` env + main.go gating `EnsureBucket` + `SetSnapshotDeps` + `Handler.WithSnapshotRepo` + `POST /sandbox/sessions/:id/snapshot` 替换 501 + `GET /sandbox/snapshots(?session_id=&limit=)` + `GET /sandbox/snapshots/:id` + 3 个 `sandbox.snapshot.{create,list,get}` audit Detached + compose `minio:RELEASE.2025-04-08T15-41-24Z` + 命名卷 `miniodata` + healthcheck + server `depends_on minio:service_healthy` + E2E 65 create→write file→snapshot→list→destroy→still visible w/ session_id=null→audit）
+15. ~~**Slice 22c** — Seccomp + Trivy CI~~ ✅（`internal/sandbox/seccomp.json` 派生自 Docker default profile v25.0.5，allow 名单移除 `mount/umount/umount2/pivot_root/name_to_handle_at/open_by_handle_at/mount_setattr/move_mount/open_tree/fsconfig/fsmount/fsopen/fspick/ptrace/process_vm_readv/process_vm_writev/process_madvise/pidfd_getfd/kcmp/keyctl/add_key/request_key/bpf/init_module/delete_module/finit_module/create_module/kexec_load/kexec_file_load/userfaultfd/perf_event_open/fanotify_init/lookup_dcookie/quotactl/quotactl_fd/setdomainname/sethostname/syslog/iopl/acct` 共 16 类约 40 个高危 syscall；保留 `setns/unshare/clone3` + `//go:embed seccomp.json` + `LoadSeccompProfile` 启动期解析 `defaultAction==SCMP_ACT_ERRNO` 并返回 JSON 字符串 + `DockerDriverConfig.SeccompProfile` + helper `securityOpts(profile)` 注入 `SecurityOpt: ["no-new-privileges:true","seccomp=<json>"]` + `SandboxConfig.SeccompEnabled` 默认 true（viper.SetDefault 在 ReadInConfig 前注册以让 `PCA_SANDBOX_SECCOMP_ENABLED=false` 应急回退生效）+ `.github/workflows/security.yml` `aquasecurity/trivy-action@master` 双 job CRITICAL exit-code=1 阻塞 / HIGH exit-code=0 仅 table，触发 sandbox/image/** + workflow + .trivyignore 路径 PR + push to main + `.trivyignore` placeholder + SECURITY-SANDBOX.md §1 适用范围 + §2 SecurityOpt 表新行 + §9 已知未做表（seccomp/trivy/audit hash chain 标 ✅、snapshot/K8s/cosign/nightly 推 22d 或 22c-v2）+ §11 docker inspect SecurityOpt + docker exec mount → "Operation not permitted" + E2E 66 mount denial + `sh -c "echo ok > /workspace/seccomp-probe && cat"` 回归保护）
+16. ~~**Slice 22d1** — K8sDriver Runtime + fake-client L1~~ ✅（`internal/sandbox/k8s_driver{,_exec,_fs}.go` Pod=sandbox + SPDY exec + tar-pipe FS + 13 fake-clientset L1；`SandboxConfig.Driver` + `SandboxK8sConfig`；`cmd/server/main.go` boot 期 driver switch；`httpx.Deps.Info` + /healthz `sandbox.driver`；`k8s.io/{api,apimachinery,client-go} v0.32.0`；E2E 步骤 67 校验 `sandbox.driver=docker`）
+17. ~~**Slice 22d2** — Helm chart + kind nightly + DEPLOY-K8S.md~~ ✅（`deploy/helm/pca/` 13 模板 chart + RBAC scope=`pca-sandboxes`/verbs=pods+pods/exec+pods/log + PCA_DB_DSN 走 Pod env `$(VAR)` 展开 + 3 张 NetworkPolicy 模板 + `_helpers.tpl` 5 条渲染期 assert + `.github/workflows/kind-nightly.yml` 03:17 UTC + workflow_dispatch + `deploy/helm/pca/test/kind-e2e.sh` 6 步含 NetworkPolicy=internal 外网拒实证 + `docs/DEPLOY-K8S.md` 10 段 + `docs/DEPLOY.md` §1 K8s 行 + `docs/SECURITY-SANDBOX.md` §3.1 docker.sock 妥协对照消除注；compose E2E 1–75）
 
 每切片：读 plan → 实现 → 更新 `SLICE-VERIFICATION.md` + E2E 步号 → README 勾选。
 
 ### 5.3 Full P1 状态
 
-按 [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md)：**切片 18–22d2 全部落地**；**Slice 23（N8N）跳过** — Full P1 **核心完成**。Compose Pilot #11–#15 已收口（`689466a`）。
+按 [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md)：**切片 18–22d2 + 19b NL 全部落地**；**Slice 23（N8N）跳过** — Full P1 **核心完成**。Compose Pilot #11–#15 已收口；compose E2E **75/75**（`338f99e`）。
 
 ### 5.4 Compose 试点技术债（P2 运维）
 
@@ -288,7 +290,7 @@ Full P1 完成后、Slice 23 之前，单实例 compose **#11–#15 全部交付
 ```bash
 go test ./... -count=1
 go vet ./...
-cd deploy/compose && ./test-e2e.sh   # 69/69
+cd deploy/compose && ./test-e2e.sh   # 75/75
 ```
 
 **Compose 试点轨道已收口。**
