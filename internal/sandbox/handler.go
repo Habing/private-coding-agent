@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -70,6 +71,11 @@ func (h *Handler) Register(rg *gin.RouterGroup) {
 	g.GET("/:id/files", h.files)
 	g.PUT("/:id/files", h.writeFile)
 	g.POST("/:id/snapshot", h.snapshot)
+	// Slice 22b — snapshot read APIs. Always registered so the WebUI can
+	// distinguish "off" (503 snapshot_disabled) from "broken".
+	s := rg.Group("/sandbox/snapshots")
+	s.GET("", h.listSnapshots)
+	s.GET("/:id", h.getSnapshot)
 }
 
 func (h *Handler) claims(c *gin.Context) (*auth.Claims, bool) {
@@ -441,6 +447,29 @@ func (h *Handler) readFile(c *gin.Context) {
 	})
 }
 
+// snapshotDTO is the JSON surface of a sandbox snapshot. SessionID may be
+// nil after the original sandbox was destroyed (FK ON DELETE SET NULL).
+type snapshotDTO struct {
+	ID        uuid.UUID      `json:"id"`
+	TenantID  uuid.UUID      `json:"tenant_id"`
+	UserID    uuid.UUID      `json:"user_id"`
+	SessionID *uuid.UUID     `json:"session_id"`
+	ObjectKey string         `json:"object_key"`
+	SizeBytes int64          `json:"size_bytes"`
+	ImageRef  string         `json:"image_ref"`
+	Metadata  map[string]any `json:"metadata"`
+	CreatedAt time.Time      `json:"created_at"`
+}
+
+func toSnapshotDTO(s *Snapshot) snapshotDTO {
+	return snapshotDTO{
+		ID: s.ID, TenantID: s.TenantID, UserID: s.UserID,
+		SessionID: s.SessionID, ObjectKey: s.ObjectKey,
+		SizeBytes: s.SizeBytes, ImageRef: s.ImageRef,
+		Metadata: s.Metadata, CreatedAt: s.CreatedAt,
+	}
+}
+
 func (h *Handler) snapshot(c *gin.Context) {
 	cl, ok := h.claims(c)
 	if !ok {
@@ -450,12 +479,127 @@ func (h *Handler) snapshot(c *gin.Context) {
 	if !ok {
 		return
 	}
-	_, err := h.rt.Snapshot(c.Request.Context(), cl.TenantID, id)
-	if errors.Is(err, ErrSandboxNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+	start := time.Now()
+	snap, err := h.rt.Snapshot(c.Request.Context(), cl.TenantID, id)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrSnapshotDisabled):
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "snapshot_disabled"})
+		case errors.Is(err, ErrSandboxNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+		case errors.Is(err, ErrSandboxNotReady):
+			c.JSON(http.StatusConflict, gin.H{"error": "not_ready"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "runtime_error"})
+		}
 		return
 	}
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "not_implemented"})
+	h.auditSnapshotEvent(c, start, snap.TenantID, snap.UserID, "sandbox.snapshot.create",
+		snap.ID.String(), http.StatusCreated, map[string]any{
+			"object_key": snap.ObjectKey,
+			"size_bytes": snap.SizeBytes,
+			"image_ref":  snap.ImageRef,
+			"session_id": snap.SessionID,
+		})
+	c.JSON(http.StatusCreated, toSnapshotDTO(snap))
+}
+
+const snapshotListMaxLimit = 200
+const snapshotListDefaultLimit = 50
+
+func (h *Handler) listSnapshots(c *gin.Context) {
+	cl, ok := h.claims(c)
+	if !ok {
+		return
+	}
+	if h.snapshotRepo == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "snapshot_disabled"})
+		return
+	}
+	var sessionID *uuid.UUID
+	if v := c.Query("session_id"); v != "" {
+		sid, err := uuid.Parse(v)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "validation: session_id"})
+			return
+		}
+		sessionID = &sid
+	}
+	limit := snapshotListDefaultLimit
+	if v := c.Query("limit"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			limit = parsed
+			if limit > snapshotListMaxLimit {
+				limit = snapshotListMaxLimit
+			}
+		}
+	}
+	start := time.Now()
+	rows, err := h.snapshotRepo.List(c.Request.Context(), cl.TenantID, sessionID, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "runtime_error"})
+		return
+	}
+	items := make([]snapshotDTO, 0, len(rows))
+	for i := range rows {
+		items = append(items, toSnapshotDTO(&rows[i]))
+	}
+	meta := map[string]any{"count": len(items)}
+	if sessionID != nil {
+		meta["session_id_filter"] = sessionID.String()
+	}
+	h.auditSnapshotEvent(c, start, cl.TenantID, cl.UserID, "sandbox.snapshot.list",
+		"", http.StatusOK, meta)
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+func (h *Handler) getSnapshot(c *gin.Context) {
+	cl, ok := h.claims(c)
+	if !ok {
+		return
+	}
+	if h.snapshotRepo == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "snapshot_disabled"})
+		return
+	}
+	id, ok := h.parseID(c)
+	if !ok {
+		return
+	}
+	start := time.Now()
+	snap, err := h.snapshotRepo.Get(c.Request.Context(), cl.TenantID, id)
+	if err != nil {
+		if errors.Is(err, ErrSnapshotNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "runtime_error"})
+		return
+	}
+	h.auditSnapshotEvent(c, start, snap.TenantID, snap.UserID, "sandbox.snapshot.get",
+		snap.ID.String(), http.StatusOK, map[string]any{})
+	c.JSON(http.StatusOK, toSnapshotDTO(snap))
+}
+
+// auditSnapshotEvent mirrors auditSandboxEvent but takes explicit tenant/user
+// (snapshots are not always tied to a Sandbox once session_id goes NULL).
+func (h *Handler) auditSnapshotEvent(c *gin.Context, start time.Time,
+	tenantID, userID uuid.UUID, action, target string, status int, meta map[string]any) {
+	if h.audit == nil {
+		return
+	}
+	tid := tenantID
+	uid := userID
+	audit.Detached(h.audit, audit.Entry{
+		OccurredAt: start,
+		TenantID:   &tid, UserID: &uid,
+		Action: action,
+		Target: target,
+		Method: c.Request.Method, Path: c.FullPath(),
+		Status:     status,
+		DurationMS: int(time.Since(start).Milliseconds()),
+		Metadata:   meta,
+	}, nil)
 }
 
 func fileErrToHTTP(c *gin.Context, err error) {

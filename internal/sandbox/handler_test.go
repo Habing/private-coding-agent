@@ -216,9 +216,74 @@ func TestHandler_ReadFile_TooLarge(t *testing.T) {
 	require.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
 }
 
-func TestHandler_Snapshot_501(t *testing.T) {
-	mr := &mockRuntime{snapErr: sandbox.ErrNotImplemented}
+func TestHandler_Snapshot_Disabled(t *testing.T) {
+	// Driver returns ErrSnapshotDisabled when SetSnapshotDeps was never called
+	// (slice-22b gated off via cfg.Snapshot.Enabled=false). Handler maps to 503.
+	mr := &mockRuntime{snapErr: sandbox.ErrSnapshotDisabled}
 	r, tok := newRouterWithMock(t, mr)
 	w := do(r, http.MethodPost, "/sandbox/sessions/"+uuid.NewString()+"/snapshot", tok, nil)
-	require.Equal(t, http.StatusNotImplemented, w.Code)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	require.Contains(t, w.Body.String(), "snapshot_disabled")
+}
+
+func TestHandler_Snapshot_Create_OK(t *testing.T) {
+	tid := uuid.New()
+	uid := uuid.New()
+	sid := uuid.New()
+	snap := &sandbox.Snapshot{
+		ID: uuid.New(), TenantID: tid, UserID: uid,
+		SessionID: &sid,
+		ObjectKey: tid.String() + "/" + sid.String() + "/2026-05-23T00.tar",
+		SizeBytes: 12345,
+		ImageRef:  "pca-snapshot-x:1",
+		Metadata:  map[string]any{"image_id": "sha256:abc"},
+		CreatedAt: time.Now(),
+	}
+	mr := &mockRuntime{snap: snap}
+	r, tok := newRouterWithMock(t, mr)
+	w := do(r, http.MethodPost, "/sandbox/sessions/"+sid.String()+"/snapshot", tok, nil)
+	require.Equal(t, http.StatusCreated, w.Code)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+	require.Equal(t, snap.ID.String(), got["id"])
+	require.Equal(t, snap.ObjectKey, got["object_key"])
+	require.Equal(t, float64(snap.SizeBytes), got["size_bytes"])
+	require.Equal(t, snap.ImageRef, got["image_ref"])
+}
+
+func TestHandler_Snapshot_NotReady(t *testing.T) {
+	mr := &mockRuntime{snapErr: sandbox.ErrSandboxNotReady}
+	r, tok := newRouterWithMock(t, mr)
+	w := do(r, http.MethodPost, "/sandbox/sessions/"+uuid.NewString()+"/snapshot", tok, nil)
+	require.Equal(t, http.StatusConflict, w.Code)
+}
+
+func TestHandler_Snapshot_NotFound(t *testing.T) {
+	mr := &mockRuntime{snapErr: sandbox.ErrSandboxNotFound}
+	r, tok := newRouterWithMock(t, mr)
+	w := do(r, http.MethodPost, "/sandbox/sessions/"+uuid.NewString()+"/snapshot", tok, nil)
+	require.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestHandler_SnapshotList_DisabledNoRepo(t *testing.T) {
+	// WithSnapshotRepo never called → list route 503 snapshot_disabled.
+	mr := &mockRuntime{}
+	r, tok := newRouterWithMock(t, mr)
+	w := do(r, http.MethodGet, "/sandbox/snapshots", tok, nil)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	require.Contains(t, w.Body.String(), "snapshot_disabled")
+}
+
+func TestHandler_SnapshotGet_DisabledNoRepo(t *testing.T) {
+	mr := &mockRuntime{}
+	r, tok := newRouterWithMock(t, mr)
+	w := do(r, http.MethodGet, "/sandbox/snapshots/"+uuid.NewString(), tok, nil)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+}
+
+func TestHandler_SnapshotList_NoAuth(t *testing.T) {
+	mr := &mockRuntime{}
+	r, _ := newRouterWithMock(t, mr)
+	w := do(r, http.MethodGet, "/sandbox/snapshots", "", nil)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
 }
