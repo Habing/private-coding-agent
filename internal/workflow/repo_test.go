@@ -56,7 +56,7 @@ func newPool(t *testing.T) *pgxpool.Pool {
 	// Each test runs against a clean workflows + workflow_runs slate so the
 	// global-namespace ListPublished doesn't surface rows from a prior test.
 	// Tenants/users stay so cross-test FK targets keep working.
-	_, err = p.Exec(context.Background(), `TRUNCATE TABLE workflow_runs, workflows CASCADE`)
+	_, err = p.Exec(context.Background(), `TRUNCATE TABLE workflow_runs, workflow_proposals, workflows CASCADE`)
 	require.NoError(t, err)
 	return p
 }

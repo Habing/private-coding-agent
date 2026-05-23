@@ -306,6 +306,16 @@ cd deploy/compose
 | 审计 | 无新增 audit action；K8s 部署形态下的沙箱生命周期 audit 仍走原 `sandbox.create/destroy/exec/snapshot.*` |
 | 配置/部署 | 新增 `deploy/helm/pca` chart（13 模板 + Chart.yaml + values.yaml + values-kind.yaml + README.md）；新增 `.github/workflows/kind-nightly.yml` 单 job + `deploy/helm/pca/test/kind-config.yaml` + `deploy/helm/pca/test/kind-e2e.sh`（+x）；`docs/DEPLOY-K8S.md` 新增（10 段：部署形态选择 / 前置 / 镜像 / 快速开始 / values 速查 / 生产 checklist / 升级 / 回滚 / Troubleshooting / kind 本地实验）；`docs/DEPLOY.md` §1 形态表加 K8s/Helm 行；`docs/SECURITY-SANDBOX.md` §3.1 注明 K8s + chart RBAC 已替换 docker.sock 妥协路径 |
 
+### 切片 19b — NL Workflow Authoring（B+C，进行中）
+
+| 项 | 验证 |
+|----|------|
+| L1 Task 1 | 迁移 `0024_workflow_proposals` migrate 成功；`go test ./internal/workflow/... -run Proposal -count=1` PASS |
+| L1 Task 2 | `go test ./internal/workflow/template/... -count=1` PASS；5 模板 render → `Parse` + `Validate` |
+| L2 | `go test ./internal/workflow/... -count=1` + `go vet ./internal/workflow/...` |
+| L3 | E2E 70–75 **待 Task 3–7** |
+| 状态 | **Task 1–2 ✅**（2026-05-23）；Task 3+ 未接线 `main.go` / HTTP |
+
 ### 切片 23 — N8N（可选）
 
 | 项 | 验证 |

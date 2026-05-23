@@ -272,6 +272,33 @@ ToolBus 提供 4 个 admin-only 工具供 Agent 在会话里写 DSL 草稿，**p
 - **没有 step-level trace 落盘**：详情靠 OTel；workflow_runs 不存每节点日志
 - **表达式简化**：不支持算术 / 字符串函数 / 嵌套括号；现实负载够用
 
+## 8. NL 建流（Slice 19b，进行中）
+
+B+C 混合：**模板填槽（C）** + **自由 DSL（B）** → Dry-Run → 确认发布。
+
+### 8.1 已落地（Task 1–2，库层，无 HTTP）
+
+| 组件 | 说明 |
+|------|------|
+| `workflow_proposals` 表 | 迁移 `0024`；草案 + dry_run 快照 + 审批状态 |
+| `ProposalService` | `Create` / `CreateFromTemplate` / `Confirm` / `Approve` / `Reject` |
+| `internal/workflow/template` | 5 内置模板 + slot 校验 + render + 关键词填槽 |
+
+**流程（程序内）：**
+
+1. `CreateFromTemplate(template_id, slots, slug, …)` 或 `Create(dsl_yaml, …)`
+2. 自动写入 draft `workflows` 行并 `Invoke(dry_run=true)`
+3. admin `Confirm` → `Publish`；member `Confirm` → `pending_approval` → admin `Approve`
+
+**审计（已实现）：** `workflow.proposal.create` / `workflow.proposal.confirm` / `workflow.proposal.reject`
+
+### 8.2 待做（Task 3+）
+
+- `workflow.propose` / `workflow.publish` 工具与 REST
+- Web 对话确认卡片、Orchestrator 规则、E2E 70–75
+
+计划：[`docs/superpowers/plans/2026-05-23-slice-19b-nl-workflow-authoring.md`](superpowers/plans/2026-05-23-slice-19b-nl-workflow-authoring.md)
+
 ---
 
 ## 参考
