@@ -120,10 +120,24 @@ func run() error {
 		ToolInvokePerMinute: cfg.Quota.ToolInvokePerMinute,
 	})
 
-	// Sandbox driver
+	// Sandbox driver. Slice 22c: load the embedded hardened seccomp profile
+	// at boot and inject it into every sandbox HostConfig. If the operator
+	// disabled seccomp via PCA_SANDBOX_SECCOMP_ENABLED=false, pass empty and
+	// the driver falls back to Docker's runtime default seccomp.
 	sandboxRepo := sandbox.NewSessionRepo(pool)
+	var seccompProfile string
+	if cfg.Sandbox.SeccompEnabled {
+		seccompProfile, err = sandbox.LoadSeccompProfile()
+		if err != nil {
+			return fmt.Errorf("load seccomp profile: %w", err)
+		}
+		slog.Info("sandbox: hardened seccomp profile loaded", "size_bytes", len(seccompProfile))
+	} else {
+		slog.Warn("sandbox: seccomp disabled via config — falling back to Docker default profile")
+	}
 	sandboxDriver, err := sandbox.NewDockerDriver(ctx, dockerCli, sandboxRepo, rdb, sandbox.DockerDriverConfig{
 		KeepLocalImage: cfg.Snapshot.KeepLocalImage,
+		SeccompProfile: seccompProfile,
 	})
 	if err != nil {
 		return fmt.Errorf("sandbox driver: %w", err)

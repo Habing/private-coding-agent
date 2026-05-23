@@ -165,6 +165,14 @@ mcp:
   # RefreshTools, TestConnection, and each heartbeat tick.
   list_tools_timeout: 10s
 
+sandbox:
+  # Slice 22c: applies an embedded hardened seccomp profile to every sandbox
+  # container in addition to CapDrop ALL + no-new-privileges. Profile denies
+  # mount/ptrace/keyctl/bpf/userfaultfd/perf_event_open etc. Set false only
+  # to chase a kernel-too-old / toolchain regression — production should
+  # leave true.
+  seccomp_enabled: true
+
 snapshot:
   # Slice 22b: Sandbox→S3 snapshot. When enabled, POST
   # /sandbox/sessions/:id/snapshot commits the running container, exports it

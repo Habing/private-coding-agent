@@ -28,6 +28,18 @@ type Config struct {
 	Orchestrator  OrchestratorConfig  `mapstructure:"orchestrator"`
 	MCP           MCPConfig           `mapstructure:"mcp"`
 	Snapshot      SnapshotConfig      `mapstructure:"snapshot"`
+	Sandbox       SandboxConfig       `mapstructure:"sandbox"`
+}
+
+// SandboxConfig groups host-side sandbox driver options that aren't already
+// covered by Quota or Snapshot. Slice 22c added SeccompEnabled (defense in
+// depth on top of CapDrop ALL / no-new-privileges).
+type SandboxConfig struct {
+	// SeccompEnabled toggles whether the embedded hardened seccomp profile is
+	// applied to every sandbox container. Default true. Set false only as a
+	// kernel-too-old escape hatch (<3.17) or to chase a profile-induced
+	// toolchain regression while a fix lands.
+	SeccompEnabled bool `mapstructure:"seccomp_enabled"`
 }
 
 // SnapshotConfig drives Slice 22b's sandbox snapshot → S3 object storage
@@ -193,6 +205,12 @@ func Load(path string) (*Config, error) {
 	v.SetEnvPrefix("PCA")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
+
+	// Register defaults BEFORE Unmarshal so AutomaticEnv can route env vars
+	// to the matching keys. Without SetDefault, viper does not "know" the
+	// key exists and AutomaticEnv silently fails to bind. Slice 22c:
+	// Sandbox.SeccompEnabled defaults to true.
+	v.SetDefault("sandbox.seccomp_enabled", true)
 
 	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("read config %s: %w", path, err)

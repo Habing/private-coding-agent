@@ -38,6 +38,11 @@ type DockerDriverConfig struct {
 	// sandbox host after Snapshot uploads it to object storage. Default false
 	// (image is removed) to prevent disk bloat; true is debug only.
 	KeepLocalImage bool
+	// SeccompProfile is the JSON seccomp profile string (already loaded via
+	// LoadSeccompProfile or equivalent) to pass to Docker via
+	// `seccomp=<json>` in SecurityOpt. Empty disables the custom profile and
+	// falls back to Docker's runtime default (slice 22c opt-out).
+	SeccompProfile string
 }
 
 // SnapshotStore is the subset of objstore.Client that DockerDriver needs for
@@ -187,7 +192,7 @@ func (d *DockerDriver) createAndStartContainer(ctx context.Context, sb *Sandbox,
 		},
 		CapDrop:     strslice.StrSlice{"ALL"},
 		CapAdd:      strslice.StrSlice{"CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID", "FOWNER"},
-		SecurityOpt: []string{"no-new-privileges:true"},
+		SecurityOpt: securityOpts(d.cfg.SeccompProfile),
 		Resources: container.Resources{
 			NanoCPUs:  int64(opts.Resources.CPUs * 1e9),
 			Memory:    opts.Resources.MemoryMB * 1024 * 1024,
@@ -209,6 +214,18 @@ func (d *DockerDriver) createAndStartContainer(ctx context.Context, sb *Sandbox,
 		return "", err
 	}
 	return resp.ID, nil
+}
+
+// securityOpts builds the Docker HostConfig.SecurityOpt slice. no-new-privileges
+// is always present; seccomp is appended only when the caller provided a
+// loaded profile (slice 22c). Passing an empty profile leaves Docker's runtime
+// default seccomp profile active — the opt-out path.
+func securityOpts(seccompProfile string) []string {
+	opts := []string{"no-new-privileges:true"}
+	if seccompProfile != "" {
+		opts = append(opts, "seccomp="+seccompProfile)
+	}
+	return opts
 }
 
 func envToSlice(m map[string]string) []string {

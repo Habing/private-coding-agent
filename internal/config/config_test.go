@@ -100,3 +100,28 @@ func TestSnapshotConfig_EnvOverride(t *testing.T) {
 	require.Equal(t, "key", cfg.Snapshot.AccessKey)
 	require.Equal(t, "secret", cfg.Snapshot.SecretKey)
 }
+
+const sandboxYAML = `
+auth:
+  jwt_secret: "test-secret-XXXXXXXXXXXXXXXXXXXXX"
+  jwt_ttl: "1h"
+`
+
+func TestSandboxConfig_Defaults(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte(sandboxYAML), 0o600))
+	cfg, err := Load(p)
+	require.NoError(t, err)
+	require.True(t, cfg.Sandbox.SeccompEnabled, "seccomp defaults to on")
+}
+
+func TestSandboxConfig_EnvDisable(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte(sandboxYAML), 0o600))
+	t.Setenv("PCA_SANDBOX_SECCOMP_ENABLED", "false")
+	cfg, err := Load(p)
+	require.NoError(t, err)
+	require.False(t, cfg.Sandbox.SeccompEnabled, "env false must override default true")
+}
