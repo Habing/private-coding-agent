@@ -9,7 +9,7 @@
 | 当前 HEAD | `689466a` *(Compose Pilot #11–#15：backup/restore 脚本、workflow retention、Reflection 持久队列、admin re-embed、Docker snapshot restore + workspace sidecar tar；E2E **69/69**)* |
 | P1 规划 | **已落盘** — [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md) |
 | 工作区状态 | MVP-P1 17 ✅；Full-P1 18–22d2 ✅；Compose Pilot #11–#15 ✅；compose E2E **69/69** + kind nightly 6 步独立 |
-| 下一阶段 | **Slice 19b** Task 1–4 ✅ → Task 5 Skill/orchestrator → Web 卡片 → E2E 70–75 |
+| 下一阶段 | **Slice 19b** Task 1–7 ✅ → Task 8 文档收尾 / compose E2E 75/75 验证 |
 
 ---
 

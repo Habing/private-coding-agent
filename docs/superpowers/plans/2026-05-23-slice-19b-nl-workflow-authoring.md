@@ -32,11 +32,11 @@
 - [x] `internal/workflow/proposal_*.go` — Repo + Service（create / dry_run / confirm / approve）*(Task 1)*
 - [x] `internal/workflow/tools_publish.go` — `workflow.publish`、`workflow.propose` 工具 *(Task 3)*
 - [x] `internal/agent/workflow` via `proposal_handler.go` — templates + proposals REST *(Task 4)*
-- [ ] Orchestrator 规则 `nl-workflow-author`（config example + E2E marker）
-- [ ] Web UI：`WorkflowProposalCard` + 聊天流嵌入；`profileLabels` / 中文文案
-- [ ] Skill 更新：`skills/workflow/workflow-dsl-authoring/SKILL.md` + 新 `skills/workflow/workflow-template-authoring/SKILL.md`
-- [ ] mock-provider markers：`E2E_WF_TEMPLATE_V1`、`E2E_WF_PROPOSAL_V1`
-- [ ] E2E 步骤 **70–75**；`docs/WORKFLOW.md` §8；`SLICE-VERIFICATION.md` 新行
+- [x] Orchestrator 规则 `nl-workflow-author`（config example + E2E marker）*(Task 5)*
+- [x] Web UI：`WorkflowProposalCard` + 聊天流嵌入（MessageList）*(Task 6)*
+- [x] Skill：`skills/workflow/workflow-template-authoring/SKILL.md` + profile 接线 *(Task 5)*
+- [x] mock-provider markers：`E2E_WF_PROPOSAL_V1`、`E2E_WF_FREEFORM_V1`、`E2E_NL_WF_AUTHOR_V1` *(Task 5)*
+- [x] E2E 步骤 **70–75** *(Task 7)*；`docs/WORKFLOW.md` §8 已有；`SLICE-VERIFICATION.md` 待同步
 
 ---
 
@@ -214,8 +214,8 @@ Web 聊天 WorkflowProposalCard
 
 > 优先查阅 template catalog；匹配则 workflow.propose(template_id=...)；否则 workflow.create。不要尝试 publish。
 
-- [ ] `GET /agent/profiles` 不变（4 项）
-- [ ] orchestrator E2E marker 步骤
+- [x] `GET /agent/profiles` 不变（4 项）
+- [x] orchestrator E2E marker 步骤（E2E 70）
 
 ---
 
@@ -242,8 +242,8 @@ Web 聊天 WorkflowProposalCard
 { "type": "workflow_proposal", "proposal_id": "...", "summary": "..." }
 ```
 
-- [ ] admin 确认 → invalidate queries `workflows` + toast
-- [ ] vitest 覆盖按钮可见性（admin vs member）
+- [x] admin 确认 → invalidate queries `workflows` + toast
+- [x] vitest 覆盖按钮可见性（admin vs member）
 
 ---
 

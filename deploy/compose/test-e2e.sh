@@ -28,14 +28,14 @@ if ! docker image inspect "$JQ_IMG" >/dev/null 2>&1; then
 fi
 jq() { docker run --rm -i "$JQ_IMG" "$@"; }
 
-echo "[1/69] starting compose ..."
+echo "[1/75] starting compose ..."
 # Step 43 (sandbox quota exceeded) requires cap=1. The .env may have a higher
 # override for manual dev; force =1 here so this script is self-contained.
 export PCA_QUOTA_SANDBOX_MAX_ACTIVE=1
 docker compose up -d --build >/dev/null
 sleep 20
 
-echo "[2/69] inserting demo user via psql ..."
+echo "[2/75] inserting demo user via psql ..."
 HASH='$2a$10$WJBaC0mXl/yIgPXKW8WbPujOAidLdmaDPlduPdV8i11ZHaFvcgUrC'
 docker compose exec -T postgres psql -U app -d app -v ON_ERROR_STOP=1 <<SQL >/dev/null
 INSERT INTO users (tenant_id, email, password_hash, name, role)
@@ -49,14 +49,14 @@ ON CONFLICT (tenant_id, email) DO NOTHING;
 TRUNCATE memories, messages, sessions, sandbox_sessions, audit_log, memory_proposals RESTART IDENTITY CASCADE;
 SQL
 
-echo "[3/69] login ..."
+echo "[3/75] login ..."
 LOGIN=$(curl -fsS -X POST http://localhost:8080/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"tenant":"default","email":"demo@example.com","password":"demo123"}')
 TOK=$(echo "$LOGIN" | jq -r .token)
 [[ -n "$TOK" && "$TOK" != "null" ]] || { echo "login failed: $LOGIN"; exit 1; }
 
-echo "[4/69] create sandbox ..."
+echo "[4/75] create sandbox ..."
 SB=$(curl -fsS -X POST http://localhost:8080/sandbox/sessions \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d '{}')
 ID=$(echo "$SB" | jq -r .id)
@@ -64,13 +64,13 @@ STATUS=$(echo "$SB" | jq -r .status)
 echo "  -> sandbox $ID, status=$STATUS"
 [[ "$STATUS" == "running" ]] || { echo "expected running, got $STATUS"; exit 1; }
 
-echo "[5/69] write file ..."
+echo "[5/75] write file ..."
 CONTENT=$(printf "hello world from e2e" | base64 -w0 2>/dev/null || printf "hello world from e2e" | base64)
 curl -fsS -X PUT "http://localhost:8080/sandbox/sessions/$ID/files?path=hello.txt" \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d "{\"content_base64\":\"$CONTENT\"}" >/dev/null
 
-echo "[6/69] exec cat ..."
+echo "[6/75] exec cat ..."
 EXEC=$(curl -fsS -X POST "http://localhost:8080/sandbox/sessions/$ID/exec" \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"cmd":["cat","/workspace/hello.txt"]}')
@@ -79,50 +79,50 @@ OUT=$(echo "$EXEC" | jq -r .stdout_base64 | base64 -d)
 echo "  -> stdout: $OUT (exit=$EXIT)"
 [[ "$OUT" == "hello world from e2e" ]] || { echo "stdout mismatch: $OUT"; exit 1; }
 
-echo "[7/69] destroy ..."
+echo "[7/75] destroy ..."
 curl -fsS -X DELETE "http://localhost:8080/sandbox/sessions/$ID" \
   -H "Authorization: Bearer $TOK" >/dev/null
 
-echo "[8/69] verify 404 after destroy ..."
+echo "[8/75] verify 404 after destroy ..."
 HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
   "http://localhost:8080/sandbox/sessions/$ID/exec" \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"cmd":["true"]}')
 [[ "$HTTP_CODE" == "404" ]] || { echo "expected 404 got $HTTP_CODE"; exit 1; }
 
-echo "[9/69] chat completion (non-stream) via mock-provider ..."
+echo "[9/75] chat completion (non-stream) via mock-provider ..."
 CHAT=$(curl -fsS -X POST http://localhost:8080/v1/chat/completions \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"model":"default-mock:gpt-4o","messages":[{"role":"user","content":"hi"}]}')
 TEXT=$(echo "$CHAT" | jq -r '.choices[0].message.content')
 [[ "$TEXT" == "hello from mock" ]] || { echo "chat content mismatch: $TEXT"; exit 1; }
 
-echo "[10/69] chat completion (stream) via mock-provider ..."
+echo "[10/75] chat completion (stream) via mock-provider ..."
 STREAM=$(curl -fsS -N -X POST http://localhost:8080/v1/chat/completions \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"model":"default-mock:gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}')
 echo "$STREAM" | grep -q "data: \[DONE\]" || { echo "stream missing [DONE]"; exit 1; }
 echo "$STREAM" | grep -q '"content":"hello "' || { echo "stream missing chunk"; exit 1; }
 
-echo "[11/69] embeddings via mock-provider ..."
+echo "[11/75] embeddings via mock-provider ..."
 EMB=$(curl -fsS -X POST http://localhost:8080/v1/embeddings \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"model":"default-mock:text","input":["hi"]}')
 LEN=$(echo "$EMB" | jq '.data[0].embedding | length')
 [[ "$LEN" == "1536" ]] || { echo "embedding length mismatch: $LEN"; exit 1; }
 
-echo "[12/69] verify model_usage rows ..."
+echo "[12/75] verify model_usage rows ..."
 docker compose exec -T postgres psql -U app -d app -t -c \
   "SELECT count(*) FROM model_usage WHERE status='ok';" | grep -q "[1-9]" \
   || { echo "model_usage has no rows"; exit 1; }
 
-echo "[13/69] list tools ..."
+echo "[13/75] list tools ..."
 TOOLS=$(curl -fsS http://localhost:8080/tools -H "Authorization: Bearer $TOK")
 NAMES=$(echo "$TOOLS" | jq -r '.tools[].name' | sort | tr '\n' ',')
 [[ "$NAMES" == "agent.delegate,fs.glob,fs.list,fs.read,fs.write,grep,llm.chat,llm.embed,memory.delete,memory.list,memory.save,memory.search,shell.exec,workflow.create,workflow.get,workflow.list,workflow.update," ]] \
   || { echo "tools list mismatch: $NAMES"; exit 1; }
 
-echo "[14/69] fs.write + fs.read round-trip ..."
+echo "[14/75] fs.write + fs.read round-trip ..."
 SB2=$(curl -fsS -X POST http://localhost:8080/sandbox/sessions \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d '{}')
 ID2=$(echo "$SB2" | jq -r .id)
@@ -137,14 +137,14 @@ READ=$(curl -fsS -X POST http://localhost:8080/tools/invoke \
 CONTENT=$(echo "$READ" | jq -r '.output.content')
 [[ "$CONTENT" == "tool e2e" ]] || { echo "fs.read content mismatch: $CONTENT"; exit 1; }
 
-echo "[15/69] shell.exec ls ..."
+echo "[15/75] shell.exec ls ..."
 SHOUT=$(curl -fsS -X POST http://localhost:8080/tools/invoke \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d "{\"tool\":\"shell.exec\",\"input\":{\"sandbox_id\":\"$ID2\",\"cmd\":[\"ls\",\"/workspace\"]}}")
 echo "$SHOUT" | jq -r '.output.stdout' | grep -q "a.txt" || { echo "shell.exec stdout missing a.txt"; exit 1; }
 curl -fsS -X DELETE "http://localhost:8080/sandbox/sessions/$ID2" -H "Authorization: Bearer $TOK" >/dev/null
 
-echo "[16/69] llm.chat + tool_invocations ..."
+echo "[16/75] llm.chat + tool_invocations ..."
 CHATTOOL=$(curl -fsS -X POST http://localhost:8080/tools/invoke \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"tool":"llm.chat","input":{"model":"default-mock:gpt-4o","messages":[{"role":"user","content":"hi"}]}}')
@@ -154,7 +154,7 @@ docker compose exec -T postgres psql -U app -d app -t -c \
   "SELECT count(*) FROM tool_invocations WHERE status='ok';" | grep -q "[1-9]" \
   || { echo "tool_invocations has no rows"; exit 1; }
 
-echo "[17/69] agent.run direct final ..."
+echo "[17/75] agent.run direct final ..."
 RUN=$(curl -fsS -X POST http://localhost:8080/agent/run \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"model":"default-mock:gpt-4o","profile":"coding","messages":[{"role":"user","content":"hi"}]}')
@@ -163,7 +163,7 @@ LAST_KIND=$(echo "$RUN" | jq -r '.events[-1].kind')
 LAST_TEXT=$(echo "$RUN" | jq -r '.events[-1].text')
 [[ "$LAST_TEXT" == "hello from mock" ]] || { echo "final text mismatch: $LAST_TEXT"; exit 1; }
 
-echo "[18/69] agent.run with tool_call chain ..."
+echo "[18/75] agent.run with tool_call chain ..."
 SBA=$(curl -fsS -X POST http://localhost:8080/sandbox/sessions \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d '{}')
 IDA=$(echo "$SBA" | jq -r .id)
@@ -178,7 +178,7 @@ LAST2=$(echo "$RUN2" | jq -r '.events[-1].kind')
 [[ "$LAST2" == "final" ]] || { echo "expected final got $LAST2"; echo "$RUN2"; exit 1; }
 curl -fsS -X DELETE "http://localhost:8080/sandbox/sessions/$IDA" -H "Authorization: Bearer $TOK" >/dev/null
 
-echo "[19/69] POST /sessions ..."
+echo "[19/75] POST /sessions ..."
 SESS=$(curl -fsS -X POST http://localhost:8080/sessions \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"model":"default-mock:gpt-4o","profile":"coding","title":"e2e"}')
@@ -186,12 +186,12 @@ SID=$(echo "$SESS" | jq -r .id)
 [[ -n "$SID" && "$SID" != "null" ]] || { echo "session create failed: $SESS"; exit 1; }
 echo "  -> session $SID"
 
-echo "[20/69] GET /sessions + GET /sessions/:id/messages ..."
+echo "[20/75] GET /sessions + GET /sessions/:id/messages ..."
 LIST=$(curl -fsS http://localhost:8080/sessions -H "Authorization: Bearer $TOK")
 echo "$LIST" | jq -e --arg id "$SID" '.sessions[] | select(.id==$id)' >/dev/null \
   || { echo "session $SID not in list: $LIST"; exit 1; }
 
-echo "[21/69] WS round-trip via docker websocat ..."
+echo "[21/75] WS round-trip via docker websocat ..."
 WS_IMG=solsson/websocat
 docker pull -q "$WS_IMG" >/dev/null 2>&1 || true
 # Use the compose network and reach the server by service name ??# `--network host` does not route to localhost:8080 on Docker Desktop.
@@ -213,11 +213,11 @@ MSGS=$(curl -fsS "http://localhost:8080/sessions/$SID/messages" -H "Authorizatio
 echo "$MSGS" | jq -e '.messages | length >= 2' >/dev/null \
   || { echo "messages not persisted: $MSGS"; exit 1; }
 
-echo "[21b/69] DELETE /sessions/:id archives session and releases sandbox ..."
+echo "[21b/75] DELETE /sessions/:id archives session and releases sandbox ..."
 curl -fsS -X DELETE "http://localhost:8080/sessions/$SID" \
   -H "Authorization: Bearer $TOK" >/dev/null
 
-echo "[22/69] POST /memories x2 (different types) ..."
+echo "[22/75] POST /memories x2 (different types) ..."
 MEM1=$(curl -fsS -X POST http://localhost:8080/memories \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"type":"preference","content":"user prefers Go","tags":["go","lang"]}')
@@ -229,7 +229,7 @@ MEM2=$(curl -fsS -X POST http://localhost:8080/memories \
 MID2=$(echo "$MEM2" | jq -r .id)
 [[ -n "$MID2" && "$MID2" != "null" ]] || { echo "memory create 2 failed: $MEM2"; exit 1; }
 
-echo "[23/69] GET /memories?type=preference&tag=go filter ..."
+echo "[23/75] GET /memories?type=preference&tag=go filter ..."
 LISTMEM=$(curl -fsS "http://localhost:8080/memories?type=preference&tag=go" \
   -H "Authorization: Bearer $TOK")
 echo "$LISTMEM" | jq -e --arg id "$MID1" '.memories[] | select(.id==$id)' >/dev/null \
@@ -237,7 +237,7 @@ echo "$LISTMEM" | jq -e --arg id "$MID1" '.memories[] | select(.id==$id)' >/dev/
 COUNT_PREF=$(echo "$LISTMEM" | jq '.memories | length')
 [[ "$COUNT_PREF" == "1" ]] || { echo "expected 1 preference, got $COUNT_PREF"; exit 1; }
 
-echo "[24/69] memory.save via tool -> memory.search via tool round-trip ..."
+echo "[24/75] memory.save via tool -> memory.search via tool round-trip ..."
 SAVE=$(curl -fsS -X POST http://localhost:8080/tools/invoke \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"tool":"memory.save","input":{"type":"lesson","content":"rate-limit external APIs","tags":["infra","rl"]}}')
@@ -249,7 +249,7 @@ SRCH=$(curl -fsS -X POST http://localhost:8080/tools/invoke \
 echo "$SRCH" | jq -e --arg id "$MID3" '.output.items[] | select(.id==$id)' >/dev/null \
   || { echo "memory.search did not find saved entry: $SRCH"; exit 1; }
 
-echo "[25/69] DELETE /memories/{id} -> GET 404 ..."
+echo "[25/75] DELETE /memories/{id} -> GET 404 ..."
 curl -fsS -X DELETE "http://localhost:8080/memories/$MID1" \
   -H "Authorization: Bearer $TOK" >/dev/null
 GET_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
@@ -257,17 +257,17 @@ GET_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
 [[ "$GET_CODE" == "404" ]] || { echo "expected 404 after delete, got $GET_CODE"; exit 1; }
 
 # ---- Slice 8: Web UI ----
-echo "[26/69] GET / returns SPA shell html ..."
+echo "[26/75] GET / returns SPA shell html ..."
 HTML=$(curl -fsS http://localhost:8080/)
 echo "$HTML" | grep -q 'id="root"' || { echo "root html missing"; echo "$HTML" | head -5; exit 1; }
 CTYPE=$(curl -sI http://localhost:8080/ | tr -d '\r' | awk '/^[Cc]ontent-[Tt]ype:/{print $2}')
 [[ "$CTYPE" == text/html* ]] || { echo "ctype: $CTYPE"; exit 1; }
 
-echo "[27/69] GET /login (SPA fallback) returns the same shell ..."
+echo "[27/75] GET /login (SPA fallback) returns the same shell ..."
 HTML2=$(curl -fsS http://localhost:8080/login)
 echo "$HTML2" | grep -q 'id="root"' || { echo "spa fallback failed for /login"; exit 1; }
 
-echo "[28/69] API not shadowed by SPA fallback: GET /sessions returns JSON ..."
+echo "[28/75] API not shadowed by SPA fallback: GET /sessions returns JSON ..."
 # Use GET (not HEAD) ??gin doesn't auto-register HEAD for GET routes, so HEAD
 # falls through to NoRoute and would serve the SPA shell. The contract under
 # test is "GET /sessions returns JSON", which is what real clients do.
@@ -276,22 +276,22 @@ CT=$(curl -s -D - -o /dev/null -H "Authorization: Bearer $TOK" http://localhost:
 [[ "$CT" == application/json* ]] || { echo "API content-type: $CT"; exit 1; }
 
 # ---- Slice 9: Audit ----
-echo "[29/69] GET /audit (admin) returns the access log ..."
+echo "[29/75] GET /audit (admin) returns the access log ..."
 AUDIT=$(curl -fsS -H "Authorization: Bearer $TOK" "http://localhost:8080/audit?limit=50")
 TOTAL=$(echo "$AUDIT" | jq -r '.total')
 [[ "$TOTAL" -ge 10 ]] || { echo "expected >=10 audit rows, got $TOTAL"; echo "$AUDIT" | head -c 500; exit 1; }
 
-echo "[30/69] GET /audit?action=auth.login finds login event ..."
+echo "[30/75] GET /audit?action=auth.login finds login event ..."
 LOGIN_HITS=$(curl -fsS -H "Authorization: Bearer $TOK" \
   "http://localhost:8080/audit?action=auth.login&limit=10" | jq '.entries | length')
 [[ "$LOGIN_HITS" -ge 1 ]] || { echo "expected >=1 auth.login entry"; exit 1; }
 
-echo "[31/69] GET /audit?action=sandbox. finds sandbox lifecycle event ..."
+echo "[31/75] GET /audit?action=sandbox. finds sandbox lifecycle event ..."
 SB_HITS=$(curl -fsS -H "Authorization: Bearer $TOK" \
   "http://localhost:8080/audit?action=sandbox.&limit=10" | jq '.entries | length')
 [[ "$SB_HITS" -ge 1 ]] || { echo "expected >=1 sandbox.* audit entry"; exit 1; }
 
-echo "[32/69] member user gets 403 from /audit ..."
+echo "[32/75] member user gets 403 from /audit ..."
 docker compose exec -T postgres psql -U app -d app -v ON_ERROR_STOP=1 <<SQL >/dev/null
 INSERT INTO users (tenant_id, email, password_hash, name, role)
 VALUES ((SELECT id FROM tenants WHERE slug='default'),
@@ -305,24 +305,24 @@ CODE=$(curl -s -o /dev/null -w '%{http_code}' \
   -H "Authorization: Bearer $MTOK" http://localhost:8080/audit)
 [[ "$CODE" == "403" ]] || { echo "expected 403 for member, got $CODE"; exit 1; }
 
-echo "[33/69] GET /metrics with admin JWT returns pca_* metrics ..."
+echo "[33/75] GET /metrics with admin JWT returns pca_* metrics ..."
 curl -fsS -H "Authorization: Bearer $TOK" http://localhost:8080/metrics > /tmp/pca-metrics.txt \
   || { echo "metrics curl failed (token might be unauthorized)"; exit 1; }
 grep -q '^pca_http_requests_total' /tmp/pca-metrics.txt \
   || { echo "expected pca_http_requests_total in /metrics body (body in /tmp/pca-metrics.txt, size=$(wc -c </tmp/pca-metrics.txt))"; grep -E "^pca_|^# HELP pca_" /tmp/pca-metrics.txt | head -10 || true; exit 1; }
 
-echo "[34/69] GET /metrics with static scrape token also works ..."
+echo "[34/75] GET /metrics with static scrape token also works ..."
 SCRAPE_TOKEN="${PCA_OBSERVABILITY_METRICS_TOKEN:-dev-scrape-token-change-me}"
 CODE=$(curl -s -o /dev/null -w '%{http_code}' \
   -H "Authorization: Bearer $SCRAPE_TOKEN" http://localhost:8080/metrics)
 [[ "$CODE" == "200" ]] || { echo "expected 200 with scrape token, got $CODE"; exit 1; }
 
-echo "[35/69] GET /metrics without auth is rejected ..."
+echo "[35/75] GET /metrics without auth is rejected ..."
 CODE=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/metrics)
 [[ "$CODE" == "401" ]] || { echo "expected 401 without auth, got $CODE"; exit 1; }
 
 # ---- Slice 11: Vector Memory ----
-echo "[36/69] vector search ranks semantically similar memories ..."
+echo "[36/75] vector search ranks semantically similar memories ..."
 VMEM1=$(curl -fsS -X POST http://localhost:8080/memories \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"type":"preference","content":"user loves golang generics"}')
@@ -343,14 +343,14 @@ TOP_SCORE=$(echo "$VS" | jq -r '.output.items[0].score')
 awk -v s="$TOP_SCORE" 'BEGIN{exit !(s>0.9)}' \
   || { echo "expected top score > 0.9, got $TOP_SCORE"; exit 1; }
 
-echo "[37/69] keyword mode falls back to ILIKE ..."
+echo "[37/75] keyword mode falls back to ILIKE ..."
 KS=$(curl -fsS -X POST http://localhost:8080/tools/invoke \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"tool":"memory.search","input":{"query":"kubernetes","mode":"keyword"}}')
 echo "$KS" | jq -e --arg id "$VID2" '.output.items[] | select(.id==$id)' >/dev/null \
   || { echo "keyword search missed kubernetes memory: $KS"; exit 1; }
 
-echo "[38/69] Create dedup returns existing id with created=false ..."
+echo "[38/75] Create dedup returns existing id with created=false ..."
 DUP=$(curl -fsS -X POST http://localhost:8080/tools/invoke \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"tool":"memory.save","input":{"type":"preference","content":"user loves golang generics"}}')
@@ -361,7 +361,7 @@ DUP_CREATED=$(echo "$DUP" | jq -r '.output.created')
 [[ "$DUP_CREATED" == "false" ]] \
   || { echo "dedup should set created=false, got $DUP_CREATED"; exit 1; }
 
-echo "[39/69] Distinct content -> new id (no false merge) ..."
+echo "[39/75] Distinct content -> new id (no false merge) ..."
 NEW=$(curl -fsS -X POST http://localhost:8080/tools/invoke \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"tool":"memory.save","input":{"type":"knowledge","content":"prefers tabs over spaces in source"}}')
@@ -372,7 +372,7 @@ NEW_CREATED=$(echo "$NEW" | jq -r '.output.created')
 [[ "$NEW_CREATED" == "true" ]] \
   || { echo "distinct content should set created=true, got $NEW_CREATED"; exit 1; }
 
-echo "[40/69] GET /skills lists seeded skills ..."
+echo "[40/75] GET /skills lists seeded skills ..."
 SKILLS=$(curl -fsS http://localhost:8080/skills -H "Authorization: Bearer $TOK")
 SKILL_IDS=$(echo "$SKILLS" | jq -r '.skills[].id' | sort | tr '\n' ',')
 echo "  -> ids: $SKILL_IDS"
@@ -383,13 +383,13 @@ echo "$SKILL_IDS" | grep -q "platform-coding-standards," \
 HAS_BODY=$(echo "$SKILLS" | jq -r '.skills[0] | has("body")')
 [[ "$HAS_BODY" == "false" ]] || { echo "List should omit body, got: $SKILLS"; exit 1; }
 
-echo "[41/69] GET /skills/:id?include=body returns body ..."
+echo "[41/75] GET /skills/:id?include=body returns body ..."
 SK_BODY=$(curl -fsS "http://localhost:8080/skills/e2e-marker?include=body" \
   -H "Authorization: Bearer $TOK" | jq -r '.body')
 echo "$SK_BODY" | grep -q "E2E_SKILL_MARKER_V1" \
   || { echo "skill body missing marker token"; exit 1; }
 
-echo "[42/69] agent.run with skill_ids=[e2e-marker] injects marker -> 'skill-marker-ok' ..."
+echo "[42/75] agent.run with skill_ids=[e2e-marker] injects marker -> 'skill-marker-ok' ..."
 SKRUN=$(curl -fsS -X POST http://localhost:8080/agent/run \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"model":"default-mock:gpt-4o","profile":"coding","skill_ids":["e2e-marker"],"messages":[{"role":"user","content":"hi"}]}')
@@ -397,7 +397,7 @@ SK_FINAL=$(echo "$SKRUN" | jq -r '.events[-1].text')
 [[ "$SK_FINAL" == "skill-marker-ok" ]] \
   || { echo "expected 'skill-marker-ok', got: $SK_FINAL"; echo "$SKRUN" | head -c 600; exit 1; }
 
-echo "[43/69] sandbox quota exceeded -> 429 quota_exceeded ..."
+echo "[43/75] sandbox quota exceeded -> 429 quota_exceeded ..."
 # Requires PCA_QUOTA_SANDBOX_MAX_ACTIVE=1 in compose (see docker-compose.yml).
 QSB1=$(curl -fsS -X POST http://localhost:8080/sandbox/sessions \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d '{}')
@@ -412,7 +412,7 @@ QSB2_ERR=$(jq -r '.error' < /tmp/qsb2.json)
 curl -fsS -X DELETE "http://localhost:8080/sandbox/sessions/$QID1" \
   -H "Authorization: Bearer $TOK" >/dev/null
 
-echo "[44/69] POST /auth/logout revokes bearer token (subsequent requests 401) ..."
+echo "[44/75] POST /auth/logout revokes bearer token (subsequent requests 401) ..."
 # Mint a fresh token so we don't invalidate $TOK used by earlier steps.
 LTOK=$(curl -fsS -X POST http://localhost:8080/auth/login \
   -H 'Content-Type: application/json' \
@@ -428,7 +428,7 @@ POSTLO=$(curl -sS -o /dev/null -w '%{http_code}' http://localhost:8080/sessions 
   -H "Authorization: Bearer $LTOK")
 [[ "$POSTLO" == "401" ]] || { echo "post-logout expected 401, got $POSTLO"; exit 1; }
 
-echo "[45/69] POST /sessions auto-binds sandbox; WS list workspace -> fs.list ..."
+echo "[45/75] POST /sessions auto-binds sandbox; WS list workspace -> fs.list ..."
 BIND=$(curl -fsS -X POST http://localhost:8080/sessions \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"model":"default-mock:gpt-4o","profile":"coding","title":"slice14"}')
@@ -454,7 +454,7 @@ echo "$BIND_MSGS" | jq -e '.messages[] | select(.role=="tool")' >/dev/null \
 curl -fsS -X DELETE "http://localhost:8080/sessions/$BIND_SID" \
   -H "Authorization: Bearer $TOK" >/dev/null
 
-echo "[46/69] OIDC authorization code flow -> JWT -> GET /me ..."
+echo "[46/75] OIDC authorization code flow -> JWT -> GET /me ..."
 OIDC_JAR=$(mktemp 2>/dev/null || echo /tmp/pca-oidc-$$.jar)
 OIDC_RESP=$(curl -sS -c "$OIDC_JAR" -b "$OIDC_JAR" -L \
   "http://localhost:8080/auth/oidc/login?tenant=default")
@@ -463,7 +463,7 @@ OIDC_TOK=$(echo "$OIDC_RESP" | jq -r .token)
 ME=$(curl -fsS http://localhost:8080/me -H "Authorization: Bearer $OIDC_TOK")
 echo "$ME" | jq -e '.user_id' >/dev/null || { echo "GET /me after oidc failed: $ME"; exit 1; }
 
-echo "[47/69] memory inject on first session message -> audit memory.inject ..."
+echo "[47/75] memory inject on first session message -> audit memory.inject ..."
 MEM_INJ=$(curl -fsS -X POST http://localhost:8080/memories \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"type":"knowledge","content":"E2E_SLICE16_INJECT_MARKER prefer golang tabs","tags":["slice16"]}')
@@ -490,7 +490,7 @@ INJ_META=$(echo "$INJ_AUDIT" | jq -r '.entries[0].metadata.memory_ids | length')
 curl -fsS -X DELETE "http://localhost:8080/sessions/$INJ_SID" \
   -H "Authorization: Bearer $TOK" >/dev/null
 
-echo "[48/69] sandbox files list API returns workspace entries ..."
+echo "[48/75] sandbox files list API returns workspace entries ..."
 FILES_SESS=$(curl -fsS -X POST http://localhost:8080/sessions \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"model":"default-mock:gpt-4o","profile":"coding","title":"slice16-files"}')
@@ -508,7 +508,7 @@ FILES_SID=$(echo "$FILES_SESS" | jq -r .id)
 curl -fsS -X DELETE "http://localhost:8080/sessions/$FILES_SID" \
   -H "Authorization: Bearer $TOK" >/dev/null
 
-echo "[49/69] tenant DB skill (admin CRUD) flows through resolver -> 'tenant-skill-marker-ok' ..."
+echo "[49/75] tenant DB skill (admin CRUD) flows through resolver -> 'tenant-skill-marker-ok' ..."
 TS_BODY='E2E_TENANT_SKILL_V1\nThis skill is created via the admin API; the resolver should pick it up alongside FS skills.'
 TS_PAYLOAD=$(printf '{"skill_key":"e2e-tenant-marker","description":"tenant marker","body":"%s"}' "$TS_BODY")
 TS_CREATE=$(curl -sS -o /tmp/ts_create.json -w '%{http_code}' -X POST http://localhost:8080/admin/skills \
@@ -533,7 +533,7 @@ curl -fsS -X PUT http://localhost:8080/admin/profiles/coding/skills \
 curl -fsS -X DELETE http://localhost:8080/admin/skills/e2e-tenant-marker \
   -H "Authorization: Bearer $TOK" >/dev/null
 
-echo "[50/69] sub-agent delegate round-trip + GET /agent/profiles ..."
+echo "[50/75] sub-agent delegate round-trip + GET /agent/profiles ..."
 # 50a: registry lists all 4 profiles, each with a description
 PROFS=$(curl -fsS -H "Authorization: Bearer $TOK" http://localhost:8080/agent/profiles)
 PROF_NAMES=$(echo "$PROFS" | jq -r '.profiles[].name' | sort | tr '\n' ',')
@@ -591,7 +591,7 @@ DCOMP=$(curl -fsS -H "Authorization: Bearer $TOK" \
 [[ "$DCOMP" -ge 1 ]] \
   || { echo "delegate: expected >=1 agent.delegate.complete entry with sub_profile=review"; exit 1; }
 
-echo "[57/69] workflow CRUD + publish registers workflow.e2e-demo into ToolBus ..."
+echo "[57/75] workflow CRUD + publish registers workflow.e2e-demo into ToolBus ..."
 WF_DSL=$(cat <<'YAML'
 id: e2e-demo
 name: E2E Workflow Demo
@@ -632,7 +632,7 @@ WF_IN_TOOLS=$(curl -fsS -H "Authorization: Bearer $TOK" http://localhost:8080/to
   | jq -r '[.tools[].name] | index("workflow.e2e-demo")')
 [[ "$WF_IN_TOOLS" != "null" ]] || { echo "workflow.e2e-demo missing from /tools after publish"; exit 1; }
 
-echo "[58/69] /tools/invoke workflow.e2e-demo records a workflow_runs row ..."
+echo "[58/75] /tools/invoke workflow.e2e-demo records a workflow_runs row ..."
 WF_INVOKE=$(curl -fsS -X POST http://localhost:8080/tools/invoke \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"tool":"workflow.e2e-demo","input":{"name":"E2E"}}')
@@ -646,7 +646,7 @@ WF_REAL_RUNS=$(docker compose exec -T postgres psql -U app -d app -tA -c \
 [[ "$WF_REAL_RUNS" -ge 1 ]] \
   || { echo "expected >=1 workflow_runs row for e2e-demo (status=ok, dry_run=false), got: $WF_REAL_RUNS"; exit 1; }
 
-echo "[59/69] agent.run with workflow marker fires workflow.e2e-demo tool_call ..."
+echo "[59/75] agent.run with workflow marker fires workflow.e2e-demo tool_call ..."
 AWRUN=$(curl -fsS -X POST http://localhost:8080/agent/run \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"model":"default-mock:gpt-4o","profile":"coding","messages":[{"role":"user","content":"E2E_WORKFLOW_V1 please invoke the demo workflow"}]}')
@@ -674,7 +674,7 @@ WF_AUD_DONE=$(curl -fsS -H "Authorization: Bearer $TOK" \
 [[ "$WF_AUD_DONE" -ge 1 ]] \
   || { echo "workflow: expected >=1 workflow.invoke.complete audit entry for e2e-demo"; exit 1; }
 
-echo "[60/69] dry-run mocks mutating tool nodes ..."
+echo "[60/75] dry-run mocks mutating tool nodes ..."
 WF_DRY=$(curl -fsS -X POST 'http://localhost:8080/admin/workflows/e2e-demo/invoke' \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"inputs":{"name":"DryRun"}, "dry_run": true}')
@@ -700,7 +700,7 @@ curl -fsS -X POST http://localhost:8080/admin/workflows/e2e-demo/unpublish \
 curl -fsS -X DELETE http://localhost:8080/admin/workflows/e2e-demo \
   -H "Authorization: Bearer $TOK" >/dev/null
 
-echo "[61/69] reflection: archive session -> pending proposal -> admin approve -> memory.search hits ..."
+echo "[61/75] reflection: archive session -> pending proposal -> admin approve -> memory.search hits ..."
 # (a) Create a session, send one user message via WS so the row has content
 #     for the reflector to read, then archive to trigger reflection.Worker.
 RSESS=$(curl -fsS -X POST http://localhost:8080/sessions \
@@ -745,7 +745,7 @@ HITS=$(echo "$SR" | jq -r '.output.items | length')
 [[ "$HITS" -ge 1 ]] || { echo "search miss after approve: $SR"; exit 1; }
 echo "  -> proposal=$PID memory=$MID search_hits=$HITS"
 
-echo "[62/69] orchestrator: routing hint injected -> mock acks -> audit logged ..."
+echo "[62/75] orchestrator: routing hint injected -> mock acks -> audit logged ..."
 # (a) agent.run with the marker content fires the e2e-orchestrator-marker
 #     rule, which injects ORCHESTRATOR_E2E_HINT_DELIVERED as a system message;
 #     the mock-provider recognises it and returns the canned final.
@@ -777,7 +777,7 @@ ORMATCHED=$(echo "$ORAUD" | jq -r '.entries[0].metadata.matched')
   || { echo "audit metadata.matched != true: $ORAUD"; exit 1; }
 echo "  -> final=$OFINAL rule=$ORRULE matched=$ORMATCHED"
 
-echo "[63/69] mcp: register mock server -> tools/list -> invoke echo round-trip ..."
+echo "[63/75] mcp: register mock server -> tools/list -> invoke echo round-trip ..."
 # (a) admin create mcp_server pointing at the mock-mcp service. RegisterServer
 #     runs synchronously, so the response should already contain tools_cache
 #     populated from tools/list.
@@ -828,7 +828,7 @@ curl -fsS -X DELETE "http://localhost:8080/admin/mcp-servers/$MID" \
   -H "Authorization: Bearer $TOK" >/dev/null
 echo "  -> tools=$MTOOLS, invoke=$INV_TEXT"
 
-echo "[64/69] audit hash chain: verify clean -> tamper -> detect -> restore ..."
+echo "[64/75] audit hash chain: verify clean -> tamper -> detect -> restore ..."
 # (a) verify the current chain is intact. Prior steps wrote many audit rows;
 #     all are linked via SHA-256 in audit_log.entry_hash and the genesis row
 #     starts from 32 zero bytes (see migration 0021).
@@ -880,7 +880,7 @@ HTTP_NA=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/audit/ver
 echo "  -> chain_end_id=$TARGET_ID, detected=$BID/$REASON, restore_ok=$OK3"
 
 # ---- Slice 22b: sandbox?MinIO snapshot ----
-echo "[65/69] sandbox snapshot: create -> list -> destroy -> still visible w/ session_id null ..."
+echo "[65/75] sandbox snapshot: create -> list -> destroy -> still visible w/ session_id null ..."
 
 # (a) fresh sandbox; mark it with a workspace file so we know the snapshot
 #     captured real content.
@@ -940,7 +940,7 @@ echo "$SNAP_AUDIT" | jq -e --arg t "$SNAP_ID" '.entries[] | select(.target==$t)'
 echo "  -> snapshot lifecycle ok (post-destroy session_id=null, audit recorded)"
 
 # ---- Slice 22c: seccomp profile blocks dangerous syscalls ----
-echo "[66/69] sandbox seccomp denies mount(2) but permits normal syscalls ..."
+echo "[66/75] sandbox seccomp denies mount(2) but permits normal syscalls ..."
 
 # (a) fresh sandbox ??clean slate so the SecurityOpt under test is what main
 #     boot loaded (PCA_SANDBOX_SECCOMP_ENABLED=true by default).
@@ -1009,7 +1009,7 @@ curl -fsS -X DELETE "http://localhost:8080/sandbox/sessions/$SEC_SID" \
 echo "  -> mount(2) denied (errno=EPERM), sh+echo+cat regression ok"
 
 # ---- Slice 22d1: sandbox.driver advertised on /healthz ----
-echo "[67/69] sandbox driver advertised on /healthz ..."
+echo "[67/75] sandbox driver advertised on /healthz ..."
 # Compose deploy ships with the default driver (docker). The /healthz body
 # must include sandbox.driver=="docker" so ops + k8s rollout gate (22d2) can
 # tell which Runtime this binary is actually running without grepping logs.
@@ -1020,7 +1020,7 @@ DRV=$(echo "$HEALTH" | jq -r '.sandbox.driver // "missing"')
 echo "  -> sandbox.driver=docker confirmed"
 
 # ---- Compose Pilot #13: snapshot restore ----
-echo "[68/69] sandbox snapshot restore -> read marker from restored sandbox ..."
+echo "[68/75] sandbox snapshot restore -> read marker from restored sandbox ..."
 
 REST_CODE=$(curl -sS -o /tmp/pca-restore.json -w '%{http_code}' -X POST \
   "http://localhost:8080/sandbox/snapshots/restore/$SNAP_ID" \
@@ -1050,13 +1050,150 @@ curl -fsS -X DELETE "http://localhost:8080/sandbox/sessions/$REST_SID" \
 echo "  -> snapshot restore ok (marker.txt round-trip)"
 
 # ---- Compose Pilot #12: admin re-embed ----
-echo "[69/69] admin memories re-embed ..."
+echo "[69/75] admin memories re-embed ..."
 REEMBED=$(curl -fsS -X POST http://localhost:8080/admin/memories/re-embed \
   -H "Authorization: Bearer $TOK")
 RE_UPDATED=$(echo "$REEMBED" | jq -r .updated)
 [[ "$RE_UPDATED" -ge 1 ]] \
   || { echo "re-embed expected updated>=1: $REEMBED"; exit 1; }
 echo "  -> re-embed updated=$RE_UPDATED"
+
+# ---- Slice 19b: NL workflow authoring (B+C) ----
+echo "[70/75] GET /agent/workflow/templates + NL orchestrator hint ..."
+TEMPL=$(curl -fsS http://localhost:8080/agent/workflow/templates \
+  -H "Authorization: Bearer $TOK")
+TCOUNT=$(echo "$TEMPL" | jq '.templates | length')
+[[ "$TCOUNT" -ge 5 ]] \
+  || { echo "expected >=5 templates, got $TCOUNT: $TEMPL"; exit 1; }
+
+NLOR=$(curl -fsS -X POST http://localhost:8080/agent/run \
+  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{
+    "model":"default-mock:gpt-4o",
+    "messages":[{"role":"user","content":"E2E_NL_WF_AUTHOR_V1 test nl workflow author routing"}],
+    "max_steps":2
+  }')
+NLFINAL=$(echo "$NLOR" | jq -r '.events[-1].text')
+[[ "$NLFINAL" == "nl-wf-orchestrator-hint-ok" ]] \
+  || { echo "NL orchestrator hint not delivered: $NLOR"; exit 1; }
+NLAUD=$(curl -fsS "http://localhost:8080/audit?action=orchestrator.route&limit=10" \
+  -H "Authorization: Bearer $TOK")
+echo "$NLAUD" | jq -e '.entries[] | select(.metadata.rule_name=="e2e-nl-workflow-author")' >/dev/null \
+  || { echo "no e2e-nl-workflow-author orchestrator.route audit row: $NLAUD"; exit 1; }
+echo "  -> templates=$TCOUNT nl_orchestrator=$NLFINAL"
+
+echo "[71/75] POST /agent/workflow/proposals (template llm-summarize-notify) dry_run_ok ..."
+PROP=$(curl -fsS -X POST http://localhost:8080/agent/workflow/proposals \
+  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{
+    "slug":"e2e-nl-template",
+    "name":"E2E NL Template",
+    "template_id":"llm-summarize-notify",
+    "slots":{
+      "prompt":"Summarize open tasks for E2E",
+      "model":"default-mock:text",
+      "notify_tool":"llm.chat",
+      "notify_args":{"model":"default-mock:text","messages":[{"role":"user","content":"digest"}]}
+    }
+  }')
+PROP_ID=$(echo "$PROP" | jq -r '.proposal.id')
+DRY_OK=$(echo "$PROP" | jq -r '.proposal.dry_run_ok')
+[[ -n "$PROP_ID" && "$PROP_ID" != "null" ]] \
+  || { echo "proposal create missing id: $PROP"; exit 1; }
+[[ "$DRY_OK" == "true" ]] \
+  || { echo "proposal dry_run not ok: $PROP"; exit 1; }
+echo "  -> proposal_id=$PROP_ID dry_run_ok=$DRY_OK"
+
+echo "[72/75] admin confirm proposal -> workflow.e2e-nl-template in /tools ..."
+CONF=$(curl -fsS -X POST "http://localhost:8080/agent/workflow/proposals/$PROP_ID/confirm" \
+  -H "Authorization: Bearer $TOK")
+CONF_ST=$(echo "$CONF" | jq -r '.proposal.status')
+[[ "$CONF_ST" == "published" ]] \
+  || { echo "admin confirm expected published, got $CONF_ST: $CONF"; exit 1; }
+curl -fsS -H "Authorization: Bearer $TOK" http://localhost:8080/tools \
+  | jq -e '.tools[] | select(.name=="workflow.e2e-nl-template")' >/dev/null \
+  || { echo "workflow.e2e-nl-template missing from /tools after confirm"; exit 1; }
+echo "  -> status=$CONF_ST tool registered"
+
+echo "[73/75] member proposal -> confirm pending -> admin approve ..."
+MPROP=$(curl -fsS -X POST http://localhost:8080/agent/workflow/proposals \
+  -H "Authorization: Bearer $MTOK" -H 'Content-Type: application/json' \
+  -d '{
+    "slug":"e2e-nl-member",
+    "name":"E2E NL Member",
+    "template_id":"llm-summarize-notify",
+    "slots":{
+      "prompt":"Member path E2E",
+      "model":"default-mock:text",
+      "notify_tool":"llm.chat",
+      "notify_args":{"model":"default-mock:text","messages":[{"role":"user","content":"member"}]}
+    }
+  }')
+MPID=$(echo "$MPROP" | jq -r '.proposal.id')
+[[ -n "$MPID" && "$MPID" != "null" ]] \
+  || { echo "member proposal create failed: $MPROP"; exit 1; }
+MCONF=$(curl -fsS -X POST "http://localhost:8080/agent/workflow/proposals/$MPID/confirm" \
+  -H "Authorization: Bearer $MTOK")
+MST=$(echo "$MCONF" | jq -r '.proposal.status')
+[[ "$MST" == "pending_approval" ]] \
+  || { echo "member confirm expected pending_approval, got $MST: $MCONF"; exit 1; }
+APRV=$(curl -fsS -X POST "http://localhost:8080/admin/workflow/proposals/$MPID/approve" \
+  -H "Authorization: Bearer $TOK")
+APST=$(echo "$APRV" | jq -r '.proposal.status')
+[[ "$APST" == "published" ]] \
+  || { echo "admin approve expected published, got $APST: $APRV"; exit 1; }
+curl -fsS -H "Authorization: Bearer $TOK" http://localhost:8080/tools \
+  | jq -e '.tools[] | select(.name=="workflow.e2e-nl-member")' >/dev/null \
+  || { echo "workflow.e2e-nl-member missing after approve"; exit 1; }
+echo "  -> member_pending=$MST admin_published=$APST"
+
+echo "[74/75] agent.run E2E_WF_PROPOSAL_V1 -> workflow.propose tool_call ..."
+WPR=$(curl -fsS -X POST http://localhost:8080/agent/run \
+  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{
+    "model":"default-mock:gpt-4o",
+    "profile":"coding",
+    "messages":[{"role":"user","content":"E2E_WF_PROPOSAL_V1 create nl workflow proposal"}],
+    "max_steps":3
+  }')
+WP_TOOL=$(echo "$WPR" | jq -r '[.events[] | select(.kind=="tool_call")][0].tool_name')
+[[ "$WP_TOOL" == "workflow.propose" ]] \
+  || { echo "expected workflow.propose tool_call, got $WP_TOOL: $WPR"; exit 1; }
+WP_PID=$(echo "$WPR" | jq -r '[.events[] | select(.kind=="tool_result" and .tool_name=="workflow.propose")][0].tool_output | fromjson | .proposal_id')
+[[ -n "$WP_PID" && "$WP_PID" != "null" ]] \
+  || { echo "workflow.propose tool_result missing proposal_id: $WPR"; exit 1; }
+WPFINAL=$(echo "$WPR" | jq -r '.events[-1].text')
+[[ "$WPFINAL" == "wf-proposal-marker-ok" ]] \
+  || { echo "expected wf-proposal-marker-ok final, got: $WPFINAL"; exit 1; }
+echo "  -> proposal_id=$WP_PID final=$WPFINAL"
+
+echo "[75/75] agent.run E2E_WF_FREEFORM_V1 -> workflow.propose (freeform DSL) ..."
+WFF=$(curl -fsS -X POST http://localhost:8080/agent/run \
+  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{
+    "model":"default-mock:gpt-4o",
+    "profile":"workflow-authoring",
+    "messages":[{"role":"user","content":"E2E_WF_FREEFORM_V1 author custom workflow"}],
+    "max_steps":3
+  }')
+FF_TOOL=$(echo "$WFF" | jq -r '[.events[] | select(.kind=="tool_call")][0].tool_name')
+[[ "$FF_TOOL" == "workflow.propose" ]] \
+  || { echo "freeform: expected workflow.propose, got $FF_TOOL: $WFF"; exit 1; }
+FF_SLUG=$(echo "$WFF" | jq -r '[.events[] | select(.kind=="tool_result" and .tool_name=="workflow.propose")][0].tool_output | fromjson | .slug')
+[[ "$FF_SLUG" == "e2e-nl-agent" ]] \
+  || { echo "freeform: expected slug e2e-nl-agent, got $FF_SLUG: $WFF"; exit 1; }
+FFFINAL=$(echo "$WFF" | jq -r '.events[-1].text')
+[[ "$FFFINAL" == "wf-proposal-marker-ok" ]] \
+  || { echo "freeform: expected wf-proposal-marker-ok, got: $FFFINAL"; exit 1; }
+
+# cleanup published NL workflows so reruns stay idempotent
+for SL in e2e-nl-template e2e-nl-member e2e-nl-agent; do
+  curl -fsS -X POST "http://localhost:8080/admin/workflows/$SL/unpublish" \
+    -H "Authorization: Bearer $TOK" >/dev/null 2>&1 || true
+  curl -fsS -X DELETE "http://localhost:8080/admin/workflows/$SL" \
+    -H "Authorization: Bearer $TOK" >/dev/null 2>&1 || true
+done
+echo "  -> freeform slug=$FF_SLUG final=$FFFINAL (cleanup ok)"
 
 echo
 echo "E2E PASS"

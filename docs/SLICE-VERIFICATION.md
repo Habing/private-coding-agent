@@ -313,8 +313,8 @@ cd deploy/compose
 | L1 Task 1 | 迁移 `0024_workflow_proposals` migrate 成功；`go test ./internal/workflow/... -run Proposal -count=1` PASS |
 | L1 Task 3–4 | `workflow.propose` / `workflow.publish` 注册；`GET /agent/workflow/templates`；proposal confirm/approve handler 单测 PASS |
 | L2 | `go test ./internal/workflow/... ./internal/agent/... -count=1` |
-| L3 | E2E 70–75 **待 Task 5–7** |
-| 状态 | **Task 1–4 ✅**（2026-05-23）；Task 5+ Web/orchestrator/E2E 未做 |
+| L3 | E2E **[70–75]**：templates ≥5；template propose dry_run；admin confirm；member 审批链；`E2E_WF_PROPOSAL_V1` / `E2E_WF_FREEFORM_V1` agent.run；NL orchestrator `E2E_NL_WF_AUTHOR_V1` |
+| 状态 | **Task 1–7 ✅**（2026-05-23）；Task 8 文档收尾可选 |
 
 ### 切片 23 — N8N（可选）
 
