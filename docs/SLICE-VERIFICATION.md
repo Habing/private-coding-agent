@@ -284,17 +284,28 @@ cd deploy/compose
 | 审计 | 无新增 audit action（seccomp 是底层 enforcement，不产生应用层事件）。trivy run 失败通过 GitHub Actions check 反馈，不写入 audit_log |
 | 配置/部署 | 新增 `SandboxConfig{SeccompEnabled bool}` 顶层段（首次新增 `sandbox.*` 配置树）；`config.example.yaml` 加 `sandbox: { seccomp_enabled: true }` 段附说明；`cmd/server/main.go` boot 期 `if cfg.Sandbox.SeccompEnabled { seccompJSON, err := sandbox.LoadSeccompProfile(); ... }` → 传入 `DockerDriverConfig.SeccompProfile`；新增 `.github/workflows/security.yml`（仓库首个 GitHub Actions workflow）+ `.trivyignore` placeholder；SECURITY-SANDBOX.md §1/§2/§9/§11 改写 |
 
-### 切片 22d — K8sDriver + Helm（待办）
+### 切片 22d1 — K8sDriver Runtime + fake-client L1
 
 | 项 | 验证 |
 |----|------|
-| L3 | kind 集群 e2e + `helm install` 烟测 |
+| L1 | `go test ./internal/sandbox/... ./internal/config/... -count=1`：13 个 `k8s_driver_test.go` fake-clientset 用例覆盖 — pod 元数据 + securityContext 全字段断言 + seccomp 三态（cfg 留空→`RuntimeDefault` / 指定路径→`Localhost`+ `LocalhostProfile` 填、`Unconfined` 显式） + Guaranteed QoS（requests==limits，cpu/memory Quantity canonical 形式 `"2"` / `"1Gi"`） + waitForPodReady 超时（fake reactor 让 pod 永 Pending，Create 在 PodReadyTimeoutSec 后报 deadline + reaper 调 Pods.Delete 回收）+ Get 跨租户 → `ErrSandboxNotFound` + Destroy 二次幂等 + Pods.Delete reactor 计数 + DetachSession 仍被调（SnapshotRepo 类型断言钩通）+ Snapshot tenant scope check 优先 → `ErrSandboxNotFound`，scope 通过 → `ErrSnapshotDisabled` + NetworkMode 三态打到 `pca.network` label + DNSPolicy `ClusterFirst`/`None` 切换；`TestSandboxConfig_DefaultDriver` 断言 `Sandbox.Driver=="docker"`；`TestSandboxConfig_EnvDriverK8s` 断言 `PCA_SANDBOX_DRIVER=k8s` 生效；`TestSandboxConfig_InvalidDriverFailsFast` 断言 `PCA_SANDBOX_DRIVER=podman` 让 `Load()` 报错且 message 含 `sandbox.driver`；`TestHealthz_InfoMerged` 断言 /healthz body 含 `"sandbox"` 顶层 key 且 `driver` 等于注入值 |
+| L2 | `go build ./...`；`go vet ./...` 干净；`go mod tidy && git diff --exit-code go.mod go.sum`；K8sDriver 在编译期满足 `sandbox.Runtime`（`var _ sandbox.Runtime = (*K8sDriver)(nil)`）；client-go v0.32.0 vendored 增量 ~30MB go.sum / ~10MB binary |
+| L3 增量 | E2E **[67]**：boot 后 `curl -fsS http://localhost:8080/healthz \| jq -r '.sandbox.driver'` 必须返回 `docker`（compose 默认）。K8s 真实跑（in-cluster exec/files/destroy）由 22d2 kind nightly 覆盖 |
+| 不变量 | (a) `SandboxConfig.Driver` 默认 `"docker"`，合法值 `"docker"` \| `"k8s"`，非法值 `Load()` fail-fast；(b) `cmd/server/main.go` boot 期 switch — docker → 走老 DockerDriver + Reconciler；k8s → `buildK8sRestConfig`（InCluster=true `rest.InClusterConfig` / false `clientcmd.NewDefaultClientConfigLoadingRules`+ ExplicitPath）→ `kubernetes.NewForConfig` → `NewK8sDriver`；Reconciler 在非 docker driver 下跳过（K8s 模式 reconciliation 留 22d-v2）；(c) `dockerCli` 构造仅在 docker driver 下执行，K8s 模式不依赖 docker socket；(d) `SetSnapshotDeps` 改类型断言保护，K8sDriver 暴露 `SetSnapshotRepo` 让 Destroy 仍能 DetachSession（Snapshot 本身在 K8s 模式直接 `ErrSnapshotDisabled`）；(e) K8sDriver.buildPod 全字段对齐 DockerDriver 硬化矩阵（见 SECURITY-SANDBOX §2.1 等价表）；(f) Pod 名 `pca-sb-<sandbox-uuid 前 12 hex>`，存入 `sandbox_sessions.container_id`（无 schema 变更）；(g) emptyDir{medium:Memory,sizeLimit:1Gi} 给 /workspace + /tmp 模拟 DockerDriver tmpfs；(h) requests==limits → Guaranteed QoS（沙箱不能 noisy-neighbor）；(i) PidsLimit 在 22d1 不写 Pod spec（K8s 1.31+ alpha gate，留 22d-v2，DockerDriver 路径不受影响）；(j) NetworkMode 在 22d1 只打 `pca.network` label + DNSPolicy 切换；真实 egress 隔离要等 22d2 chart 内 NetworkPolicy YAML |
+| 审计 | 无新增 audit action（driver 切换是 boot 期决策，沙箱生命周期 audit 走原 `sandbox.create/destroy/exec/snapshot.*` 与 driver 无关） |
+| 配置/部署 | 新增 `SandboxConfig.Driver` + `SandboxK8sConfig{Namespace,InCluster,Kubeconfig,ServiceAccount,SeccompLocalhostProfile,PodReadyTimeoutSec}`；`config.example.yaml` 加 `sandbox.driver` + `sandbox.k8s.*` 段附说明；`PCA_SANDBOX_DRIVER` / `PCA_SANDBOX_K8S_*` env 绑定；`httpx.Deps.Info` 新增 map（boot 期 server 注入 `{"sandbox":{"driver":...}}`，/healthz body 合并）；`go.mod` 加 `k8s.io/{api,apimachinery,client-go} v0.32.0` |
+
+### 切片 22d2 — Helm chart + kind nightly（待办）
+
+| 项 | 验证 |
+|----|------|
+| L3 | kind 集群单节点 + `helm install pca` + 在 cluster 内跑 e2e 子集（真 SPDY exec/ReadFile/WriteFile/Destroy）+ NetworkPolicy internal\|bridge\|none 三档实证 |
 
 ### 切片 23 — N8N（可选）
 
 | 项 | 验证 |
 |----|------|
-| L3 | E2E **[66+]**（若未 skip） |
+| L3 | E2E **[68+]**（若未 skip） |
 
 **Full P1 完成：** E2E **≥70**；主 spec §11 核心项 ✅。
 
@@ -314,6 +325,7 @@ cd deploy/compose
 | Full P1（含 22a） | `./test-e2e.sh` | 1–64（slice 22a 完成后） |
 | Full P1（含 22b） | `./test-e2e.sh` | 1–65（slice 22b 完成后） |
 | Full P1（含 22c） | `./test-e2e.sh` | 1–66（slice 22c 完成后） |
+| Full P1（含 22d1） | `./test-e2e.sh` | 1–67（slice 22d1 完成后） |
 
 ```powershell
 go test ./... -count=1
@@ -368,6 +380,7 @@ cd deploy/compose
 | 22a | 64 |
 | 22b | 65 |
 | 22c | 66 |
-| 22d | 67+（待办） |
-| 23 | 67+（可选） |
+| 22d1 | 67 |
+| 22d2 | 68+（待办） |
+| 23 | 68+（可选） |
 | **Full P1 全量** | **1–70+** |

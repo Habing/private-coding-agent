@@ -6,10 +6,10 @@
 | 项目根 | `F:\project\private-coding-agent` |
 | Git module | `github.com/yourorg/private-coding-agent` |
 | 当前日期 | 2026-05-23 |
-| 当前 HEAD | `5425039` *(Slice 22c commits 1–3 落地：`internal/sandbox/seccomp.json`（Docker default allowlist − 16 危险 syscall）+ `//go:embed seccomp.json` + `LoadSeccompProfile` 解析校验 + 单测覆盖 deny/allow/regression；`DockerDriverConfig.SeccompProfile` 注入 `SecurityOpt: seccomp=<json>`；`SandboxConfig.SeccompEnabled` 默认 true + `PCA_SANDBOX_SECCOMP_ENABLED` 应急回退；`.github/workflows/security.yml` trivy CRITICAL fail / HIGH warn（PR + push to main 触发 sandbox/image/** 路径）+ `.trivyignore` placeholder；SECURITY-SANDBOX.md §1/§2/§9/§11 改写；E2E step 66 mount → EPERM + sh+echo+cat 非危险 syscall 回归)* |
+| 当前 HEAD | `7981073` *(Slice 22d1 commits 1–2 落地：`internal/sandbox/k8s_driver{,_exec,_fs}.go` 实现 `Runtime` interface 第二个 driver（Pod = sandbox），`SecurityContext` 全对齐 DockerDriver 硬化（runAsUser=10001、readOnlyRootFilesystem、CapDrop ALL + 5 add、allowPrivilegeEscalation=false、seccomp Localhost|RuntimeDefault、emptyDir{Memory} /workspace+/tmp、Guaranteed QoS、restartPolicy=Never、automountServiceAccountToken=false），SPDY remote-exec via `remotecommand.NewSPDYExecutor`，tar-pipe ReadFile/WriteFile，Snapshot 直接 `ErrSnapshotDisabled`（tenant scope 优先），13 个 fake-clientset L1 单测；`internal/sandbox/fs_common.go` 抽出 buildWriteTarStream/parseReadTarStream/stripWorkspacePrefix 给两 driver 共用；`SandboxConfig.Driver` 默认 `docker` + `SandboxK8sConfig{Namespace,InCluster,Kubeconfig,ServiceAccount,SeccompLocalhostProfile,PodReadyTimeoutSec}` + 非法 driver `Load()` 报错；`cmd/server/main.go` boot 期 switch（docker→DockerDriver + reconciler；k8s→`buildK8sRestConfig` in-cluster|kubeconfig + clientset + K8sDriver；skip reconciler），`SetSnapshotDeps` 改类型断言保护；`httpx.Deps.Info` 新字段 + /healthz 暴露 `sandbox.driver`；`k8s.io/{api,apimachinery,client-go} v0.32.0` 入 go.mod。E2E step 67 校验 `sandbox.driver=docker`)* |
 | P1 规划 | **已落盘** — [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md) |
-| 工作区状态 | MVP-P1 17 ✅；Full-P1 18 ✅, 19a ✅, 19b ✅, 20 ✅, 21a ✅, 21b ✅, 22a ✅, 22b ✅, 22c ✅；E2E 66/66（待跑） |
-| 下一阶段 | **Full P1 切片 22d + 23**（22d K8sDriver + Helm / 23 N8N 可选） |
+| 工作区状态 | MVP-P1 17 ✅；Full-P1 18 ✅, 19a ✅, 19b ✅, 20 ✅, 21a ✅, 21b ✅, 22a ✅, 22b ✅, 22c ✅, 22d1 ✅；E2E 67/67（待跑） |
+| 下一阶段 | **Full P1 切片 22d2 + 23**（22d2 Helm chart + kind nightly + DEPLOY-K8S.md / 23 N8N 可选） |
 
 ---
 
@@ -46,7 +46,7 @@
 | `go test ./...` | 预期全 PASS |
 | `go vet ./...` | 干净 |
 | `go build ./...` | 干净 |
-| E2E `test-e2e.sh` | 全量 **66 步**（发版 / Gate 前必跑；P0 1–42 + MVP-P1 43–49 + Slice 18 50 + Slice 19a 57–60 + Slice 20 61 + Slice 21a 62 + Slice 21b 63 + Slice 22a 64 + Slice 22b 65 + Slice 22c 66） |
+| E2E `test-e2e.sh` | 全量 **67 步**（发版 / Gate 前必跑；P0 1–42 + MVP-P1 43–49 + Slice 18 50 + Slice 19a 57–60 + Slice 20 61 + Slice 21a 62 + Slice 21b 63 + Slice 22a 64 + Slice 22b 65 + Slice 22c 66 + Slice 22d1 67） |
 
 ### 1.4 Gate G1 收口（2026-05-21）
 
@@ -169,9 +169,9 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 | 22a Audit Hash Chain | ✅ | 64 | 0021 `audit_log` 加 `prev_hash/entry_hash BYTEA NOT NULL` + `internal/audit/hash.go` SHA-256 canonical（RS=0x1E 分隔，map[string]any 自然有序）+ `Repo.Append` 走 `BeginTx → pg_advisory_xact_lock(hashtext('audit_log')) → SELECT prev → INSERT`（跨 goroutine/副本不分叉）+ `Repo.Verify(ctx, fromID)` 流式 prev/entry 双校验 + `GET /audit/verify` admin-only；E2E 64 篡改后定位 first_broken_id |
 | 22b Snapshot → MinIO | ✅ | 65 | 0022 `sandbox_snapshots(tenant_id,user_id,session_id NULL on FK delete,object_key,size_bytes,image_ref,metadata)` + `SnapshotRepo` + dockertest 6 例 / `internal/objstore` wraps minio-go/v7（`PartSize=64<<20`, `objectSize=-1` 流式 multipart）/ `DockerDriver.Snapshot` 真实：`ContainerCommit(Pause=true)` → `ImageSave` → `objstore.Put` → `SnapshotRepo.Insert` → 可选 `ImageRemove`（KeepLocalImage=false 默认）/ key 布局 `{prefix?}/{tenant}/{session}/{rfc3339nano}.tar` / `SnapshotConfig{Enabled,Endpoint,Bucket,AccessKey,SecretKey,Region,UseSSL,Prefix,KeepLocalImage}` + `PCA_SNAPSHOT_*` env / handler `POST /sandbox/sessions/:id/snapshot`（替换 501）+ `GET /sandbox/snapshots(?session_id=&limit=)` + `GET /sandbox/snapshots/:id`，3 个 `sandbox.snapshot.{create,list,get}` audit Detached / disabled posture：未 `SetSnapshotDeps` → 503 `snapshot_disabled` / compose `minio:RELEASE.2025-04-08T15-41-24Z` + 命名卷 `miniodata` + healthcheck + server `depends_on minio:service_healthy` / E2E 65 create→write file→snapshot→list→destroy→still visible w/ session_id=null→audit |
 | 22c seccomp + trivy CI | ✅ | 66 | `internal/sandbox/seccomp.json` 派生自 Docker default profile（v25.0.5），从 allow 名单移除 `mount/umount/umount2/pivot_root/name_to_handle_at/open_by_handle_at/mount_setattr/move_mount/open_tree/fsconfig/fsmount/fsopen/fspick/ptrace/process_vm_readv/process_vm_writev/process_madvise/pidfd_getfd/kcmp/keyctl/add_key/request_key/bpf/init_module/delete_module/finit_module/create_module/kexec_load/kexec_file_load/userfaultfd/perf_event_open/fanotify_init/lookup_dcookie/quotactl/quotactl_fd/setdomainname/sethostname/syslog/iopl/acct` 共 16 类约 40 个危险 syscall；保留 `setns/unshare/clone3` 满足现代 glibc / Node.js；`//go:embed seccomp.json` + `LoadSeccompProfile` 启动期解析校验 `defaultAction==SCMP_ACT_ERRNO`；`DockerDriverConfig.SeccompProfile` 注入 `SecurityOpt: seccomp=<json>`（helper `securityOpts(profile)` 保留 no-new-privileges:true）；`SandboxConfig.SeccompEnabled` 默认 true、`PCA_SANDBOX_SECCOMP_ENABLED=false` 应急回退到 Docker 默认 profile；GitHub Actions `.github/workflows/security.yml` 在 PR + push to main 触发 sandbox/image/** 路径变更，trivy `aquasecurity/trivy-action@master` 双 job — CRITICAL exit-code=1 阻塞 merge / HIGH exit-code=0 仅 table；`.trivyignore` placeholder；SECURITY-SANDBOX.md §1 适用范围 + §2 SecurityOpt 表 + §9 已知未做表（seccomp/trivy/audit hash chain 标 ✅）+ §11 验证（SecurityOpt inspect + mount 拒绝实证）；E2E 66 mount → EPERM + sh+echo+cat 回归 |
-| 22d K8sDriver + Helm | ⬜ | 67+ | K8s ServiceAccount 替换 docker.sock + Helm chart |
-| 22d K8sDriver + Helm | ⬜ | 66+ | Pod = sandbox + deploy/helm/pca + kind nightly |
-| 23 N8N（可选） | ⬜ | 66+ | 需法务确认 |
+| 22d1 K8sDriver Runtime | ✅ | 67 | `internal/sandbox/k8s_driver{,_exec,_fs}.go` 实现 Runtime（Pod=sandbox，硬化全对齐 DockerDriver；SPDY exec；tar-pipe FS；Snapshot=`ErrSnapshotDisabled`）+ fake-clientset 13 L1 单测 / `SandboxConfig.Driver` 默认 docker + K8sConfig + `Load()` 非法 driver fail-fast / main.go boot switch（docker→DockerDriver+reconciler、k8s→buildK8sRestConfig→clientset→K8sDriver、skip reconciler）+ `SetSnapshotDeps` 类型断言保护 / `httpx.Deps.Info` + /healthz 暴露 `sandbox.driver` / `k8s.io/{api,apimachinery,client-go} v0.32.0` |
+| 22d2 Helm chart + kind nightly | ⬜ | 68+ | `deploy/helm/pca` chart（NetworkPolicy internal\|bridge\|none + RBAC pods.create/delete/get/list/exec + Deployment + Service + ConfigMap）+ `.github/workflows/kind-nightly.yml`（kind 单节点 → e2e 子集真跑 in-cluster exec/files/destroy）+ `docs/DEPLOY-K8S.md` |
+| 23 N8N（可选） | ⬜ | 68+ | 需法务确认 |
 
 ### 3.3 技术债 ↔ 切片映射
 
@@ -184,7 +184,8 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 | audit hash chain | **22a** ✅ |
 | Snapshot → MinIO | **22b** ✅ |
 | seccomp、trivy | **22c** ✅ |
-| K8sDriver、Helm | **22d** |
+| K8sDriver | **22d1** ✅ |
+| Helm chart + kind nightly | **22d2** |
 | Reflection、Workflow、delegate、N8N | **18–23** |
 | Hybrid 检索、Project/Tenant memory | **P2** /  backlog |
 | 历史 re-embed admin | backlog |
@@ -195,7 +196,8 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 
 ### 4.1 阻塞性问题
 
-- **Slice 22c** 已交付（`internal/sandbox/seccomp.json` 派生自 Docker default profile v25.0.5、从 allow 名单移除 ~16 类危险 syscall、保留 setns/unshare/clone3 + `//go:embed` 内嵌 + `LoadSeccompProfile` 启动期解析校验 + `DockerDriverConfig.SeccompProfile` 注入 `SecurityOpt: seccomp=<json>` + `SandboxConfig.SeccompEnabled` 默认 true / `PCA_SANDBOX_SECCOMP_ENABLED=false` 应急回退 + `.github/workflows/security.yml` trivy CRITICAL fail / HIGH warn + `.trivyignore` placeholder + SECURITY-SANDBOX.md §1/§2/§9/§11 改写 + E2E 66 mount→EPERM + sh+echo+cat 回归）。Full P1 剩 22d + 23。
+- **Slice 22d1** 已交付（`internal/sandbox/k8s_driver{,_exec,_fs}.go` 实现 Runtime 第二个 driver — Pod = sandbox，buildPod 全对齐 DockerDriver 硬化矩阵（runAsUser/Group=10001 runAsNonRoot、readOnlyRootFilesystem、CapDrop ALL + 5 add、allowPrivilegeEscalation=false、SeccompProfile Localhost\|RuntimeDefault、emptyDir{medium:Memory,1Gi} /workspace+/tmp、Guaranteed QoS requests==limits、restartPolicy=Never、automountServiceAccountToken=false 默认）；SPDY remote-exec 经 `k8sExecer` test seam（`newSPDYExecer` 真实实现 / fake-clientset 单元只做 signature 检查）；tar-pipe ReadFile/WriteFile 复用 fs_common；Snapshot 直接 `ErrSnapshotDisabled`（tenant scope check 优先以保 no-enumeration 契约）；waitForPodReady 轮询 phase+waiting reason，timeout 后回收 Pod；Destroy 复用 redis 锁 + lua release + DetachSession。`internal/sandbox/fs_common.go` 抽出 `buildWriteTarStream`/`parseReadTarStream`/`stripWorkspacePrefix` 给两 driver 共用，docker_driver_fs.go 行为零变化。13 个 fake-clientset L1 单测：pod spec 元数据 + securityContext + seccomp 三态 + Guaranteed QoS resources + pod-ready timeout 回收 + tenant 隔离 + destroy 幂等 + Pods.Delete reactor 计数 + snapshot disabled + snapshot tenant scope 优先 + network mode label + DNSPolicy 切换 + exec stream 编译检查。`SandboxConfig.Driver` 默认 `docker` + `SandboxK8sConfig{Namespace,InCluster,Kubeconfig,ServiceAccount,SeccompLocalhostProfile,PodReadyTimeoutSec}` + `applySlice22dDefaults` 非法 driver `Load()` fail-fast + `PCA_SANDBOX_K8S_*` env 绑定。`cmd/server/main.go` boot 期 switch：docker → 老路径 + reconciler；k8s → `buildK8sRestConfig`（InCluster=true `rest.InClusterConfig` / false `clientcmd.NewDefaultClientConfigLoadingRules` + ExplicitPath）→ `kubernetes.NewForConfig` → `NewK8sDriver`；reconciler 在非 docker driver 下跳过。`SetSnapshotDeps` 改类型断言保护（K8sDriver 暴露 `SetSnapshotRepo` fallback 让 Destroy 还能 DetachSession）。`httpx.Deps.Info` 新增 + /healthz body 合并 `{"sandbox":{"driver":"..."}}`。`k8s.io/{api,apimachinery,client-go} v0.32.0` 入 go.mod / go.sum。E2E step 67 校验 `sandbox.driver=docker`。Full P1 剩 22d2 + 23。
+- **Slice 22c** 已交付（`internal/sandbox/seccomp.json` 派生自 Docker default profile v25.0.5、从 allow 名单移除 ~16 类危险 syscall、保留 setns/unshare/clone3 + `//go:embed` 内嵌 + `LoadSeccompProfile` 启动期解析校验 + `DockerDriverConfig.SeccompProfile` 注入 `SecurityOpt: seccomp=<json>` + `SandboxConfig.SeccompEnabled` 默认 true / `PCA_SANDBOX_SECCOMP_ENABLED=false` 应急回退 + `.github/workflows/security.yml` trivy CRITICAL fail / HIGH warn + `.trivyignore` placeholder + SECURITY-SANDBOX.md §1/§2/§9/§11 改写 + E2E 66 mount→EPERM + sh+echo+cat 回归）。
 - **Slice 22b** 已交付（0022 `sandbox_snapshots` 表 + `SnapshotRepo` + dockertest 6 例 + `internal/objstore` 包 wraps minio-go/v7 + `DockerDriver.Snapshot` commit→save→put→insert 真实实现 + 3 个 audit Detached + compose minio service + E2E 65 destroy 后 snapshot 仍可读 + session_id null）。
 - **Slice 22a** 已交付（`internal/audit/hash.go` SHA-256 canonical + 0021 `audit_log` 加 `prev_hash/entry_hash` + `Repo.Append` 走 `pg_advisory_xact_lock` 串行化 + `GET /audit/verify` admin 防篡改校验，E2E 64 篡改 metadata → `entry_hash_mismatch` 定位 + 还原幂等）。
 - **Slice 21b** 已交付（`internal/mcp` 2024-11-05 JSON-RPC client + Manager 心跳 + `mcp.<slug>.<tool>` Bus 注册 + `/admin/mcp-servers` CRUD + WebUI + `mock-mcp` 容器 + E2E 63）。
@@ -228,19 +230,19 @@ env 覆盖：`PCA_<SECTION>_<FIELD>`，例如 `PCA_MEMORY_DEDUP_THRESHOLD=0.92`
 - 首次跑 dockertest 启 PG ~10-20s（pgvector 镜像比 postgres:16-alpine 大 ~130MB，首次 pull 慢一些）
 - 全包测试（不带 docker_integration tag）~25-60s
 - 全包测试 + docker_integration ~3-5 分钟
-- E2E（66 步含切片 13–22c；Full-P1 进行中）~3-8 分钟（首次 build 镜像更久；22b 增 minio 服务首次 pull ~50MB；22c seccomp profile 内嵌不增加部署时间）
+- E2E（67 步含切片 13–22d1；Full-P1 进行中）~3-8 分钟（首次 build 镜像更久；22b 增 minio 服务首次 pull ~50MB；22c seccomp profile 内嵌不增加部署时间；22d1 仅多一次 /healthz GET）
 
 ---
 
 ## 5. 下一步建议
 
-### 5.1 立即（Slice 22d 启动前自检）
+### 5.1 立即（Slice 22d2 启动前自检）
 
 ```bash
 cd F:/project/private-coding-agent
 go test ./... -count=1
 go vet ./...
-cd deploy/compose && ./test-e2e.sh   # 期望 66/66 E2E PASS（含切片 22c seccomp mount→EPERM + sh+echo+cat 回归步骤）
+cd deploy/compose && ./test-e2e.sh   # 期望 67/67 E2E PASS（含切片 22c seccomp mount→EPERM + sh+echo+cat 回归 + 22d1 /healthz sandbox.driver=docker 校验）
 ```
 
 ### 5.2 已完成

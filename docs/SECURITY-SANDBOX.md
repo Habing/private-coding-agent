@@ -35,6 +35,28 @@
 
 > **`shell.exec` 与 `fs.write` 内部都强制走 `/workspace` 前缀**，越界返回 `ErrPathOutsideWorkspace`（`internal/sandbox/types.go`）。
 
+### 2.1 K8s 部署等价表（切片 22d1）
+
+当 `cfg.Sandbox.Driver="k8s"` 时，`internal/sandbox/k8s_driver.go` 的 `buildPod` 把以上 Docker HostConfig 1:1 映射到 Pod spec — 同样钉死、不可被 API 调用方覆盖：
+
+| Docker 字段 | K8s Pod 字段 | 备注 |
+|------|----|----|
+| `ReadonlyRootfs=true` | `securityContext.readOnlyRootFilesystem=true` | 容器级别 |
+| `Tmpfs["/workspace"]` | `volumes[].emptyDir{medium:Memory, sizeLimit:1Gi}` + `volumeMount` | tmpfs 在 mount namespace 内 |
+| `Tmpfs["/tmp"]` | 同上，独立 emptyDir | — |
+| `CapDrop=ALL` + 5 add | `securityContext.capabilities.{drop:[ALL], add:[CHOWN,DAC_OVERRIDE,SETUID,SETGID,FOWNER]}` | 完全一致 |
+| `no-new-privileges:true` | `securityContext.allowPrivilegeEscalation=false` | 语义等价 |
+| `seccomp=<embedded JSON>` | `securityContext.seccompProfile.type=Localhost` + `localhostProfile=<cfg.Sandbox.K8s.SeccompLocalhostProfile>` | 留空时退化 `RuntimeDefault`；Localhost 要求 profile 已通过 DaemonSet/镜像烘焙到每个 node 的 `/var/lib/kubelet/seccomp/` |
+| `NanoCPUs` | `resources.{requests,limits}.cpu` | requests==limits → Guaranteed QoS，沙箱不能噪声邻居 |
+| `Memory` | `resources.{requests,limits}.memory` | 同上 |
+| `PidsLimit` | **22d1 暂未映射** — K8s 1.31+ alpha gate，待 22d-v2 | DockerDriver 路径不受影响 |
+| `NetworkMode` | `labels["pca.network"]=internal\|bridge\|none` + `DNSPolicy` 切换 | 真实隔离由 22d2 Helm chart 内的 NetworkPolicy YAML 实现 |
+| run as 10001 | `securityContext.{runAsUser:10001, runAsGroup:10001, runAsNonRoot:true}` | Pod 与容器级别都设 |
+| n/a | `automountServiceAccountToken=false`（默认） | 仅当 `cfg.Sandbox.K8s.ServiceAccount` 非空才挂 SA token |
+| n/a | `restartPolicy=Never` | Pod 死掉 → 由调用方 Destroy+Create 重建，避免 kubelet 静默重启丢失 tmpfs |
+
+K8sDriver.Snapshot 在 22d1 阶段直接返回 `ErrSnapshotDisabled`（admin /snapshot 路由 503）；kaniko-based 方案排在 22d-v2。
+
 ## 3. docker.sock 妥协（MVP 阶段已知）
 
 `deploy/compose/docker-compose.yml` 给 server 容器挂了 `/var/run/docker.sock`，并以 `user: "0:0"` 启动。**这等价于把宿主 root 权限交给 server 进程。** 这是 MVP 阶段交付密度的妥协，明确写在 [`HANDOFF.md`](../HANDOFF.md) §4.2 的环境注意事项里。
