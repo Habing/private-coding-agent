@@ -30,6 +30,7 @@ type Config struct {
 	Snapshot      SnapshotConfig      `mapstructure:"snapshot"`
 	Sandbox       SandboxConfig       `mapstructure:"sandbox"`
 	Workflow      WorkflowConfig      `mapstructure:"workflow"`
+	Connectors    ConnectorsConfig    `mapstructure:"connectors"`
 }
 
 // SandboxConfig groups host-side sandbox driver options that aren't already
@@ -124,6 +125,20 @@ type MCPConfig struct {
 	HeartbeatInterval time.Duration `mapstructure:"heartbeat_interval"`
 	InvokeTimeout     time.Duration `mapstructure:"invoke_timeout"`
 	ListToolsTimeout  time.Duration `mapstructure:"list_tools_timeout"`
+}
+
+// ConnectorsConfig drives Slice 25 server-side integrations (no sandbox egress).
+type ConnectorsConfig struct {
+	HTTPFetch HTTPFetchConfig `mapstructure:"http_fetch"`
+}
+
+// HTTPFetchConfig controls the http.fetch ToolBus tool.
+type HTTPFetchConfig struct {
+	Enabled         bool     `mapstructure:"enabled"`
+	AllowHosts      []string `mapstructure:"allow_hosts"`
+	TimeoutSec      int      `mapstructure:"timeout_sec"`
+	MaxBodyBytes    int64    `mapstructure:"max_body_bytes"`
+	BlockPrivateIPs bool     `mapstructure:"block_private_ips"`
 }
 
 // OrchestratorConfig drives Slice 21a's pre-Run routing pass. Enabled=false
@@ -282,6 +297,9 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("sandbox.k8s.service_account", "")
 	v.SetDefault("sandbox.k8s.seccomp_localhost_profile", "")
 	v.SetDefault("sandbox.k8s.pod_ready_timeout_sec", 0)
+	v.SetDefault("connectors.http_fetch.timeout_sec", 30)
+	v.SetDefault("connectors.http_fetch.max_body_bytes", 512*1024)
+	v.SetDefault("connectors.http_fetch.block_private_ips", true)
 
 	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("read config %s: %w", path, err)
@@ -299,8 +317,18 @@ func Load(path string) (*Config, error) {
 	if err := applySlice22dDefaults(&c); err != nil {
 		return nil, err
 	}
+	applySlice25Defaults(&c)
 	applyPilotDefaults(&c)
 	return &c, nil
+}
+
+func applySlice25Defaults(c *Config) {
+	if c.Connectors.HTTPFetch.TimeoutSec <= 0 {
+		c.Connectors.HTTPFetch.TimeoutSec = 30
+	}
+	if c.Connectors.HTTPFetch.MaxBodyBytes <= 0 {
+		c.Connectors.HTTPFetch.MaxBodyBytes = 512 * 1024
+	}
 }
 
 // applyPilotDefaults fills compose-pilot housekeeping knobs (tech-debt #14/#15).

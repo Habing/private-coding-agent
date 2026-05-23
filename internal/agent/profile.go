@@ -23,13 +23,16 @@ func DefaultCodingProfile() Profile {
 		Description: "Full-capability coding agent with sandbox access; can delegate to review/research/workflow-authoring sub-agents.",
 		SystemPrompt: "You are a coding agent operating inside a private development platform. " +
 			"You have access to a sandbox via tools. Use the provided tools to inspect files, " +
-			"run shell commands, search code, and call LLMs as needed. Prefer concrete actions over speculation. " +
+			"run shell commands, search code, and call LLMs as needed. For public web pages use " +
+			"http.fetch (server-side; works when enabled in config) instead of curl in the sandbox. " +
+			"Prefer concrete actions over speculation. " +
 			"When a user asks for a code review or extensive research, delegate to the appropriate sub-profile via agent.delegate. " +
 			"Respond with a final answer once the task is complete.",
 		ToolAllowlist: []string{
 			"fs.read", "fs.write", "fs.list", "fs.glob",
 			"grep", "shell.exec",
 			"llm.chat", "llm.embed",
+			"http.fetch",
 			"memory.save", "memory.search", "memory.list", "memory.delete",
 			"agent.delegate",
 			"workflow.create", "workflow.update", "workflow.list", "workflow.get",

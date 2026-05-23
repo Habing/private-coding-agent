@@ -3,6 +3,7 @@ package workflow
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -26,6 +27,7 @@ func NewProposalHandler(svc *ProposalService) *ProposalHandler {
 func (h *ProposalHandler) RegisterAgent(rg *gin.RouterGroup) {
 	g := rg.Group("/agent/workflow")
 	g.GET("/templates", h.listTemplates)
+	g.POST("/templates/:id/preview", h.previewTemplate)
 	g.POST("/proposals", h.createProposal)
 	g.GET("/proposals/:id/graph", h.proposalGraph)
 	g.GET("/proposals/:id", h.getProposal)
@@ -34,8 +36,10 @@ func (h *ProposalHandler) RegisterAgent(rg *gin.RouterGroup) {
 
 // RegisterAdmin mounts admin-only approval routes.
 func (h *ProposalHandler) RegisterAdmin(rg *gin.RouterGroup) {
-	rg.POST("/admin/workflow/proposals/:id/approve", h.approveProposal)
-	rg.POST("/admin/workflow/proposals/:id/reject", h.rejectProposal)
+	g := rg.Group("/admin/workflow/proposals")
+	g.GET("", h.listProposals)
+	g.POST("/:id/approve", h.approveProposal)
+	g.POST("/:id/reject", h.rejectProposal)
 }
 
 func (h *ProposalHandler) claims(c *gin.Context) (*auth.Claims, bool) {
@@ -52,6 +56,94 @@ func (h *ProposalHandler) listTemplates(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"templates": template.List()})
+}
+
+type previewTemplateReq struct {
+	Slug        string         `json:"slug"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Slots       map[string]any `json:"slots"`
+}
+
+func (h *ProposalHandler) previewTemplate(c *gin.Context) {
+	if _, ok := h.claims(c); !ok {
+		return
+	}
+	templateID := c.Param("id")
+	if _, err := template.Get(templateID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "unknown_template", "detail": err.Error()})
+		return
+	}
+	var req previewTemplateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
+		return
+	}
+	slug := req.Slug
+	if slug == "" {
+		slug = "preview-" + templateID
+	}
+	name := req.Name
+	if name == "" {
+		name = slug
+	}
+	slots := req.Slots
+	if len(slots) == 0 {
+		var err error
+		slots, err = template.ExampleSlots(templateID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "unknown_template", "detail": err.Error()})
+			return
+		}
+	}
+	dsl, err := template.Render(templateID, template.RenderInput{
+		Slug: slug, Name: name, Description: req.Description, Slots: slots,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "render_failed", "detail": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"template_id": templateID,
+		"slug":        slug,
+		"name":        name,
+		"dsl_yaml":    dsl,
+	})
+}
+
+func (h *ProposalHandler) listProposals(c *gin.Context) {
+	cl, ok := h.claims(c)
+	if !ok {
+		return
+	}
+	status := c.Query("status")
+	if status != "" && !ValidProposalStatus(status) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_status"})
+		return
+	}
+	f := ProposalListFilter{Status: status}
+	if s := c.Query("limit"); s != "" {
+		n, err := strconv.Atoi(s)
+		if err != nil || n < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_limit"})
+			return
+		}
+		f.Limit = n
+	}
+	if s := c.Query("offset"); s != "" {
+		n, err := strconv.Atoi(s)
+		if err != nil || n < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_offset"})
+			return
+		}
+		f.Offset = n
+	}
+	rows, err := h.svc.List(c.Request.Context(), cl.TenantID, f)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal", "detail": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"proposals": rows})
 }
 
 type createProposalReq struct {

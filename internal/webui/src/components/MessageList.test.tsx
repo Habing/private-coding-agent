@@ -87,13 +87,78 @@ describe('<MessageList />', () => {
     renderList({ history: [], events })
     const card = screen.getByLabelText('tool bash')
     expect(card).toBeInTheDocument()
-    // collapsed header shows status badge
     expect(screen.getByText(/ok/)).toBeInTheDocument()
-    // expand to see input/output
     await userEvent.click(card)
     expect(screen.getByText('input')).toBeInTheDocument()
     expect(screen.getByText('output')).toBeInTheDocument()
     expect(screen.getByText(/README.md/)).toBeInTheDocument()
+  })
+
+  it('maps backend tool_name/tool_input/tool_output wire fields', async () => {
+    const events: AgentEvent[] = [
+      {
+        kind: 'tool_call',
+        step: 1,
+        tool_call_id: 'call_abc',
+        tool_name: 'shell.exec',
+        tool_input: { command: 'python -V' },
+      },
+      {
+        kind: 'tool_result',
+        step: 1,
+        tool_call_id: 'call_abc',
+        tool_name: 'shell.exec',
+        tool_output: 'Python 3.12\n',
+      },
+    ]
+    renderList({ history: [], events })
+    const card = screen.getByLabelText('tool shell.exec')
+    await userEvent.click(card)
+    expect(screen.getByText(/python -V/)).toBeInTheDocument()
+    expect(screen.getByText(/Python 3.12/)).toBeInTheDocument()
+  })
+
+  it('renders persisted tool messages with assistant tool_calls', async () => {
+    const persisted: Message[] = [
+      {
+        id: 'm1',
+        session_id: 's1',
+        seq: 1,
+        role: 'user',
+        content: 'run ls',
+        created_at: '2026-05-20T10:00:00Z',
+      },
+      {
+        id: 'm2',
+        session_id: 's1',
+        seq: 2,
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          {
+            id: 'call_hist',
+            type: 'function',
+            function: { name: 'shell.exec', arguments: '{"command":"ls"}' },
+          },
+        ],
+        created_at: '2026-05-20T10:00:01Z',
+      },
+      {
+        id: 'm3',
+        session_id: 's1',
+        seq: 3,
+        role: 'tool',
+        content: 'README.md\n',
+        tool_call_id: 'call_hist',
+        metadata: { tool_name: 'shell.exec' },
+        created_at: '2026-05-20T10:00:02Z',
+      },
+    ]
+    renderList({ history: persisted, events: [] })
+    const card = screen.getByLabelText('tool shell.exec')
+    await userEvent.click(card)
+    expect(screen.getByText(/README.md/)).toBeInTheDocument()
+    expect(screen.getByText(/"command": "ls"/)).toBeInTheDocument()
   })
 
   it('renders workflow.propose result as confirmation card', () => {

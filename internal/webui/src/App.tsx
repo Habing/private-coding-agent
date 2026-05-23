@@ -5,9 +5,11 @@ import { AdminGuard } from '@/components/AdminGuard'
 import { ProtectedShell } from '@/components/ProtectedShell'
 import { Audit } from '@/pages/Audit'
 import { Chat } from '@/pages/Chat'
+import { Connectors } from '@/pages/Connectors'
 import { McpServers } from '@/pages/McpServers'
 import { Memories } from '@/pages/Memories'
 import { MemoryProposals } from '@/pages/MemoryProposals'
+import { WorkflowProposals } from '@/pages/WorkflowProposals'
 import { Home } from '@/pages/Home'
 import { Login } from '@/pages/Login'
 import { NotFound } from '@/pages/NotFound'
@@ -50,12 +52,28 @@ export function App() {
                 </AdminGuard>
               }
             />
+            <Route
+              path="/admin/workflow-proposals"
+              element={
+                <AdminGuard>
+                  <WorkflowProposals />
+                </AdminGuard>
+              }
+            />
             <Route path="/toolbox" element={<Toolbox />} />
             <Route
               path="/workflows"
               element={
                 <AdminGuard>
                   <Workflows />
+                </AdminGuard>
+              }
+            />
+            <Route
+              path="/admin/connectors"
+              element={
+                <AdminGuard>
+                  <Connectors />
                 </AdminGuard>
               }
             />

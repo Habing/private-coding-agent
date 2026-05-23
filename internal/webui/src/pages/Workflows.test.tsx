@@ -35,6 +35,10 @@ vi.mock('@/components/WorkflowTriggersPanel', () => ({
   TriggersPanel: () => <div data-testid="triggers-panel">triggers</div>,
 }))
 
+vi.mock('@/components/WorkflowTemplateMarket', () => ({
+  WorkflowTemplateMarket: () => <div data-testid="template-market">market</div>,
+}))
+
 import { Workflows } from './Workflows'
 
 function makeWorkflow(over: Partial<Workflow> = {}): Workflow {

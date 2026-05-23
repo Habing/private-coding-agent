@@ -28,6 +28,7 @@ import (
 	"github.com/yourorg/private-coding-agent/internal/audit"
 	"github.com/yourorg/private-coding-agent/internal/auth"
 	"github.com/yourorg/private-coding-agent/internal/config"
+	"github.com/yourorg/private-coding-agent/internal/connectors"
 	"github.com/yourorg/private-coding-agent/internal/db"
 	"github.com/yourorg/private-coding-agent/internal/httpx"
 	"github.com/yourorg/private-coding-agent/internal/logx"
@@ -224,6 +225,16 @@ func run() error {
 	_ = toolRegistry.Register(tools.NewShellExec(sandboxDriver))
 	_ = toolRegistry.Register(tools.NewLLMChat(modelGateway))
 	_ = toolRegistry.Register(tools.NewLLMEmbed(modelGateway))
+	if hf := tools.NewHTTPFetch(tools.HTTPFetchConfig{
+		Enabled:         cfg.Connectors.HTTPFetch.Enabled,
+		AllowHosts:      cfg.Connectors.HTTPFetch.AllowHosts,
+		TimeoutSec:      cfg.Connectors.HTTPFetch.TimeoutSec,
+		MaxBodyBytes:    cfg.Connectors.HTTPFetch.MaxBodyBytes,
+		BlockPrivateIPs: cfg.Connectors.HTTPFetch.BlockPrivateIPs,
+	}); hf != nil {
+		_ = toolRegistry.Register(hf)
+		slog.Info("connectors: http.fetch enabled", "allow_hosts", cfg.Connectors.HTTPFetch.AllowHosts)
+	}
 
 	// Memory subsystem (slice 7 base + slice 11 vector pipeline).
 	// Embedder is constructed once and shared; tenant/user are resolved per
@@ -587,6 +598,7 @@ func run() error {
 		// MCP admin is always mounted so the WebUI sees a deterministic 503
 		// when disabled instead of a 404. NewAdminHandler tolerates nil mgr.
 		mcp.NewAdminHandler(mcpManager, mcpRepo, auditRepo).Register(adminGroup)
+		connectors.NewAdminHandler(mcpRepo, cfg.Connectors.HTTPFetch.Enabled).Register(adminGroup)
 
 		// /metrics — Prometheus exposition. Authenticated via the dual-channel
 		// metrics.Auth middleware: static token bypass (for Prom scrape jobs)

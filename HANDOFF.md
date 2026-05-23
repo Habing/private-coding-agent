@@ -6,10 +6,10 @@
 | 项目根 | `F:\project\private-coding-agent` |
 | Git module | `github.com/yourorg/private-coding-agent` |
 | 当前日期 | 2026-05-24 |
-| 当前 HEAD | `7c82c66` *(Slice 24 Triggers ✅；E2E **78/78**)* |
+| 当前 HEAD | *(本地)* Slice 25b ✅；E2E **78/78** |
 | P1 规划 | **已落盘** — [`docs/P1-ROADMAP.md`](docs/P1-ROADMAP.md) |
-| 工作区状态 | MVP-P1 17 ✅；Full-P1 18–22d2 ✅；19b/19d ✅；**Slice 24 ✅**；Compose Pilot ✅；E2E **78/78** |
-| 下一阶段 | **19c** 模板市场（可选）或 Slice 25 Connectors |
+| 工作区状态 | MVP-P1 17 ✅；Full-P1 18–22d2 ✅；19b/19d/19c/24/25a/25b ✅；Compose Pilot ✅；E2E **78/78** |
+| 下一阶段 | **Slice 25c / 19d-v2**（可选） |
 
 ---
 
@@ -474,8 +474,8 @@ Full P1 核心（18–22d2 + 19b + 19d）已交付；下列项在 spec / plan / 
 
 | # | 决策 | 现状 / 缺口 | 建议落点 |
 |---|------|-------------|----------|
-| 4 | **模板市场 + 版本 diff** | 5 内置模板 + catalog API；无浏览/安装 UI、DSL diff | **Slice 19c（可选）** |
-| 5 | **Workflow proposal Admin 页** | 仅聊天 `WorkflowProposalCard` + REST；无 `/admin/workflow-proposals` 列表（对标 memory-proposals） | 19c 或 19b 补项 |
+| 4 | **模板市场 + 版本 diff** | ~~5 内置模板 + catalog API；无浏览/安装 UI、DSL diff~~ | **Slice 19c ✅** |
+| 5 | **Workflow proposal Admin 页** | ~~仅聊天卡片 + REST approve/reject；无列表页~~ | **19c ✅** |
 | 6 | **流程图 run 态 overlay** | 19d 只读静态图；`workflow_runs` 不驱动节点高亮 | **19d+ / 19d-v2（可选）** |
 | 7 | **`wait_event` 节点** | 19a 非目标；Reflection 已交付但 workflow 不能挂起等外部事件 | DSL v2 |
 | 8 | **Workflow 版本历史表** | 单行 + `version int`；历史靠 audit + `workflow_runs.version_at_run` | DB / DSL v2 |
@@ -490,7 +490,7 @@ Full P1 核心（18–22d2 + 19b + 19d）已交付；下列项在 spec / plan / 
 
 | # | 决策 | 现状 / 缺口 | 建议落点 |
 |---|------|-------------|----------|
-| 15 | **外部连接器 catalog** | 模板 notify 占位 `llm.chat`；Slack/GitHub 等未产品化 | **Slice 25** |
+| 15 | **外部连接器 catalog** | **25a/25b ✅** `http.fetch` + `/admin/connectors` + 模板 notify 工具选择器；Slack/GitHub 需自建 MCP | 运维部署 MCP |
 | 16 | **N8N 对等服务** | ADR-7 保留；**Slice 23 已跳过** | 按需重启 23 |
 | 17 | **Orchestrator ML/embedding 路由** | 21a 仅 YAML 规则 + regex/shadow | P2+ |
 | 18 | **`agent.run` 作为 workflow 节点** | 19b 设计明确出栈 | 长期 |
@@ -540,13 +540,13 @@ Full P1 核心（18–22d2 + 19b + 19d）已交付；下列项在 spec / plan / 
 
 ```text
 P0: ~~Slice 24 Triggers~~ ✅ → ~~Helm orchestrator 同步~~ ✅ → ~~CI compose E2E~~ ✅
-P1: Slice 19c 模板市场 → proposal Admin 页 → Slice 25 Connectors
+P1: ~~Slice 25a/25b Connectors~~ ✅ → 19d-v2 / wait_event（按产品需求）
 P1: 19d-v2 run overlay / wait_event / 版本 diff（按产品需求择一）
 P2: 记忆 Hybrid + Tenant memory + 安全 cosign/trivy 深化
 P3: 12c / LDAP / logs UI / 可视化编辑器（除非战略转向）
 ```
 
-与 §5.1 一致：**19c** 模板市场或 P0 工程化（Helm 同步 / CI E2E）为下一优先项。
+与 §5.1 一致：**25b** connector catalog 或 19d-v2 / wait_event 为下一优先项。
 
 ---
 

@@ -88,7 +88,7 @@ K8sDriver + Helm chart（`deploy/helm/pca/`）已交付，构成 docker.sock 妥
 
 | 值 | Docker 实际网络 | 用途 | 安全后果 |
 |----|-----------------|------|----------|
-| `internal`（默认） | compose 自建网络 `pca_internal`（`internal: true`） | 沙箱之间可通信，但**无 internet 出口** | 推荐生产默认；模型/记忆/外部依赖应走 server 中转，不让沙箱直接出网 |
+| `internal`（默认） | compose 自建网络 `pca_internal`（`internal: true`） | 沙箱之间可通信，但**无 internet 出口** | 推荐生产默认；模型/记忆/外部 HTTP 走 **server 中转**（`http.fetch`、MCP），不让沙箱直接出网 |
 | `bridge` | 默认 bridge | 能拉公网包 | **仅 dev**；生产开 = 沙箱可外联，等价于把 RCE 当代理 |
 | `none` | `--network=none` | 完全气隙 | 跑 lint/编译之类纯本地任务首选 |
 

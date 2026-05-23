@@ -18,6 +18,15 @@ notifications, webhooks, tool chains) — prefer templates over hand-written DSL
 
 **Never call `workflow.publish`** from this profile — admin confirms in UI or REST.
 
+## Notify / forward tools (Slice 25b)
+
+For `notify_tool` / `forward_tool` slots, prefer **installed connectors** over `llm.chat`:
+
+1. Check `GET /tools` for `mcp.<slug>.<tool>` (Slack/GitHub MCP) or `http.fetch`.
+2. Admin catalog: `GET /admin/connectors/catalog` lists recipes + install status.
+3. Example notify: `"notify_tool": "mcp.slack.post_message"` with args per MCP schema.
+4. Fallback when no connector installed: `"notify_tool": "llm.chat"` as in examples below.
+
 ## Built-in templates (GET /agent/workflow/templates)
 
 | template_id | Use when |

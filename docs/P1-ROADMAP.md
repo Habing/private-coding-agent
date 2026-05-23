@@ -68,7 +68,7 @@ Gate (G1–G4) ──► Slice 13–17 MVP-P1 ──► Slice 18–23 Full P1
 | **23** | N8N（可选） | 19 | [`plans/2026-05-21-slice-23-n8n-optional.md`](superpowers/plans/2026-05-21-slice-23-n8n-optional.md) — **⏭️ 跳过**（2026-05-23，非硬需求） |
 | **24** | Workflow Triggers | 19b | [`plans/2026-05-24-slice-24-workflow-triggers.md`](superpowers/plans/2026-05-24-slice-24-workflow-triggers.md) — **✅** |
 
-**19 可拆**：19a Engine ✅ + **19b Web UI ✅** + **19b NL Authoring (B+C) ✅** + **19d Visualization ✅** + **24 Triggers ✅** + **19c（可选：模板市场 + 版本 diff）**。  
+**19 可拆**：19a Engine ✅ + **19b Web UI ✅** + **19b NL Authoring (B+C) ✅** + **19d Visualization ✅** + **24 Triggers ✅** + **19c（模板市场 + 版本 diff）✅**。  
 **23 可选**：不做仍可达 Full P1「核心」；需法务确认 N8N 许可证。
 
 ---

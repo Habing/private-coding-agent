@@ -17,6 +17,7 @@ func TestDefaultCodingProfile(t *testing.T) {
 	require.Contains(t, p.ToolAllowlist, "fs.read")
 	require.Contains(t, p.ToolAllowlist, "shell.exec")
 	require.Contains(t, p.ToolAllowlist, "llm.chat")
+	require.Contains(t, p.ToolAllowlist, "http.fetch")
 	require.Contains(t, p.ToolAllowlist, "memory.save")
 	require.Contains(t, p.ToolAllowlist, "memory.search")
 	require.Contains(t, p.ToolAllowlist, "agent.delegate")
@@ -26,7 +27,7 @@ func TestDefaultCodingProfile(t *testing.T) {
 	require.Contains(t, p.ToolAllowlist, "workflow.get")
 	require.Contains(t, p.ToolAllowlist, "workflow.propose")
 	require.Contains(t, p.ToolAllowlist, "workflow.publish")
-	require.Len(t, p.ToolAllowlist, 19)
+	require.Len(t, p.ToolAllowlist, 20)
 	require.Equal(t, []string{"platform-coding-standards", "workflow-dsl-authoring"}, p.SkillIDs)
 }
 

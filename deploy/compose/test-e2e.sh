@@ -120,11 +120,16 @@ docker compose exec -T postgres psql -U app -d app -t -c \
   "SELECT count(*) FROM model_usage WHERE status='ok';" | grep -q "[1-9]" \
   || { echo "model_usage has no rows"; exit 1; }
 
-echo "[13/78] list tools ..."
+echo "[13/78] list tools + http.fetch round-trip ..."
 TOOLS=$(curl -fsS http://localhost:8080/tools -H "Authorization: Bearer $TOK")
 NAMES=$(echo "$TOOLS" | jq -r '.tools[].name' | sort | tr '\n' ',')
-[[ "$NAMES" == "agent.delegate,fs.glob,fs.list,fs.read,fs.write,grep,llm.chat,llm.embed,memory.delete,memory.list,memory.save,memory.search,shell.exec,workflow.create,workflow.get,workflow.list,workflow.propose,workflow.publish,workflow.update," ]] \
+[[ "$NAMES" == "agent.delegate,fs.glob,fs.list,fs.read,fs.write,grep,http.fetch,llm.chat,llm.embed,memory.delete,memory.list,memory.save,memory.search,shell.exec,workflow.create,workflow.get,workflow.list,workflow.propose,workflow.publish,workflow.update," ]] \
   || { echo "tools list mismatch: $NAMES"; exit 1; }
+FETCH=$(curl -fsS -X POST http://localhost:8080/tools/invoke \
+  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"tool":"http.fetch","input":{"url":"http://mock-provider:8081/healthz"}}')
+FETCH_BODY=$(echo "$FETCH" | jq -r '.output.body')
+echo "$FETCH_BODY" | grep -q '"status":"ok"' || { echo "http.fetch body mismatch: $FETCH_BODY"; exit 1; }
 
 echo "[14/78] fs.write + fs.read round-trip ..."
 SB2=$(curl -fsS -X POST http://localhost:8080/sandbox/sessions \
@@ -817,7 +822,15 @@ INV_TEXT=$(echo "$INV" | jq -r '.output.content[0].text')
 [[ "$INV_TEXT" == "echo: hi" ]] \
   || { echo "invoke output mismatch: $INV"; exit 1; }
 
-# (d) audit_log must contain mcp.admin.create and mcp.tool.invoke entries.
+# (d) connector catalog must show dev-mock installed with echo tool.
+CAT=$(curl -fsS http://localhost:8080/admin/connectors/catalog \
+  -H "Authorization: Bearer $TOK")
+echo "$CAT" | jq -e '.recipes[] | select(.id=="dev-mock" and .installed==true)' >/dev/null \
+  || { echo "dev-mock not installed in catalog: $CAT"; exit 1; }
+echo "$CAT" | jq -e '.recipes[] | select(.id=="dev-mock") | .tools[] | select(.=="mcp.e2e-mock.echo")' >/dev/null \
+  || { echo "catalog missing mcp.e2e-mock.echo: $CAT"; exit 1; }
+
+# (e) audit_log must contain mcp.admin.create and mcp.tool.invoke entries.
 RAUD=$(curl -fsS "http://localhost:8080/audit?action=mcp.admin.create&limit=1" \
   -H "Authorization: Bearer $TOK")
 [[ $(echo "$RAUD" | jq '.entries | length') -ge 1 ]] \
@@ -827,7 +840,7 @@ RINV=$(curl -fsS "http://localhost:8080/audit?action=mcp.tool.invoke&limit=1" \
 [[ $(echo "$RINV" | jq '.entries | length') -ge 1 ]] \
   || { echo "no mcp.tool.invoke audit row: $RINV"; exit 1; }
 
-# (e) cleanup: delete the row so reruns stay idempotent.
+# (f) cleanup: delete the row so reruns stay idempotent.
 curl -fsS -X DELETE "http://localhost:8080/admin/mcp-servers/$MID" \
   -H "Authorization: Bearer $TOK" >/dev/null
 echo "  -> tools=$MTOOLS, invoke=$INV_TEXT"

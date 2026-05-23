@@ -34,6 +34,7 @@ func TestMutatingMarkers(t *testing.T) {
 		NewFSGlob(nil),
 		NewMemoryList(nil),
 		NewMemorySearch(nil),
+		NewHTTPFetch(HTTPFetchConfig{Enabled: true, AllowHosts: []string{"example.com"}}),
 	}
 	for _, tool := range mustNotMutate {
 		if m, ok := tool.(toolbus.Mutating); ok && m.IsMutating() {

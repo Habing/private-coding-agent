@@ -1,0 +1,37 @@
+# Production Slack MCP sidecar for PCA (Slice 25b).
+#
+# Merge:
+#   docker compose -f docker-compose.yml -f examples/slack-mcp.production.yaml up -d
+#
+# See examples/README.md for secrets, PCA registration, and transport notes.
+
+services:
+  slack-mcp:
+    image: ghcr.io/korotovsky/slack-mcp-server:v1.3.0
+    restart: unless-stopped
+    command: ["--transport", "sse"]
+    environment:
+      # Bot token (xoxb-...) — invite the bot to target channels.
+      SLACK_MCP_XOXB_TOKEN: ${SLACK_BOT_TOKEN:?set SLACK_BOT_TOKEN in .env}
+      SLACK_MCP_HOST: 0.0.0.0
+      SLACK_MCP_PORT: "13080"
+      # PCA MCP auth_type=bearer must match this value.
+      SLACK_MCP_API_KEY: ${SLACK_MCP_API_KEY:?set SLACK_MCP_API_KEY in .env}
+      # Enable notify posting; set to channel ID list to restrict, or "true" for all invited channels.
+      SLACK_MCP_ADD_MESSAGE_TOOL: ${SLACK_MCP_ADD_MESSAGE_TOOL:-true}
+      SLACK_MCP_LOG_LEVEL: info
+    expose:
+      - "13080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:13080/health || exit 0"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - default
+
+  server:
+    depends_on:
+      slack-mcp:
+        condition: service_started

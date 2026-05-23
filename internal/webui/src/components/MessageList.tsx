@@ -4,6 +4,11 @@ import { ToolCallCard } from '@/components/ToolCallCard'
 import { WorkflowProposalCard } from '@/components/WorkflowProposalCard'
 import { TypingIndicator } from '@/components/TypingIndicator'
 import { shouldShowWaitingIndicator } from '@/lib/chatWaiting'
+import {
+  normalizeAgentEvent,
+  eventToolName,
+  parseJSONString,
+} from '@/lib/agentEvent'
 import { parseWorkflowProposalFromResult } from '@/lib/workflowProposal'
 import { cn } from '@/lib/utils'
 import type { AgentEvent, Message } from '@/types/api'
@@ -66,24 +71,6 @@ function ErrorBanner({ text }: { text: string }) {
   )
 }
 
-function HistoryBubble({ msg }: { msg: Message }) {
-  if (msg.role === 'user') return <UserBubble text={msg.content} />
-  if (msg.role === 'system') return <SystemBubble text={msg.content} />
-  if (msg.role === 'tool') {
-    return (
-      <div className="flex pl-6">
-        <div className="max-w-[80%] rounded-md border bg-muted px-3 py-2 text-xs font-mono text-muted-foreground">
-          <div className="mb-1 text-[10px] uppercase tracking-wide opacity-70">
-            tool result {msg.tool_call_id && `· ${msg.tool_call_id}`}
-          </div>
-          <pre className="whitespace-pre-wrap break-words">{msg.content}</pre>
-        </div>
-      </div>
-    )
-  }
-  return <AssistantBubble text={msg.content} />
-}
-
 interface RenderItem {
   key: string
   node: JSX.Element
@@ -114,17 +101,100 @@ function finalizeStreamingAssistant(items: RenderItem[]) {
   }
 }
 
+function buildHistoryItems(history: Message[]): RenderItem[] {
+  const items: RenderItem[] = []
+  const pendingCalls = new Map<
+    string,
+    { tool: string; input: unknown; toolCallId: string }
+  >()
+
+  for (const msg of history) {
+    if (msg.role === 'user') {
+      items.push({ key: msg.id, node: <UserBubble text={msg.content} /> })
+      continue
+    }
+    if (msg.role === 'system') {
+      items.push({ key: msg.id, node: <SystemBubble text={msg.content} /> })
+      continue
+    }
+    if (msg.role === 'assistant') {
+      if (msg.content.trim()) {
+        items.push({ key: msg.id, node: <AssistantBubble text={msg.content} /> })
+      }
+      for (const tc of msg.tool_calls ?? []) {
+        pendingCalls.set(tc.id, {
+          tool: tc.function.name,
+          input: parseJSONString(tc.function.arguments),
+          toolCallId: tc.id,
+        })
+      }
+      continue
+    }
+    if (msg.role === 'tool') {
+      const pending = msg.tool_call_id
+        ? pendingCalls.get(msg.tool_call_id)
+        : undefined
+      const meta = msg.metadata ?? {}
+      const toolName =
+        pending?.tool ??
+        (typeof meta.tool_name === 'string' ? meta.tool_name : undefined) ??
+        'tool'
+      const toolError =
+        typeof meta.tool_error === 'string' && meta.tool_error
+          ? meta.tool_error
+          : undefined
+
+      const resultEv = normalizeAgentEvent({
+        kind: 'tool_result',
+        tool_call_id: msg.tool_call_id,
+        tool_name: toolName,
+        tool_output: toolError ? undefined : msg.content,
+        tool_error: toolError,
+      })
+
+      if (toolName === 'workflow.propose') {
+        const proposal = parseWorkflowProposalFromResult(resultEv)
+        if (proposal) {
+          items.push({
+            key: msg.id,
+            node: <WorkflowProposalCard payload={proposal} />,
+          })
+          if (msg.tool_call_id) pendingCalls.delete(msg.tool_call_id)
+          continue
+        }
+      }
+
+      const callEv = pending
+        ? normalizeAgentEvent({
+            kind: 'tool_call',
+            tool_call_id: pending.toolCallId,
+            tool_name: pending.tool,
+            tool_input: pending.input,
+          })
+        : undefined
+
+      items.push({
+        key: msg.id,
+        node: <ToolCallCard call={callEv} result={resultEv} />,
+      })
+      if (msg.tool_call_id) pendingCalls.delete(msg.tool_call_id)
+    }
+  }
+
+  return items
+}
+
 function buildEventItems(events: AgentEvent[]): RenderItem[] {
+  const normalized = events.map(normalizeAgentEvent)
   const items: RenderItem[] = []
   const callIndex = new Map<string, number>()
 
-  events.forEach((ev, i) => {
+  normalized.forEach((ev, i) => {
     if (ev.kind === 'tool_call') {
       const id = ev.tool_call_id ?? `idx-${i}`
       const at = items.length
       callIndex.set(id, at)
-      const toolName = ev.tool ?? (ev as AgentEvent & { tool_name?: string }).tool_name
-      if (toolName === 'workflow.propose') {
+      if (eventToolName(ev) === 'workflow.propose') {
         return
       }
       items.push({
@@ -146,13 +216,11 @@ function buildEventItems(events: AgentEvent[]): RenderItem[] {
       const at = id ? callIndex.get(id) : undefined
       if (at !== undefined) {
         const prev = items[at]
-        // Re-render the same card with both call + result so the existing
-        // item updates in place.
         items[at] = {
           key: prev.key,
           node: (
             <ToolCallCard
-              call={extractCall(events, id)}
+              call={extractCall(normalized, id)}
               result={ev}
             />
           ),
@@ -201,7 +269,7 @@ function buildEventItems(events: AgentEvent[]): RenderItem[] {
     if (ev.kind === 'error') {
       items.push({
         key: `ev-${i}`,
-        node: <ErrorBanner text={ev.error ?? 'error'} />,
+        node: <ErrorBanner text={ev.error ?? ev.text ?? 'error'} />,
       })
     }
   })
@@ -220,9 +288,11 @@ export function MessageList({
 }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
+  const historyItems = buildHistoryItems(history)
   const eventItems = buildEventItems(events)
   const showWaiting = shouldShowWaitingIndicator(events, awaitingReply)
-  const empty = history.length === 0 && eventItems.length === 0 && !showWaiting
+  const empty =
+    historyItems.length === 0 && eventItems.length === 0 && !showWaiting
 
   useEffect(() => {
     const el = scrollRef.current
@@ -232,8 +302,8 @@ export function MessageList({
 
   return (
     <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
-      {history.map((m) => (
-        <HistoryBubble key={m.id} msg={m} />
+      {historyItems.map((it) => (
+        <div key={it.key}>{it.node}</div>
       ))}
       {eventItems.map((it) => (
         <div key={it.key}>{it.node}</div>

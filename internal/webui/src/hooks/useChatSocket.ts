@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { wsURL } from '@/lib/ws'
+import { normalizeAgentEvent } from '@/lib/agentEvent'
 import { useAuthStore } from '@/stores/auth'
 import type { AgentEvent, ServerFrame } from '@/types/api'
 
@@ -62,7 +63,7 @@ export function useChatSocket(sessionID: string | undefined): UseChatSocketResul
         return
       }
       if (frame.type === 'event') {
-        setEvents((es) => [...es, frame.event])
+        setEvents((es) => [...es, normalizeAgentEvent(frame.event)])
       } else if (frame.type === 'done') {
         setLastDoneSeq(frame.seq ?? -1)
         setAwaitingReply(false)

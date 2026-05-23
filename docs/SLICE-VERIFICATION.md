@@ -337,12 +337,15 @@ cd deploy/compose
 | 范围 | DSL `triggers:`；`workflow_triggers`；scheduler；`POST /hooks/workflow/:token`；Web UI 触发器面板 |
 | 状态 | **✅**（2026-05-24）；commits `6086c45`…`7c82c66` + Task 8–9 |
 
-### 切片 19c — 模板市场（可选，未开工）
+### 切片 19c — 模板市场（可选）
 
 | 项 | 验证 |
 |----|------|
-| 范围 | 模板浏览/安装 UI、workflow 版本 diff；与 19d 可视化正交 |
-| 依赖 | 19b NL 模板 catalog 已存在；19d graph API 可复用展示 |
+| 计划 | [`plans/2026-05-24-slice-19c-template-market.md`](superpowers/plans/2026-05-24-slice-19c-template-market.md) |
+| L1 | `go test ./internal/workflow/template/... -run ExampleSlots`；proposal handler preview/list 单测 |
+| L2 | `cd internal/webui && npm test && npm run build` |
+| 范围 | `/workflows` 模板市场 + YAML 版本 diff；`/admin/workflow-proposals` 审批页 |
+| 状态 | **✅**（2026-05-24） |
 
 ### 切片 23 — N8N（可选）
 
@@ -439,7 +442,9 @@ cd deploy/compose
 | 19b-nl | 70–75 |
 | 19d-viz | —（只读流程图；L1/L2 + [`WORKFLOW.md`](WORKFLOW.md) §9.3 手工） |
 | 24-triggers | 76–78 ✅ |
-| 19c | —（可选：模板市场；未开工） |
+| 19c | —（模板市场 + diff + proposal Admin；L1/L2 ✅） |
+| **25a-http-fetch** | **13**（tools 含 `http.fetch` + mock-provider round-trip）✅ |
+| **25b-connectors** | **63**（catalog dev-mock + MCP echo）✅ |
 | 20 | 61 |
 | 21a | 62 |
 | 21b | 63 |

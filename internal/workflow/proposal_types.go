@@ -45,6 +45,23 @@ type Proposal struct {
 	UpdatedAt        time.Time       `json:"updated_at"`
 }
 
+// ValidProposalStatus reports whether s is a known proposal status or empty (no filter).
+func ValidProposalStatus(s string) bool {
+	switch s {
+	case "", ProposalDraft, ProposalPendingApproval, ProposalConfirmed, ProposalPublished, ProposalRejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// ProposalListFilter scopes admin list queries.
+type ProposalListFilter struct {
+	Status string
+	Limit  int
+	Offset int
+}
+
 // CreateProposalInput bundles fields for ProposalService.Create.
 type CreateProposalInput struct {
 	Slug        string

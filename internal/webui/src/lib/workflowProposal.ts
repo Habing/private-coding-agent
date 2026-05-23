@@ -1,5 +1,11 @@
 import type { AgentEvent } from '@/types/api'
 
+import {
+  eventToolName,
+  eventToolOutput,
+  normalizeAgentEvent,
+} from './agentEvent'
+
 /** Parsed workflow.propose tool output envelope. */
 export interface WorkflowProposalPayload {
   ok: boolean
@@ -14,16 +20,6 @@ export interface WorkflowProposalPayload {
   summary?: string
   error?: string
   detail?: string
-}
-
-function eventToolName(ev: AgentEvent): string | undefined {
-  const anyEv = ev as AgentEvent & { tool_name?: string }
-  return anyEv.tool ?? anyEv.tool_name
-}
-
-function eventOutput(ev: AgentEvent): unknown {
-  const anyEv = ev as AgentEvent & { tool_output?: unknown }
-  return anyEv.output ?? anyEv.tool_output
 }
 
 function parseOutput(raw: unknown): WorkflowProposalPayload | null {
@@ -46,10 +42,11 @@ function parseOutput(raw: unknown): WorkflowProposalPayload | null {
 export function parseWorkflowProposalFromResult(
   result: AgentEvent,
 ): WorkflowProposalPayload | null {
-  if (result.kind !== 'tool_result') return null
-  if (eventToolName(result) !== 'workflow.propose') return null
-  if (result.error) {
-    return { ok: false, error: result.error }
+  const ev = normalizeAgentEvent(result)
+  if (ev.kind !== 'tool_result') return null
+  if (eventToolName(ev) !== 'workflow.propose') return null
+  if (ev.error) {
+    return { ok: false, error: ev.error }
   }
-  return parseOutput(eventOutput(result))
+  return parseOutput(eventToolOutput(ev))
 }

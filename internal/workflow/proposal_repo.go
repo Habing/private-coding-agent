@@ -81,6 +81,48 @@ UPDATE workflow_proposals
 	return nil
 }
 
+// List returns proposals for a tenant ordered by created_at desc.
+func (r *ProposalRepo) List(ctx context.Context, tenantID uuid.UUID, f ProposalListFilter) ([]Proposal, error) {
+	limit := f.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	offset := f.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	status := f.Status
+	if status != "" && !ValidProposalStatus(status) {
+		return nil, fmt.Errorf("invalid status %q", status)
+	}
+
+	rows, err := r.pool.Query(ctx, `
+SELECT id, tenant_id, session_id, created_by, slug, name, description, dsl_yaml,
+       source, COALESCE(template_id,''), slots_json, dry_run_ok, dry_run_output_json,
+       COALESCE(dry_run_error,''), status, published_at, decided_by, created_at, updated_at
+FROM workflow_proposals
+WHERE tenant_id=$1 AND ($2='' OR status=$2)
+ORDER BY created_at DESC
+LIMIT $3 OFFSET $4`, tenantID, status, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list proposals: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Proposal
+	for rows.Next() {
+		p, err := scanProposal(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *p)
+	}
+	return out, rows.Err()
+}
+
 // SetStatus updates proposal status and optional decided_by / published_at.
 func (r *ProposalRepo) SetStatus(ctx context.Context, tenantID, id uuid.UUID,
 	status string, decidedBy *uuid.UUID) error {

@@ -53,6 +53,12 @@ export function TopBar() {
               工作流
             </Link>
             <Link
+              to="/admin/connectors"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              连接器
+            </Link>
+            <Link
               to="/admin/mcp-servers"
               className="text-muted-foreground hover:text-foreground"
             >
@@ -62,7 +68,13 @@ export function TopBar() {
               to="/admin/memory-proposals"
               className="text-muted-foreground hover:text-foreground"
             >
-              提议
+              记忆提议
+            </Link>
+            <Link
+              to="/admin/workflow-proposals"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              工作流提议
             </Link>
           </>
         )}

@@ -321,7 +321,7 @@ B+C 混合：**模板填槽（C）** + **自由 DSL（B）** → Dry-Run → 对
 |------|------|
 | `nl-workflow-author` 规则 | `config.example.yaml`；识别「建自动化/工作流」意图 → hint 建议 `workflow.propose` 或 delegate `workflow-authoring` |
 | `WorkflowProposalCard` | 聊天页解析 `workflow.propose` 的 `tool_result`，展示 Dry-Run 结果；admin「确认发布」/ member「提交审批」 |
-| 审批 UI | 无独立 admin 列表页（同 Reflection 的 `/admin/memory-proposals` 可后续补）；当前 REST + 对话卡片 |
+| 审批 UI | **`/admin/workflow-proposals`** 列表 + 批准/驳回（Slice 19c）；对话内仍用 `WorkflowProposalCard` |
 
 ### 8.4 E2E（compose 步骤 70–75）
 
@@ -340,10 +340,21 @@ B+C 混合：**模板填槽（C）** + **自由 DSL（B）** → Dry-Run → 对
 - 模板 notify 占位 `llm.chat`；Slack 等连接器（Slice 25）
 - template classify v1 为关键词规则；embedding 分类推 P2
 - 无 `workflow_proposal` 专用 SSE 事件（Web UI 解析 `tool_result`）
-- Helm values 未同步 `nl-workflow-author` 规则（compose 镜像内置 `config.example.yaml`）
-- 只读流程图见 **Slice 19d**（[`WORKFLOW.md`](../../WORKFLOW.md) §9）；**19c** 仍为可选模板市场
+- Helm values 已同步 orchestrator / workflow 配置（P0 parity ✅）
+- 只读流程图见 **Slice 19d** §9；**模板市场 + YAML diff** 见 **Slice 19c** §8.6
 
----
+### 8.6 模板市场（Slice 19c ✅）
+
+| 组件 | 说明 |
+|------|------|
+| `GET /agent/workflow/templates` | 5 内置模板 + slot 规格 |
+| `POST /agent/workflow/templates/:id/preview` | 渲染 DSL（空 `slots` 时用内置示例值） |
+| `/workflows` 模板市场 | 浏览模板、填 slot、流程图预览、一键创建 workflow |
+| YAML 版本 diff | 编辑页 DSL 相对已保存版本的行级 diff |
+| `/admin/workflow-proposals` | Admin 审批列表（对标 `/admin/memory-proposals`） |
+
+计划：[`docs/superpowers/plans/2026-05-24-slice-19c-template-market.md`](superpowers/plans/2026-05-24-slice-19c-template-market.md)
+
 
 ## 9. 只读流程图（Slice 19d Visualization ✅）
 

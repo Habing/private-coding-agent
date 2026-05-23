@@ -62,11 +62,17 @@ export interface AgentEvent {
   kind: AgentEventKind
   step?: number
   text?: string
+  /** Canonical tool name (normalized from tool_name on receive). */
   tool?: string
   tool_call_id?: string
   input?: unknown
   output?: unknown
   error?: string
+  /** Backend wire fields (agent.Engine JSON). */
+  tool_name?: string
+  tool_input?: unknown
+  tool_output?: unknown
+  tool_error?: string
 }
 
 export type ServerFrame =
@@ -315,6 +321,61 @@ export interface WorkflowTriggersResponse {
   webhook_base_url: string
 }
 
+export interface WorkflowTemplateSlot {
+  name: string
+  type: 'string' | 'object' | 'array'
+  required: boolean
+  description: string
+  default?: unknown
+  tool_picker?: 'notify' | 'forward'
+  suggested_tools?: string[]
+}
+
+export interface WorkflowTemplate {
+  id: string
+  name: string
+  description: string
+  slots: WorkflowTemplateSlot[]
+}
+
+export interface WorkflowTemplateListResponse {
+  templates: WorkflowTemplate[]
+}
+
+export interface WorkflowTemplatePreviewResponse {
+  template_id: string
+  slug: string
+  name: string
+  dsl_yaml: string
+}
+
+export type WorkflowProposalStatus =
+  | 'draft'
+  | 'pending_approval'
+  | 'confirmed'
+  | 'published'
+  | 'rejected'
+
+export interface WorkflowProposal {
+  id: string
+  tenant_id: string
+  slug: string
+  name: string
+  description: string
+  dsl_yaml: string
+  source: string
+  template_id?: string
+  dry_run_ok: boolean
+  dry_run_error?: string
+  status: WorkflowProposalStatus
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowProposalListResponse {
+  proposals: WorkflowProposal[]
+}
+
 export type MemoryProposalStatus = 'pending' | 'approved' | 'auto_approved' | 'rejected'
 
 export interface MemoryProposal {
@@ -407,4 +468,24 @@ export interface TestMcpConnectionRequest {
 
 export interface McpRefreshResponse {
   tools: McpToolSchema[]
+}
+
+export interface ConnectorRecipeStatus {
+  id: string
+  name: string
+  description: string
+  kind: 'mcp' | 'http_fetch'
+  mcp_slug?: string
+  suggest_tools: string[]
+  setup_url_hint?: string
+  docs_path?: string
+  auth_type_default?: string
+  installed: boolean
+  server_id?: string
+  enabled: boolean
+  tools: string[]
+}
+
+export interface ConnectorCatalogResponse {
+  recipes: ConnectorRecipeStatus[]
 }

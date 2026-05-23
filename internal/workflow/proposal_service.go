@@ -246,6 +246,11 @@ func defaultInputsFromDoc(doc *WorkflowDoc) map[string]any {
 	return out
 }
 
+// List returns tenant-scoped proposals for admin review.
+func (s *ProposalService) List(ctx context.Context, tenantID uuid.UUID, f ProposalListFilter) ([]Proposal, error) {
+	return s.proposals.List(ctx, tenantID, f)
+}
+
 func (s *ProposalService) auditProposal(tenantID, userID, proposalID uuid.UUID, action string, meta map[string]any) {
 	if s.audit == nil {
 		return

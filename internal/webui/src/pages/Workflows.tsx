@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { YamlEditor } from '@/components/YamlEditor'
 import { WorkflowGraph } from '@/components/WorkflowGraph'
+import { WorkflowTemplateMarket } from '@/components/WorkflowTemplateMarket'
+import { YamlDiffPanel } from '@/components/YamlDiffPanel'
 import { TriggersPanel } from '@/components/WorkflowTriggersPanel'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ApiError, api } from '@/lib/api'
 import { workflowPublishLabel, workflowRunStatusLabel } from '@/lib/uiLabels'
+import { hasDiff } from '@/lib/yamlDiff'
 import { useAuthStore } from '@/stores/auth'
 import type {
   CreateWorkflowRequest,
@@ -95,6 +98,15 @@ export function Workflows() {
           </CardContent>
         </Card>
       )}
+
+      <WorkflowTemplateMarket
+        onCreated={(slug) => {
+          qc.invalidateQueries({ queryKey: ['workflows'] })
+          setSelected(slug)
+          setError(null)
+        }}
+        onError={setError}
+      />
 
       <Card>
         <CardHeader>
@@ -338,6 +350,9 @@ function EditPane({
       <div className="flex flex-col gap-2 xl:col-span-1">
         <Label htmlFor="dsl">DSL（YAML）</Label>
         <YamlEditor value={dsl} onChange={setDsl} />
+        {hasDiff(workflow.dsl_yaml ?? '', dsl) && (
+          <YamlDiffPanel before={workflow.dsl_yaml ?? ''} after={dsl} />
+        )}
         <Button
           size="sm"
           className="w-fit"

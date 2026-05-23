@@ -257,3 +257,14 @@ snapshot:
   # When true, the committed image tag is kept on the sandbox host after
   # upload (debugging only — accumulates disk).
   keep_local_image: false
+
+# Slice 25 — server-side connectors (agent 无需沙箱出网)
+connectors:
+  http_fetch:
+    enabled: false
+    # Host allowlist; supports exact host or "*.example.com". Empty = deny all.
+    allow_hosts: []
+    timeout_sec: 30
+    max_body_bytes: 524288
+    # SSRF guard: reject hosts resolving to private/loopback IPs (recommended prod).
+    block_private_ips: true
