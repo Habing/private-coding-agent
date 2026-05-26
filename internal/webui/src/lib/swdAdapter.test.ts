@@ -388,14 +388,15 @@ describe('swdAdapter edge cases', () => {
       name: 'tool',
       properties: { stepId: 't1', tool: 'mcp.e2e-mock.echo', argsJson: '{not-json' },
     })
-    def.sequence.push({
+    const malformedIf: BranchedStep = {
       id: 'g1',
       componentType: 'switch',
       type: 'if',
       name: 'if',
       properties: { stepId: 'g1', conditionJson: '[]' },
       branches: { then: [], else: [] },
-    })
+    }
+    def.sequence.push(malformedIf)
     const back = swdDefinitionToDesign(def, base)
     expect(back.steps[0]?.kind).toBe('tool')
     if (back.steps[0]?.kind === 'tool') {
@@ -478,7 +479,7 @@ describe('swdAdapter edge cases', () => {
       name: 'tool',
       properties: { stepId: 'legacy_tool', tool: 'mcp.e2e-mock.echo', argsJson: '[]' },
     })
-    def.sequence.push({
+    const legacyIf: BranchedStep = {
       id: 'i',
       componentType: 'switch',
       type: 'pca-if',
@@ -502,7 +503,8 @@ describe('swdAdapter edge cases', () => {
         ],
         else: [],
       },
-    })
+    }
+    def.sequence.push(legacyIf)
     const back = swdDefinitionToDesign(def, base)
     expect(back.steps[0]?.id).toBe('legacy_tool')
     expect(back.steps[1]?.kind).toBe('if')

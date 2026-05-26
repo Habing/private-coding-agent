@@ -22,14 +22,14 @@
 
 ## 二、当前任务（建议执行顺序）
 
-### 阶段 A — 设计器收尾（小，1–3 天）
+### 阶段 A — 设计器收尾 ✅（2026-05-26 结案）
 
 | ID | 任务 | 产出 | 优先级 |
 |----|------|------|--------|
 | **A1** | SWD `validatorConfiguration`：未知 `tool` 在画布标红 | ✅ `swdValidator.ts` + 右栏提示 | P1 |
 | **A2** | 扩展 `swdAdapter` 边界单测（空流、深层 if、orphan） | ✅ `swdAdapter.test.ts` edge cases | P2 |
 | **A3** | Playwright：登录 → 打开 mock chain → 选中一步 → compile | ✅ `e2e/workflow-designer.spec.ts` · `npm run test:e2e:designer` | P2（可选） |
-| **A4** | 部署后冒烟 | `docker compose build server` + 硬刷新 WebUI | 每次发版 |
+| **A4** | 部署后冒烟 | ✅ `deploy/compose/smoke-designer.sh`（build + Playwright） | 每次发版 |
 
 **明确不做（除非重新选型）**：`sequential-workflow-editor` 嵌入 SWD 内置表单 → 见 `swdEditorBridge.ts`（`deferred`，右栏为唯一参数入口）。
 

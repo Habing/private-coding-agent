@@ -2,6 +2,15 @@
 
 Requires a running PCA server (compose on `localhost:8080`) and demo user (`demo@example.com` / `demo123`).
 
+**一键（推荐，含 rebuild server）：**
+
+```bash
+cd deploy/compose
+./smoke-designer.sh   # Git Bash / WSL
+```
+
+**分步：**
+
 ```bash
 # Terminal 1
 cd deploy/compose && docker compose up -d
@@ -12,6 +21,8 @@ npm install
 npx playwright install chromium
 npm run test:e2e:designer
 ```
+
+发版后浏览器请 **硬刷新**（Ctrl+Shift+R）以免缓存旧 JS。
 
 Environment:
 
