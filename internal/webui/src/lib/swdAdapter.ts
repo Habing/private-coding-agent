@@ -69,7 +69,8 @@ function parseAssignments(json: string): WorkflowDesignAssign[] {
 function parseCondition(json: string): WorkflowDesignCondition | undefined {
   try {
     const v = JSON.parse(json) as WorkflowDesignCondition
-    return v && typeof v === 'object' ? v : undefined
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined
+    return v
   } catch {
     return undefined
   }

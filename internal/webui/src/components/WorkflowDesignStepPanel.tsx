@@ -17,6 +17,7 @@ import {
   buildAssignExprPresets,
   preferredStatusSourceStep,
 } from '@/lib/workflowExprPresets'
+import { buildAllowedToolSet, isRegisteredToolName } from '@/lib/swdValidator'
 import {
   HEALTH_DEGRADED_CONDITION,
   HEALTH_OK_CONDITION,
@@ -88,7 +89,11 @@ export function WorkflowDesignStepPanel({
   }
 
   return (
-    <ScrollArea className="h-full max-h-[min(360px,50vh)] rounded-md border">
+    <ScrollArea
+      data-testid="workflow-step-detail"
+      data-selected-step-id={selectedStepId}
+      className="h-full max-h-[min(360px,50vh)] rounded-md border"
+    >
       <div className="flex flex-col gap-3 p-3">
         <div>
           <p className="font-mono text-xs text-muted-foreground">{selectedStepId}</p>
@@ -135,6 +140,9 @@ function ToolStepEditor({
   onCommit: (s: WorkflowDesignStep) => void
 }) {
   const tool = step.tool ?? ''
+  const allowedTools = buildAllowedToolSet(tools)
+  const toolNotRegistered =
+    !toolsLoading && tool.trim() !== '' && !isRegisteredToolName(tool, allowedTools)
 
   return (
     <div className="flex flex-col gap-3">
@@ -155,6 +163,11 @@ function ToolStepEditor({
             }}
           />
         )}
+        {toolNotRegistered ? (
+          <p className="text-xs text-destructive" role="alert">
+            工具「{tool}」未在 MCP 目录中注册；画布步骤已标红，请从下拉列表重选或先在连接器中注册。
+          </p>
+        ) : null}
       </div>
       <div className="flex flex-col gap-1">
         <Label className="text-xs">参数</Label>

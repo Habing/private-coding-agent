@@ -1,39 +1,57 @@
-"""Quick check: login, open workflow designer, screenshot canvas."""
+"""Quick check: login, open SWD workflow designer, select a step, screenshot."""
+from __future__ import annotations
+
+import os
+import sys
+
 from playwright.sync_api import sync_playwright
 
-BASE = "http://localhost:8080"
+BASE = os.environ.get("PCA_E2E_BASE_URL", "http://localhost:8080")
+SLUG = os.environ.get("PCA_E2E_WORKFLOW_SLUG", "e2e-mock-chain")
+TENANT = os.environ.get("PCA_E2E_TENANT", "default")
+EMAIL = os.environ.get("PCA_E2E_EMAIL", "demo@example.com")
+PASSWORD = os.environ.get("PCA_E2E_PASSWORD", "demo123")
 
-with sync_playwright() as p:
-    browser = p.chromium.launch(headless=True)
-    page = browser.new_page(viewport={"width": 1400, "height": 900})
-    page.goto(f"{BASE}/login")
-    page.get_by_label("租户").fill("default")
-    page.get_by_label("邮箱").fill("demo@example.com")
-    page.get_by_label("密码").fill("demo123")
-    page.get_by_role("button", name="登录").click()
-    page.wait_for_url(f"{BASE}/**", timeout=15000)
 
-    page.goto(f"{BASE}/workflows")
-    page.wait_for_load_state("networkidle")
-    page.get_by_role("button", name="我的工作流").click()
-    page.wait_for_timeout(1500)
+def main() -> None:
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1400, "height": 900})
+        page.goto(f"{BASE}/login")
+        page.get_by_label("租户").fill(TENANT)
+        page.get_by_label("邮箱").fill(EMAIL)
+        page.get_by_label("密码").fill(PASSWORD)
+        page.get_by_role("button", name="登录").click()
+        page.wait_for_url(f"{BASE}/**", timeout=15000)
 
-    edit_btn = page.get_by_role("button", name="编辑").first
-    if edit_btn.count() == 0:
-        page.screenshot(path="debug-workflows-no-edit.png", full_page=True)
-        raise SystemExit("no workflow edit button found")
+        page.goto(f"{BASE}/workflows")
+        page.wait_for_load_state("networkidle")
+        page.get_by_role("button", name="我的工作流").click()
 
-    edit_btn.click()
-    page.get_by_role("button", name="设计器").click()
-    page.wait_for_timeout(3000)
+        row = page.locator("li").filter(has_text=SLUG)
+        if row.count() == 0:
+            page.screenshot(path="debug-workflows-no-edit.png", full_page=True)
+            browser.close()
+            sys.exit(f"workflow slug not found: {SLUG}")
 
-    canvas = page.locator(".workflow-builder-embed")
-    canvas.wait_for(timeout=20000)
-    canvas.screenshot(path="debug-workflow-canvas.png")
+        row.get_by_role("button", name="编辑").click()
+        page.get_by_role("button", name="设计器").click()
 
-    ro = page.locator('[aria-label*="read" i], [title*="read" i]').count()
-    nodes = page.locator(".react-flow__node").count()
-    print(f"nodes_on_canvas={nodes}")
-    page.screenshot(path="debug-workflow-designer-full.png", full_page=True)
-    browser.close()
-    print("saved debug-workflow-canvas.png and debug-workflow-designer-full.png")
+        canvas = page.get_by_test_id("workflow-swd-canvas").or_(page.locator(".swd-embed"))
+        canvas.wait_for(timeout=25000)
+        canvas.locator(".sqd-designer").wait_for(timeout=25000)
+
+        status = page.get_by_text("status · fetch_status", exact=True)
+        status.wait_for(timeout=15000)
+        status.click()
+
+        page.get_by_text("在左侧画布中选中一步").wait_for(state="hidden", timeout=10000)
+
+        canvas.screenshot(path="debug-workflow-canvas.png")
+        page.screenshot(path="debug-workflow-designer-full.png", full_page=True)
+        browser.close()
+        print("saved debug-workflow-canvas.png and debug-workflow-designer-full.png")
+
+
+if __name__ == "__main__":
+    main()

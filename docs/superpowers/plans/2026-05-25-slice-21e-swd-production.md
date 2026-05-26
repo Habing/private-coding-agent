@@ -46,13 +46,13 @@ SWD Definition 仅 UI 中间表示，不新增持久化格式。
 | | A6 单测 + 手工 e2e-mock-chain | ✅ |
 | **21e-b** | B1 动态工具箱 | ✅ |
 | | B2 tool-schemas API | ✅ |
-| | B3 `validatorConfiguration` 未知 tool | ⏸ 待办 |
+| | B3 `validatorConfiguration` 未知 tool | ✅ `swdValidator.ts` |
 | | B4 assign / if 表单（含预设） | ✅ |
 | | B5 `swdToolboxDynamic` + `swdAdapter` 测试 | ✅（深层 if 在 round-trip 用例中覆盖） |
 | | B5+ `sequential-workflow-editor` | ⏸ 见 `swdEditorBridge.ts` |
 | **21e-c** | C1 概览图 → `WorkflowGraphPreview` | ✅ |
 | | C2 删除 Builder SDK 与相关文件 | ✅ |
-| | C3 Playwright / debug 脚本扩展 | ⏸ 可选 |
+| | C3 Playwright / debug 脚本扩展 | ✅ `e2e/workflow-designer.spec.ts` |
 | | C4 SWD / WORKFLOW / 选型文档 | ✅ |
 | **21e-d** | 主题 / 帮助文案 | ✅ |
 | | 工具箱 i18n 全覆盖 | ~ 节点标题已中文化；SWD 内置英文保留 |
@@ -108,7 +108,7 @@ SWD Definition 仅 UI 中间表示，不新增持久化格式。
 
 - [x] B1 `swdToolboxDynamic.ts` + fallback `PCA_SWD_TOOLBOX`
 - [x] B2 tool-schemas `useQuery`
-- [ ] B3 `validatorConfiguration` 未知 tool 标红
+- [x] B3 `validatorConfiguration` 未知 tool 标红（`swdValidator.ts`）
 - [x] B4 assign / if 完善（含 `workflowExprPresets`）
 - [x] B5 `swdToolboxDynamic.test.ts`、`swdAdapter` round-trip
 - [~] B5+ `sequential-workflow-editor` — **暂缓**（`swdEditorBridge.ts`）
@@ -119,7 +119,7 @@ SWD Definition 仅 UI 中间表示，不新增持久化格式。
 
 - [x] C1 `WorkflowGraphPreview`（dagre + @xyflow/react）
 - [x] C2 删除 `WorkflowBuilderCanvas`、`workflowBuilderAdapter`、SDK 依赖
-- [ ] C3 Playwright / `debug-workflow-designer.py` 扩展（可选）
+- [x] C3 Playwright `npm run test:e2e:designer` + `scripts/debug-workflow-designer.py`
 - [x] C4 文档结案
 
 ---

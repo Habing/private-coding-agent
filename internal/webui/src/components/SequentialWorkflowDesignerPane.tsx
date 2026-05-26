@@ -19,6 +19,7 @@ import {
   type PcaSwdDefinition,
 } from '@/lib/swdAdapter'
 import { focusPcaStepOnSwd } from '@/lib/swdFocus'
+import { buildAllowedToolSet, buildSwdValidatorConfiguration } from '@/lib/swdValidator'
 import { buildSwdToolbox } from '@/lib/swdToolboxDynamic'
 import type { ToolSchemaEntry, WorkflowDesign } from '@/types/api'
 
@@ -118,7 +119,10 @@ export function SequentialWorkflowDesignerPane({
     [],
   )
 
-  const validatorConfiguration = useMemo<ValidatorConfiguration>(() => ({}), [])
+  const validatorConfiguration = useMemo<ValidatorConfiguration>(
+    () => buildSwdValidatorConfiguration(buildAllowedToolSet(tools)),
+    [toolsKey],
+  )
 
   const highlightPcaStepId = focusStepId ?? selectedStepId ?? null
   // During invoke streaming, focusPcaStepOnSwd calls selectStepById; skip the prop to avoid
@@ -233,6 +237,7 @@ export function SequentialWorkflowDesignerPane({
 
   return (
     <div
+      data-testid="workflow-swd-canvas"
       className="swd-embed overflow-hidden rounded-md border bg-background"
       style={{ height, minHeight: height }}
     >
