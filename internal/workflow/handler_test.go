@@ -263,6 +263,34 @@ func TestHandler_Graph_Get(t *testing.T) {
 	require.Equal(t, "greet", g.Meta.ID)
 }
 
+func TestHandler_DesignDecompileCompile(t *testing.T) {
+	r, _, _, _ := newHandlerSetup(t)
+	raw := `id: mini
+name: Mini
+steps:
+  - id: echo
+    use: mcp.e2e-mock.echo
+    args:
+      text: hi
+`
+	rr := doJSON(t, r, http.MethodPost, "/admin/workflows/design/decompile", map[string]any{
+		"dsl_yaml": raw,
+	})
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var dec map[string]any
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &dec))
+	designObj := dec["design"].(map[string]any)
+	require.Equal(t, "mini", designObj["id"])
+
+	rr = doJSON(t, r, http.MethodPost, "/admin/workflows/design/compile", map[string]any{
+		"design": designObj,
+	})
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var comp map[string]any
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &comp))
+	require.Contains(t, comp["dsl_yaml"].(string), "mcp.e2e-mock.echo")
+}
+
 func TestHandler_Graph_NotFound(t *testing.T) {
 	r, _, _, _ := newHandlerSetup(t)
 	rr := doJSON(t, r, http.MethodGet, "/admin/workflows/missing/graph", nil)

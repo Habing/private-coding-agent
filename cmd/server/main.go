@@ -225,6 +225,8 @@ func run() error {
 	_ = toolRegistry.Register(tools.NewShellExec(sandboxDriver))
 	_ = toolRegistry.Register(tools.NewLLMChat(modelGateway))
 	_ = toolRegistry.Register(tools.NewLLMEmbed(modelGateway))
+	httpFetchRepo := connectors.NewHTTPFetchRepo(pool)
+	var httpFetchTool *tools.HTTPFetch
 	if hf := tools.NewHTTPFetch(tools.HTTPFetchConfig{
 		Enabled:         cfg.Connectors.HTTPFetch.Enabled,
 		AllowHosts:      cfg.Connectors.HTTPFetch.AllowHosts,
@@ -232,8 +234,18 @@ func run() error {
 		MaxBodyBytes:    cfg.Connectors.HTTPFetch.MaxBodyBytes,
 		BlockPrivateIPs: cfg.Connectors.HTTPFetch.BlockPrivateIPs,
 	}); hf != nil {
+		httpFetchTool = hf
+		allowHosts := cfg.Connectors.HTTPFetch.AllowHosts
+		if dbHosts, ok, err := httpFetchRepo.GetAllowHosts(ctx); err == nil && ok && len(dbHosts) > 0 {
+			allowHosts = dbHosts
+		} else if len(allowHosts) > 0 {
+			if saved, err := httpFetchRepo.UpsertAllowHosts(ctx, allowHosts); err == nil {
+				allowHosts = saved
+			}
+		}
+		hf.SetAllowHosts(allowHosts)
 		_ = toolRegistry.Register(hf)
-		slog.Info("connectors: http.fetch enabled", "allow_hosts", cfg.Connectors.HTTPFetch.AllowHosts)
+		slog.Info("connectors: http.fetch enabled", "allow_hosts", allowHosts)
 	}
 
 	// Memory subsystem (slice 7 base + slice 11 vector pipeline).
@@ -569,6 +581,7 @@ func run() error {
 			PerMinute: cfg.RateLimit.PerMinute,
 		}))
 		httpx.RegisterMe(protected)
+		quota.NewHandler(quotaSvc).Register(protected)
 		sandboxHandler.Register(protected)
 		modelHandler.Register(protected)
 		toolHandler.Register(protected)
@@ -588,7 +601,7 @@ func run() error {
 		if skillDBRepo != nil {
 			skills.NewAdminHandler(skillDBRepo).WithAuditSink(auditRepo).Register(adminGroup)
 		}
-		workflow.NewAdminHandler(workflowService).Register(adminGroup)
+		workflow.NewAdminHandler(workflowService).WithToolLister(toolBus).Register(adminGroup)
 		workflow.NewTriggerAdminHandler(workflowService).Register(adminGroup)
 		workflow.NewProposalHandler(proposalService).RegisterAdmin(adminGroup)
 		memory.NewAdminHandler(memoryService).WithAuditSink(auditRepo).Register(adminGroup)
@@ -598,7 +611,7 @@ func run() error {
 		// MCP admin is always mounted so the WebUI sees a deterministic 503
 		// when disabled instead of a 404. NewAdminHandler tolerates nil mgr.
 		mcp.NewAdminHandler(mcpManager, mcpRepo, auditRepo).Register(adminGroup)
-		connectors.NewAdminHandler(mcpRepo, cfg.Connectors.HTTPFetch.Enabled).Register(adminGroup)
+		connectors.NewAdminHandler(mcpRepo, httpFetchTool, httpFetchRepo, cfg.Connectors.HTTPFetch.BlockPrivateIPs).Register(adminGroup)
 
 		// /metrics — Prometheus exposition. Authenticated via the dual-channel
 		// metrics.Auth middleware: static token bypass (for Prom scrape jobs)

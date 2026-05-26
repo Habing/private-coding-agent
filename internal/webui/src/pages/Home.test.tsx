@@ -5,6 +5,8 @@ import { HttpResponse, http } from 'msw'
 import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import { GuideProvider } from '@/components/GuideProvider'
+import { markWelcomeGuideSeen } from '@/lib/guideStorage'
 import { useAuthStore } from '@/stores/auth'
 import { server } from '@/test/mswServer'
 import type { ProfileListResponse, Session } from '@/types/api'
@@ -31,13 +33,15 @@ function renderHome(initialPath = '/') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[initialPath]}>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/sessions/:id" element={<ChatProbe />} />
-          <Route path="/login" element={<LoginProbe />} />
-        </Routes>
-      </MemoryRouter>
+      <GuideProvider>
+        <MemoryRouter initialEntries={[initialPath]}>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/sessions/:id" element={<ChatProbe />} />
+            <Route path="/login" element={<LoginProbe />} />
+          </Routes>
+        </MemoryRouter>
+      </GuideProvider>
     </QueryClientProvider>,
   )
 }
@@ -58,6 +62,7 @@ function makeSession(id: string): Session {
 
 describe('<Home />', () => {
   beforeEach(() => {
+    window.localStorage.clear()
     useAuthStore.getState().setAuth('jwt.demo', {
       id: 'u1',
       tenant_id: 't1',
@@ -69,8 +74,19 @@ describe('<Home />', () => {
     useAuthStore.getState().clear()
   })
 
+  it('shows welcome guide for first-time users', async () => {
+    server.use(
+      http.get('/sessions', () => HttpResponse.json({ sessions: [] })),
+      http.get('/agent/profiles', () => HttpResponse.json(mockProfiles)),
+    )
+    renderHome()
+    expect(await screen.findByText(/欢迎使用 Private Coding Agent/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '查看完整指引' })).toBeInTheDocument()
+  })
+
   it('creates and navigates when there are zero sessions', async () => {
     const user = userEvent.setup()
+    markWelcomeGuideSeen()
     server.use(
       http.get('/sessions', () => HttpResponse.json({ sessions: [] })),
       http.get('/agent/profiles', () => HttpResponse.json(mockProfiles)),
@@ -84,6 +100,7 @@ describe('<Home />', () => {
   })
 
   it('renders placeholder when sessions exist', async () => {
+    markWelcomeGuideSeen()
     server.use(
       http.get('/sessions', () =>
         HttpResponse.json({ sessions: [makeSession('s1')] }),
@@ -95,6 +112,7 @@ describe('<Home />', () => {
   })
 
   it('redirects to /login on 401', async () => {
+    markWelcomeGuideSeen()
     server.use(
       http.get('/sessions', () =>
         HttpResponse.json({ error: 'unauthorized' }, { status: 401 }),

@@ -74,6 +74,32 @@ services:
     ports:
       - "8083:8083"
 
+  # P1 data-prep domain: AI file denoise MCP (see docs/domains/data-prep.md).
+  mcp-data-prep:
+    build:
+      context: ../..
+      dockerfile: examples/mcp-services/data-prep/Dockerfile
+    environment:
+      DATA_PREP_PORT: "8085"
+      DATA_PREP_INBOX: /data/inbox
+      DATA_PREP_OUTBOX: /data/outbox
+      DATA_PREP_MOCK_LLM: "true"
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-qwen-plus}
+    # Named volumes avoid Docker Desktop F:\ bind-mount bug:
+    # "mkdir /run/desktop/mnt/host/f: file exists" (see prometheus service comment).
+    volumes:
+      - data_prep_inbox:/data/inbox
+      - data_prep_outbox:/data/outbox
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8085/healthz || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "8085:8085"
+
   # Slice 22b — MinIO object storage for sandbox snapshots. Pinned tag avoids
   # the rolling :latest surprise; the named volume keeps data across compose
   # recreate. Healthcheck uses MinIO's documented /minio/health/ready probe.
@@ -148,6 +174,8 @@ services:
       PCA_MEMORY_EMBEDDING_MODEL: ${PCA_MEMORY_EMBEDDING_MODEL:-dashscope:text-embedding-v4}
       # E2E step 43: cap active sandboxes at 1 so a second create returns 429.
       PCA_QUOTA_SANDBOX_MAX_ACTIVE: ${PCA_QUOTA_SANDBOX_MAX_ACTIVE:-1}
+      # 0 = 关闭 LLM token 日配额（见 internal/quota）；试点默认关闭，生产请设 200000+
+      PCA_QUOTA_LLM_TOKENS_PER_DAY: ${PCA_QUOTA_LLM_TOKENS_PER_DAY:-0}
       PCA_AUTH_LOCAL_ENABLED: ${PCA_AUTH_LOCAL_ENABLED:-true}
       PCA_AUTH_OIDC_ENABLED: ${PCA_AUTH_OIDC_ENABLED:-true}
       PCA_AUTH_OIDC_ISSUER: ${PCA_AUTH_OIDC_ISSUER:-http://mock-oidc:8082}
@@ -195,3 +223,5 @@ services:
 volumes:
   pgdata:
   miniodata:
+  data_prep_inbox:
+  data_prep_outbox:

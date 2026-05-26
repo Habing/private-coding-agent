@@ -14,6 +14,7 @@ export interface WorkflowGraphNodeDTO {
   kind: string
   label: string
   detail?: string
+  /** Layout region from engine graph (e.g. main, main|then). */
   region?: string
 }
 
@@ -27,11 +28,21 @@ export interface WorkflowGraphEdgeDTO {
 const NODE_WIDTH = 190
 const NODE_HEIGHT = 64
 
+export interface LayoutWorkflowGraphOptions {
+  selectedStepId?: string
+  editable?: boolean
+}
+
 /** layoutWorkflowGraph runs dagre top-to-bottom layout for React Flow. */
-export function layoutWorkflowGraph(graph: WorkflowGraphDTO): {
+export function layoutWorkflowGraph(
+  graph: WorkflowGraphDTO,
+  opts?: LayoutWorkflowGraphOptions,
+): {
   nodes: Node[]
   edges: Edge[]
 } {
+  const selectedStepId = opts?.selectedStepId
+  const editable = opts?.editable ?? false
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
   g.setGraph({ rankdir: 'TB', nodesep: 48, ranksep: 72, marginx: 16, marginy: 16 })
@@ -44,35 +55,66 @@ export function layoutWorkflowGraph(graph: WorkflowGraphDTO): {
   }
   dagre.layout(g)
 
+  const stepNodeIds = new Set(
+    graph.nodes
+      .filter(
+        (n) =>
+          n.id !== '__start__' &&
+          n.id !== '__end__' &&
+          !n.id.startsWith('trigger:'),
+      )
+      .map((n) => n.id),
+  )
+
   const nodes: Node[] = graph.nodes.map((n) => {
     const pos = g.node(n.id)
+    const isStep = stepNodeIds.has(n.id)
+    const selected = selectedStepId === n.id
     return {
       id: n.id,
-      type: 'workflow',
+      type: editable && isStep ? 'workflowEditable' : 'workflow',
       position: {
         x: pos.x - NODE_WIDTH / 2,
         y: pos.y - NODE_HEIGHT / 2,
       },
-      data: { label: n.label, detail: n.detail, kind: n.kind },
-      draggable: false,
-      selectable: false,
+      data: {
+        label: n.label,
+        detail: n.detail,
+        kind: n.kind,
+        region: n.region,
+        selected,
+        editable: editable && isStep,
+      },
+      draggable: editable && isStep,
+      selectable: editable && isStep,
     }
   })
 
-  const edges: Edge[] = graph.edges.map((e, i) => ({
-    id: `${e.from}-${e.to}-${i}`,
-    source: e.from,
-    target: e.to,
-    label: e.label || undefined,
-    animated: e.type === 'parallel',
-    markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
-    style:
-      e.type === 'branch'
-        ? { stroke: '#d97706' }
-        : e.type === 'parallel'
-          ? { stroke: '#ea580c' }
-          : undefined,
-  }))
+  const edges: Edge[] = graph.edges.map((e, i) => {
+    const showAdd =
+      editable &&
+      e.type === 'sequential' &&
+      stepNodeIds.has(e.to) &&
+      (stepNodeIds.has(e.from) || e.from === '__start__')
+    return {
+      id: `${e.from}-${e.to}-${i}`,
+      source: e.from,
+      target: e.to,
+      type: showAdd ? 'sequentialAdd' : 'default',
+      label: e.label || undefined,
+      animated: e.type === 'parallel',
+      markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
+      style:
+        e.type === 'branch'
+          ? { stroke: '#d97706' }
+          : e.type === 'parallel'
+            ? { stroke: '#ea580c' }
+            : undefined,
+      data: showAdd
+        ? { afterStepId: e.from === '__start__' ? '__start__' : e.from }
+        : undefined,
+    }
+  })
 
   return { nodes, edges }
 }

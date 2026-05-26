@@ -278,6 +278,60 @@ func (s *Service) Invoke(ctx context.Context, tenantID, userID uuid.UUID,
 	}, nil
 }
 
+// InvokeWithEvents is Invoke + step event streaming. It is used by the SSE
+// endpoint so the UI can highlight the active node while the run executes.
+func (s *Service) InvokeWithEvents(ctx context.Context, tenantID, userID uuid.UUID,
+	slug string, inputs map[string]any, dryRun bool, events chan<- StepEvent) (*InvokeResult, error) {
+
+	wf, doc, err := s.loadParsed(ctx, tenantID, slug)
+	if err != nil {
+		return nil, err
+	}
+
+	inputsJSON, err := json.Marshal(orEmptyMap(inputs))
+	if err != nil {
+		return nil, fmt.Errorf("marshal inputs: %w", err)
+	}
+
+	runID, err := s.repo.CreateRun(ctx, Run{
+		TenantID: tenantID, UserID: userID, WorkflowID: wf.ID,
+		VersionAtRun: wf.Version, DryRun: dryRun, Status: "running",
+		Inputs: inputsJSON,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create run: %w", err)
+	}
+
+	s.auditInvokeStart(tenantID, userID, slug, runID, dryRun, inputs)
+
+	started := time.Now()
+	res, _ := s.engine.Execute(ctx, doc, ExecutionInput{
+		Slug: slug, TenantID: tenantID, UserID: userID,
+		Inputs: inputs, DryRun: dryRun,
+		StepEvents: events,
+	})
+	duration := time.Since(started)
+
+	var outputsJSON []byte
+	if res.Outputs != nil {
+		outputsJSON, _ = json.Marshal(res.Outputs)
+	}
+
+	finCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if ferr := s.repo.FinishRun(finCtx, runID, res.Status, outputsJSON, res.Error, int(duration.Milliseconds())); ferr != nil {
+		slog.Warn("workflow: finish run", "run_id", runID, "err", ferr)
+	}
+
+	s.auditInvokeComplete(tenantID, userID, slug, runID, dryRun, res, duration)
+
+	return &InvokeResult{
+		RunID: runID, Status: res.Status, Outputs: res.Outputs,
+		Error: res.Error, Steps: res.Steps, DryRun: dryRun,
+		StartedAt: started, DurationMS: int(duration.Milliseconds()),
+	}, nil
+}
+
 // ListRuns returns the most-recent N runs of a workflow (looked up by slug
 // first so callers don't have to know workflow_id).
 func (s *Service) ListRuns(ctx context.Context, tenantID uuid.UUID, slug string, limit int) ([]Run, error) {
@@ -415,6 +469,11 @@ func (s *Service) loadParsed(ctx context.Context, tenantID uuid.UUID, slug strin
 		return nil, nil, err
 	}
 	return wf, doc, nil
+}
+
+// ParseValidateDSL runs Parse + Validate + slug/id match (same rules as PUT /admin/workflows/:slug).
+func (s *Service) ParseValidateDSL(dsl, slug string) (*WorkflowDoc, error) {
+	return s.parseValidate(dsl, slug)
 }
 
 // parseValidate wraps Parse + Validate; slug is asserted to match doc.ID so

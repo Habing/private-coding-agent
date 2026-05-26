@@ -1,5 +1,46 @@
 # Compose examples
 
+## e2e-mock-chain (P0 validation)
+
+| File | Purpose |
+|------|---------|
+| [`e2e-mock-chain.yaml`](e2e-mock-chain.yaml) | `fetch_status` → 分支 → `record_event` + `echo` |
+
+Prereq: compose `mock-mcp` + PCA `slug=e2e-mock` → Refresh（≥3 tools）。
+
+```bash
+docker compose up -d mock-mcp
+# Admin 注册 http://mock-mcp:8083 → 导入 YAML → publish → invoke
+# inputs: {"scenario":"degraded"} 或 "ok"
+```
+
+See [`docs/NL-WORKFLOW-MCP-VALIDATION.md`](../../../docs/NL-WORKFLOW-MCP-VALIDATION.md).
+
+---
+
+## data-prep MCP (P1 pilot)
+
+| File | Purpose |
+|------|---------|
+| [`data-prep-pipeline.yaml`](data-prep-pipeline.yaml) | Workflow DSL: load → AI denoise → summarize → write |
+| [`examples/mcp-services/data-prep/fixtures/batch.sample.json`](../../../examples/mcp-services/data-prep/fixtures/batch.sample.json) | Sample dirty batch (auto-seeded on first start) |
+
+```bash
+cd deploy/compose
+docker compose up -d --build mcp-data-prep
+curl -fsS http://localhost:8085/healthz
+# Optional: copy more files into the named volume inbox
+# docker cp my.json $(docker compose ps -q mcp-data-prep):/data/inbox/
+```
+
+PCA registration (`slug=data-prep`, `url=http://mcp-data-prep:8085/`, `auth_type=none`) → Refresh tools.
+
+Default **`DATA_PREP_MOCK_LLM=true`** (no API key). Set `LLM_API_KEY` in compose `.env` for real DashScope.
+
+See [`docs/domains/data-prep.md`](../../../docs/domains/data-prep.md) and [`examples/mcp-services/data-prep/README.md`](../../../examples/mcp-services/data-prep/README.md).
+
+---
+
 ## Slack MCP (production sidecar)
 
 | File | Purpose |

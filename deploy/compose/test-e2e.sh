@@ -803,8 +803,8 @@ MID=$(echo "$MCREATE" | jq -r .id)
 MTOOLS=$(echo "$MCREATE" | jq -r '.tools_cache | length')
 [[ -n "$MID" && "$MID" != "null" ]] \
   || { echo "create mcp_server failed: $MCREATE"; exit 1; }
-[[ "$MTOOLS" -ge 1 ]] \
-  || { echo "expected >=1 tool, got $MTOOLS: $MCREATE"; exit 1; }
+[[ "$MTOOLS" -ge 3 ]] \
+  || { echo "expected >=3 tools (echo,fetch_status,record_event), got $MTOOLS: $MCREATE"; exit 1; }
 # auth_token must be redacted (none for this row, but the field is always present)
 MTOK=$(echo "$MCREATE" | jq -r '.auth_token // ""')
 [[ "$MTOK" != "secret" ]] || { echo "auth_token leaked: $MCREATE"; exit 1; }
@@ -822,13 +822,28 @@ INV_TEXT=$(echo "$INV" | jq -r '.output.content[0].text')
 [[ "$INV_TEXT" == "echo: hi" ]] \
   || { echo "invoke output mismatch: $INV"; exit 1; }
 
+# (c2) fetch_status + record_event round-trip (P0 mock tools).
+FSTAT=$(curl -fsS -X POST http://localhost:8080/tools/invoke \
+  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"tool":"mcp.e2e-mock.fetch_status","input":{"scenario":"degraded"}}')
+FSTAT_TEXT=$(echo "$FSTAT" | jq -r '.output.content[0].text')
+[[ "$FSTAT_TEXT" == "degraded" ]] \
+  || { echo "fetch_status mismatch: $FSTAT"; exit 1; }
+REVT=$(curl -fsS -X POST http://localhost:8080/tools/invoke \
+  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"tool":"mcp.e2e-mock.record_event","input":{"kind":"e2e","detail":"test"}}')
+echo "$REVT" | jq -e '.output.content[0].text | fromjson | .recorded == true' >/dev/null \
+  || { echo "record_event mismatch: $REVT"; exit 1; }
+
 # (d) connector catalog must show dev-mock installed with echo tool.
 CAT=$(curl -fsS http://localhost:8080/admin/connectors/catalog \
   -H "Authorization: Bearer $TOK")
 echo "$CAT" | jq -e '.recipes[] | select(.id=="dev-mock" and .installed==true)' >/dev/null \
   || { echo "dev-mock not installed in catalog: $CAT"; exit 1; }
-echo "$CAT" | jq -e '.recipes[] | select(.id=="dev-mock") | .tools[] | select(.=="mcp.e2e-mock.echo")' >/dev/null \
-  || { echo "catalog missing mcp.e2e-mock.echo: $CAT"; exit 1; }
+for TOOL in mcp.e2e-mock.echo mcp.e2e-mock.fetch_status mcp.e2e-mock.record_event; do
+  echo "$CAT" | jq -e --arg t "$TOOL" '.recipes[] | select(.id=="dev-mock") | .tools[] | select(.==$t)' >/dev/null \
+    || { echo "catalog missing $TOOL: $CAT"; exit 1; }
+done
 
 # (e) audit_log must contain mcp.admin.create and mcp.tool.invoke entries.
 RAUD=$(curl -fsS "http://localhost:8080/audit?action=mcp.admin.create&limit=1" \

@@ -17,10 +17,11 @@ type Recipe struct {
 // RecipeStatus is a recipe plus tenant-specific install state.
 type RecipeStatus struct {
 	Recipe
-	Installed bool     `json:"installed"`
-	ServerID  string   `json:"server_id,omitempty"`
-	Enabled   bool     `json:"enabled"`
-	Tools     []string `json:"tools"`
+	Installed   bool     `json:"installed"`
+	ServerID    string   `json:"server_id,omitempty"`
+	Enabled     bool     `json:"enabled"`
+	Tools       []string `json:"tools"`
+	AllowHosts  []string `json:"allow_hosts,omitempty"`
 }
 
 var recipes = []Recipe{
@@ -49,10 +50,14 @@ var recipes = []Recipe{
 	{
 		ID:           "dev-mock",
 		Name:         "开发 Mock MCP",
-		Description:  "Compose 内置 mock-mcp（echo 工具），用于 E2E 与本地验证",
+		Description:  "Compose 内置 mock-mcp（echo / fetch_status / record_event），用于 E2E 与 P0 验证",
 		Kind:         "mcp",
 		MCPSlug:      "e2e-mock",
-		SuggestTools: []string{"mcp.e2e-mock.echo"},
+		SuggestTools: []string{
+			"mcp.e2e-mock.fetch_status",
+			"mcp.e2e-mock.record_event",
+			"mcp.e2e-mock.echo",
+		},
 		SetupURLHint: "http://mock-mcp:8083",
 		DocsPath:     "docs/CONNECTORS.md#dev-mock",
 		AuthType:     "none",
@@ -88,14 +93,14 @@ type ToolView struct {
 }
 
 // BuildCatalog joins static recipes with tenant MCP rows and http.fetch enable flag.
-func BuildCatalog(servers []MCPServerView, httpFetchEnabled bool) []RecipeStatus {
+func BuildCatalog(servers []MCPServerView, httpFetchEnabled bool, httpAllowHosts []string) []RecipeStatus {
 	bySlug := map[string]MCPServerView{}
 	for _, s := range servers {
 		bySlug[s.Slug] = s
 	}
 	out := make([]RecipeStatus, 0, len(recipes))
 	for _, r := range recipes {
-		st := RecipeStatus{Recipe: r}
+		st := RecipeStatus{Recipe: r, Tools: []string{}}
 		switch r.Kind {
 		case "mcp":
 			if srv, ok := bySlug[r.MCPSlug]; ok {
@@ -109,6 +114,7 @@ func BuildCatalog(servers []MCPServerView, httpFetchEnabled bool) []RecipeStatus
 		case "http_fetch":
 			st.Installed = httpFetchEnabled
 			st.Enabled = httpFetchEnabled
+			st.AllowHosts = append([]string(nil), httpAllowHosts...)
 			if httpFetchEnabled {
 				st.Tools = append(st.Tools, "http.fetch")
 			}

@@ -1,6 +1,7 @@
 package connectors_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/yourorg/private-coding-agent/internal/auth"
 	"github.com/yourorg/private-coding-agent/internal/connectors"
+	tools "github.com/yourorg/private-coding-agent/internal/toolbus/tools"
 )
 
 func withClaims(tid, uid uuid.UUID) gin.HandlerFunc {
@@ -30,7 +32,10 @@ func TestCatalogHandler_OK(t *testing.T) {
 	r := gin.New()
 	rg := r.Group("/")
 	rg.Use(withClaims(tid, uuid.New()))
-	connectors.NewAdminHandler(nil, true).Register(rg)
+	fetch := tools.NewHTTPFetch(tools.HTTPFetchConfig{
+		Enabled: true, AllowHosts: []string{"mock-provider"},
+	})
+	connectors.NewAdminHandler(nil, fetch, nil, false).Register(rg)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/connectors/catalog", nil)
 	w := httptest.NewRecorder()
@@ -56,13 +61,50 @@ func TestCatalogHandler_OK(t *testing.T) {
 	require.True(t, httpFetch)
 }
 
+func TestCatalogHandler_ToolsNeverNull(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tid := uuid.New()
+	r := gin.New()
+	rg := r.Group("/")
+	rg.Use(withClaims(tid, uuid.New()))
+	connectors.NewAdminHandler(nil, nil, nil, false).Register(rg)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/connectors/catalog", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NotContains(t, w.Body.String(), `"tools":null`)
+}
+
 func TestCatalogHandler_Unauthorized(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	connectors.NewAdminHandler(nil, false).Register(r.Group("/"))
+	connectors.NewAdminHandler(nil, nil, nil, false).Register(r.Group("/"))
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/connectors/catalog", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestHTTPFetchSettings_UpdateRuntime(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tid := uuid.New()
+	fetch := tools.NewHTTPFetch(tools.HTTPFetchConfig{
+		Enabled: true, AllowHosts: []string{"mock-provider"},
+	})
+	r := gin.New()
+	rg := r.Group("/")
+	rg.Use(withClaims(tid, uuid.New()))
+	connectors.NewAdminHandler(nil, fetch, nil, true).Register(rg)
+
+	body, _ := json.Marshal(map[string]any{
+		"allow_hosts": []string{"*.baidu.com", "top.baidu.com"},
+	})
+	req := httptest.NewRequest(http.MethodPut, "/admin/connectors/http-fetch", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, []string{"*.baidu.com", "top.baidu.com"}, fetch.AllowHosts())
 }

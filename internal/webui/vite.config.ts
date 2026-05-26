@@ -6,9 +6,11 @@ import path from 'node:path'
 const apiPaths = [
   '/auth',
   '/me',
+  '/quota',
   '/sessions',
   '/tools',
   '/agent',
+  '/admin',
   '/v1',
   '/memories',
   '/sandbox',
@@ -45,5 +47,10 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     css: true,
+    server: {
+      deps: {
+        inline: ['@xyflow/react'],
+      },
+    },
   },
 })

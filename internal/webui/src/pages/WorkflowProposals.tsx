@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 
 import { WorkflowGraphMini } from '@/components/WorkflowGraph'
+import { OpenProposalInDesignerButton } from '@/components/workflow/OpenProposalInDesignerButton'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ApiError, api } from '@/lib/api'
@@ -107,29 +108,34 @@ export function WorkflowProposals() {
                       {proposalDryRunLabel(p.dry_run_ok, p.dry_run_error)}
                     </span>
                   </div>
-                  {status === 'pending_approval' && (
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        disabled={approveMut.isPending || !p.dry_run_ok}
-                        onClick={() => approveMut.mutate(p.id)}
-                      >
-                        批准发布
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={rejectMut.isPending}
-                        onClick={() => {
-                          if (window.confirm(`驳回提议「${p.slug}」？`)) {
-                            rejectMut.mutate(p.id)
-                          }
-                        }}
-                      >
-                        驳回
-                      </Button>
-                    </div>
-                  )}
+                  <div className="flex flex-wrap gap-2">
+                    {p.dry_run_ok && (
+                      <OpenProposalInDesignerButton proposalId={p.id} variant="outline" />
+                    )}
+                    {status === 'pending_approval' && (
+                      <>
+                        <Button
+                          size="sm"
+                          disabled={approveMut.isPending || !p.dry_run_ok}
+                          onClick={() => approveMut.mutate(p.id)}
+                        >
+                          批准发布
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={rejectMut.isPending}
+                          onClick={() => {
+                            if (window.confirm(`驳回提议「${p.slug}」？`)) {
+                              rejectMut.mutate(p.id)
+                            }
+                          }}
+                        >
+                          驳回
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
                 {p.dry_run_ok && (
                   <div className="mt-2">

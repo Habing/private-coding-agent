@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,8 +26,18 @@ type HTTPFetchConfig struct {
 	BlockPrivateIPs bool
 }
 
+// HTTPFetch is the server-side http.fetch tool with a runtime-updatable host allowlist.
+type HTTPFetch struct {
+	mu              sync.RWMutex
+	allow           []string
+	timeout         time.Duration
+	maxBody         int64
+	blockPrivateIPs bool
+	client          *http.Client
+}
+
 // NewHTTPFetch registers http.fetch when cfg.Enabled. Returns nil if disabled.
-func NewHTTPFetch(cfg HTTPFetchConfig) toolbus.Tool {
+func NewHTTPFetch(cfg HTTPFetchConfig) *HTTPFetch {
 	if !cfg.Enabled {
 		return nil
 	}
@@ -38,8 +49,8 @@ func NewHTTPFetch(cfg HTTPFetchConfig) toolbus.Tool {
 	if maxBody <= 0 {
 		maxBody = 512 * 1024
 	}
-	return &httpFetch{
-		allow:           cfg.AllowHosts,
+	return &HTTPFetch{
+		allow:           append([]string(nil), cfg.AllowHosts...),
 		timeout:         timeout,
 		maxBody:         maxBody,
 		blockPrivateIPs: cfg.BlockPrivateIPs,
@@ -55,19 +66,30 @@ func NewHTTPFetch(cfg HTTPFetchConfig) toolbus.Tool {
 	}
 }
 
-type httpFetch struct {
-	allow           []string
-	timeout         time.Duration
-	maxBody         int64
-	blockPrivateIPs bool
-	client          *http.Client
+// AllowHosts returns a copy of the current host allowlist.
+func (t *HTTPFetch) AllowHosts() []string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return append([]string(nil), t.allow...)
 }
 
-func (t *httpFetch) Name() string { return "http.fetch" }
-func (t *httpFetch) Description() string {
+// SetAllowHosts replaces the runtime host allowlist.
+func (t *HTTPFetch) SetAllowHosts(hosts []string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.allow = append([]string(nil), hosts...)
+}
+
+// BlockPrivateIPs reports whether SSRF private-IP blocking is enabled.
+func (t *HTTPFetch) BlockPrivateIPs() bool {
+	return t.blockPrivateIPs
+}
+
+func (t *HTTPFetch) Name() string { return "http.fetch" }
+func (t *HTTPFetch) Description() string {
 	return "从 server 侧发起 HTTP 请求并返回响应（沙箱无需出网）。仅允许配置中的 host。"
 }
-func (t *httpFetch) Schema() json.RawMessage {
+func (t *HTTPFetch) Schema() json.RawMessage {
 	return json.RawMessage(`{
         "type":"object",
         "properties":{
@@ -96,7 +118,7 @@ type httpFetchOut struct {
 	URL        string            `json:"url"`
 }
 
-func (t *httpFetch) Invoke(ctx context.Context, _, _ uuid.UUID, input json.RawMessage) (json.RawMessage, error) {
+func (t *HTTPFetch) Invoke(ctx context.Context, _, _ uuid.UUID, input json.RawMessage) (json.RawMessage, error) {
 	var in httpFetchIn
 	if err := json.Unmarshal(input, &in); err != nil {
 		return nil, fmt.Errorf("%w: %v", toolbus.ErrInvalidArguments, err)
@@ -125,7 +147,10 @@ func (t *httpFetch) Invoke(ctx context.Context, _, _ uuid.UUID, input json.RawMe
 	if host == "" {
 		return nil, fmt.Errorf("%w: missing host", toolbus.ErrInvalidArguments)
 	}
-	if !hostAllowed(host, t.allow) {
+	t.mu.RLock()
+	allow := append([]string(nil), t.allow...)
+	t.mu.RUnlock()
+	if !hostAllowed(host, allow) {
 		return nil, fmt.Errorf("%w: host %q not in allowlist", toolbus.ErrInvalidArguments, host)
 	}
 	if t.blockPrivateIPs {

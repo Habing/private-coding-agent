@@ -11,10 +11,11 @@ import (
 
 func TestCatalog_ListHasFiveTemplates(t *testing.T) {
 	list := template.List()
-	require.Len(t, list, 5)
+	require.Len(t, list, 6)
 	ids := template.IDs()
 	require.Contains(t, ids, "llm-summarize-notify")
 	require.Contains(t, ids, "tool-chain")
+	require.Contains(t, ids, "mock-inspect")
 }
 
 func TestRender_AllTemplatesValidate(t *testing.T) {
@@ -76,6 +77,12 @@ func TestRender_AllTemplatesValidate(t *testing.T) {
 						"messages": []map[string]string{{"role": "user", "content": "x"}},
 					}},
 				},
+			},
+		},
+		{
+			id: "mock-inspect",
+			slots: map[string]any{
+				"scenario": "ok", "alert_text": "ALERT", "ok_text": "OK",
 			},
 		},
 	}

@@ -126,6 +126,46 @@ func (s *Service) Adjust(ctx context.Context, kind Kind, tenantID, userID uuid.U
 // The caller compares this to a fresh COUNT(*) from sandbox_sessions.
 func (s *Service) SandboxCap() int { return s.limits.SandboxMaxActive }
 
+// Usage is a point-in-time counter snapshot for one Kind window.
+type Usage struct {
+	Used int
+	Cap  int // 0 when the Kind check is disabled
+}
+
+// GetUsage reads the current window counter without incrementing it.
+func (s *Service) GetUsage(ctx context.Context, kind Kind, tenantID, userID uuid.UUID) (Usage, error) {
+	cap, _, err := s.limitFor(kind)
+	if err != nil {
+		return Usage{}, err
+	}
+	if cap <= 0 {
+		return Usage{Cap: 0}, nil
+	}
+	key := s.windowKey(kind, tenantID, userID)
+	val, err := s.rdb.Get(ctx, key).Int()
+	if err == redis.Nil {
+		return Usage{Used: 0, Cap: cap}, nil
+	}
+	if err != nil {
+		return Usage{}, fmt.Errorf("quota redis get: %w", err)
+	}
+	return Usage{Used: val, Cap: cap}, nil
+}
+
+// NextWindowStartUTC returns when the current fixed window rolls over (UTC).
+func (s *Service) NextWindowStartUTC(kind Kind) (time.Time, error) {
+	now := s.now().UTC()
+	switch kind {
+	case KindLLMTokens:
+		y, m, d := now.Date()
+		return time.Date(y, m, d+1, 0, 0, 0, 0, time.UTC), nil
+	case KindToolInvoke:
+		return now.Truncate(time.Minute).Add(time.Minute), nil
+	default:
+		return time.Time{}, fmt.Errorf("quota: unsupported kind %q", kind)
+	}
+}
+
 func (s *Service) limitFor(kind Kind) (int, time.Duration, error) {
 	switch kind {
 	case KindLLMTokens:

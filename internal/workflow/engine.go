@@ -121,6 +121,21 @@ func (e *Engine) runStep(ctx context.Context, st *runState, s *Step) error {
 			return errMaxSteps
 		}
 	}
+	if st.in.StepEvents != nil {
+		ev := StepEvent{
+			Kind:      "step_start",
+			StepID:    s.ID,
+			StepKind:  s.Kind,
+			Tool:      s.Use,
+			Timestamp: time.Now(),
+		}
+		// Block briefly so SSE/UI can highlight each step; channel is buffered in invokeStream.
+		select {
+		case st.in.StepEvents <- ev:
+		case <-time.After(2 * time.Second):
+			// drop only if receiver is stuck
+		}
+	}
 	ctx, span := tracer.Start(ctx, "workflow.step",
 		trace.WithAttributes(
 			attribute.String("step.id", s.ID),
@@ -131,19 +146,64 @@ func (e *Engine) runStep(ctx context.Context, st *runState, s *Step) error {
 
 	switch s.Kind {
 	case NodeTool:
-		return e.runTool(ctx, st, s)
+		err := e.runTool(ctx, st, s)
+		e.emitStepComplete(st, s, err)
+		return err
 	case NodeAssign:
-		return e.runAssign(st, s)
+		err := e.runAssign(st, s)
+		e.emitStepComplete(st, s, err)
+		return err
 	case NodeIf:
-		return e.runIf(ctx, st, s)
+		err := e.runIf(ctx, st, s)
+		e.emitStepComplete(st, s, err)
+		return err
 	case NodeForeach:
-		return e.runForeach(ctx, st, s)
+		err := e.runForeach(ctx, st, s)
+		e.emitStepComplete(st, s, err)
+		return err
 	case NodeParallel:
-		return e.runParallel(ctx, st, s)
+		err := e.runParallel(ctx, st, s)
+		e.emitStepComplete(st, s, err)
+		return err
 	case NodeWait:
-		return e.runWait(ctx, s)
+		err := e.runWait(ctx, s)
+		e.emitStepComplete(st, s, err)
+		return err
 	default:
-		return fmt.Errorf("step %s: unknown kind %q", s.ID, s.Kind)
+		err := fmt.Errorf("step %s: unknown kind %q", s.ID, s.Kind)
+		e.emitStepComplete(st, s, err)
+		return err
+	}
+}
+
+func (e *Engine) emitStepComplete(st *runState, s *Step, err error) {
+	if st == nil || st.in.StepEvents == nil {
+		return
+	}
+	status := "ok"
+	var msg string
+	if err != nil {
+		status = "error"
+		msg = err.Error()
+	}
+	ev := StepEvent{
+		Kind:      "step_complete",
+		StepID:    s.ID,
+		StepKind:  s.Kind,
+		Tool:      s.Use,
+		Status:    status,
+		Error:     msg,
+		Timestamp: time.Now(),
+	}
+	if err == nil {
+		if r, ok := st.stepResult(s.ID); ok {
+			ev.Output = r.Output
+		}
+	}
+	select {
+	case st.in.StepEvents <- ev:
+	case <-time.After(2 * time.Second):
+		// drop only if receiver is stuck
 	}
 }
 
@@ -444,6 +504,13 @@ func (st *runState) setStepResult(id string, r expr.StepResult) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	st.steps[id] = r
+}
+
+func (st *runState) stepResult(id string) (expr.StepResult, bool) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	r, ok := st.steps[id]
+	return r, ok
 }
 
 // incSteps bumps the leaf-node counter and reports whether the cap was hit.

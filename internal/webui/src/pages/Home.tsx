@@ -1,10 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { CircleHelp } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 
+import { useGuide } from '@/hooks/useGuide'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { ApiError, api } from '@/lib/api'
+import { QUICK_START_STEPS } from '@/lib/featureGuide'
+import { hasSeenWelcomeGuide, markWelcomeGuideSeen } from '@/lib/guideStorage'
+import { formatQuotaErrorMessage } from '@/lib/quotaError'
 import { profileDescription, profileLabel } from '@/lib/profileLabels'
 import { useAuthStore } from '@/stores/auth'
 import type {
@@ -20,10 +25,12 @@ const DEFAULT_PROFILE = 'coding'
 
 export function Home() {
   const navigate = useNavigate()
+  const { openGuide } = useGuide()
   const token = useAuthStore((s) => s.token)
   const clearAuth = useAuthStore((s) => s.clear)
   const queryClient = useQueryClient()
   const [profile, setProfile] = useState(DEFAULT_PROFILE)
+  const [showWelcome, setShowWelcome] = useState(() => !hasSeenWelcomeGuide())
 
   const sessionsQ = useQuery({
     queryKey: ['sessions'],
@@ -50,6 +57,8 @@ export function Home() {
       })
     },
     onSuccess: (sess) => {
+      markWelcomeGuideSeen()
+      setShowWelcome(false)
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
       navigate(`/sessions/${sess.id}`, { replace: true })
     },
@@ -78,8 +87,52 @@ export function Home() {
   const selected = profiles.find((p) => p.name === profile)
   const canCreate = !createMut.isPending && profiles.length > 0
 
+  function dismissWelcome() {
+    markWelcomeGuideSeen()
+    setShowWelcome(false)
+  }
+
+  function openGuideAndDismissWelcome() {
+    dismissWelcome()
+    openGuide()
+  }
+
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-sm">
+    <div className="flex h-full flex-col items-center justify-center gap-4 overflow-y-auto p-6 text-sm">
+      {showWelcome && (
+        <div className="w-full max-w-lg rounded-lg border border-primary/25 bg-primary/5 p-4">
+          <h2 className="text-base font-semibold">欢迎使用 Private Coding Agent</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            这是一个可调用工具、记忆与工作流的私有编程助手。按下面三步即可开始：
+          </p>
+          <ol className="mt-3 space-y-2">
+            {QUICK_START_STEPS.map((step, i) => (
+              <li key={step.title} className="flex gap-2 text-xs">
+                <span
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground"
+                  aria-hidden="true"
+                >
+                  {i + 1}
+                </span>
+                <span>
+                  <span className="font-medium text-foreground">{step.title}</span>
+                  {' — '}
+                  <span className="text-muted-foreground">{step.description}</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button type="button" size="sm" onClick={openGuideAndDismissWelcome}>
+              <CircleHelp className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+              查看完整指引
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={dismissWelcome}>
+              知道了
+            </Button>
+          </div>
+        </div>
+      )}
       <div className="text-muted-foreground">
         {hasSessions
           ? '从左侧选择会话，或新建一个会话'
@@ -118,6 +171,11 @@ export function Home() {
             {createErr}
           </div>
         )}
+        {!showWelcome && (
+          <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs" onClick={openGuide}>
+            不确定各功能做什么？查看使用指引
+          </Button>
+        )}
       </div>
     </div>
   )
@@ -134,11 +192,15 @@ function humanError(e: unknown): string {
       if (j.error === 'quota_exceeded' && j.kind === 'sandbox.active') {
         return '沙箱配额已满：每个租户活跃沙箱上限已达。请先归档闲置会话，或调大 PCA_QUOTA_SANDBOX_MAX_ACTIVE。'
       }
-      if (j.error) return j.detail ? `${j.error}: ${j.detail}` : j.error
+      if (j.error) {
+        const raw = j.detail ? `${j.error}: ${j.detail}` : j.error
+        return formatQuotaErrorMessage(raw)
+      }
       return e.body || e.message
     } catch {
       return e.body || e.message
     }
   }
-  return e instanceof Error ? e.message : String(e)
+  const raw = e instanceof Error ? e.message : String(e)
+  return formatQuotaErrorMessage(raw)
 }

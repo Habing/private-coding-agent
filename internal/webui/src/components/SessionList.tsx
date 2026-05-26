@@ -57,6 +57,8 @@ export function SessionList() {
     },
   })
 
+  const deletingId = deleteMut.isPending ? deleteMut.variables : undefined
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b px-3 py-2">
@@ -75,31 +77,51 @@ export function SessionList() {
         {isLoading && <li className="px-2 py-1 text-xs text-muted-foreground">加载中…</li>}
         {data?.sessions.map((s) => {
           const active = s.id === activeID
+          const isDeleting = deletingId === s.id
           const title = s.title.trim() || '新会话'
           return (
-            <li key={s.id} className="group flex items-center">
+            <li
+              key={s.id}
+              className="group flex items-center"
+              aria-busy={isDeleting || undefined}
+            >
               <Link
                 to={`/sessions/${s.id}`}
                 aria-current={active ? 'page' : undefined}
+                aria-disabled={isDeleting || undefined}
+                tabIndex={isDeleting ? -1 : undefined}
+                onClick={(e) => {
+                  if (isDeleting) e.preventDefault()
+                }}
                 className={cn(
                   'flex-1 truncate rounded-md px-2 py-1.5 text-sm',
                   active
                     ? 'bg-accent font-medium text-accent-foreground'
                     : 'hover:bg-accent/50',
+                  isDeleting && 'pointer-events-none opacity-60',
                 )}
               >
                 {title}
               </Link>
-              <Button
-                size="icon"
-                variant="ghost"
-                aria-label="删除"
-                className="ml-1 h-7 w-7 opacity-0 group-hover:opacity-100"
-                onClick={() => deleteMut.mutate(s.id)}
-                disabled={deleteMut.isPending}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
+              {isDeleting ? (
+                <span
+                  className="ml-1 shrink-0 px-1 text-xs text-muted-foreground"
+                  aria-live="polite"
+                >
+                  删除中…
+                </span>
+              ) : (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  aria-label="删除"
+                  className="ml-1 h-7 w-7 opacity-0 group-hover:opacity-100"
+                  onClick={() => deleteMut.mutate(s.id)}
+                  disabled={deleteMut.isPending}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
             </li>
           )
         })}

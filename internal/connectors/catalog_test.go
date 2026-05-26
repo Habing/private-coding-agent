@@ -12,9 +12,13 @@ func TestBuildCatalog_MCPInstalled(t *testing.T) {
 	cat := connectors.BuildCatalog([]connectors.MCPServerView{
 		{
 			ID: "srv-1", Slug: "e2e-mock", Enabled: true,
-			ToolsCache: []connectors.ToolView{{Name: "echo"}},
+			ToolsCache: []connectors.ToolView{
+				{Name: "echo"},
+				{Name: "fetch_status"},
+				{Name: "record_event"},
+			},
 		},
-	}, false)
+	}, false, nil)
 	var mock, httpRecipe connectors.RecipeStatus
 	for _, r := range cat {
 		switch r.ID {
@@ -26,12 +30,16 @@ func TestBuildCatalog_MCPInstalled(t *testing.T) {
 	}
 	require.True(t, mock.Installed)
 	require.True(t, mock.Enabled)
-	require.Equal(t, []string{"mcp.e2e-mock.echo"}, mock.Tools)
+	require.ElementsMatch(t, []string{
+		"mcp.e2e-mock.echo",
+		"mcp.e2e-mock.fetch_status",
+		"mcp.e2e-mock.record_event",
+	}, mock.Tools)
 	require.False(t, httpRecipe.Installed)
 }
 
 func TestBuildCatalog_HTTPFetchEnabled(t *testing.T) {
-	cat := connectors.BuildCatalog(nil, true)
+	cat := connectors.BuildCatalog(nil, true, []string{"mock-provider", "*.baidu.com"})
 	var httpRecipe connectors.RecipeStatus
 	for _, r := range cat {
 		if r.ID == "http-fetch" {
@@ -40,6 +48,7 @@ func TestBuildCatalog_HTTPFetchEnabled(t *testing.T) {
 	}
 	require.True(t, httpRecipe.Installed)
 	require.Equal(t, []string{"http.fetch"}, httpRecipe.Tools)
+	require.Equal(t, []string{"mock-provider", "*.baidu.com"}, httpRecipe.AllowHosts)
 }
 
 func TestPickNotifyTool(t *testing.T) {

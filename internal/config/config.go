@@ -309,7 +309,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 	applySkillsDefaults(&c.Skills)
-	applySlice13Defaults(&c)
+	applySlice13Defaults(&c, v)
 	applySlice15Defaults(&c)
 	applySlice20Defaults(&c)
 	applySlice21bDefaults(&c)
@@ -445,14 +445,15 @@ func applySlice15Defaults(c *Config) {
 	}
 }
 
-func applySlice13Defaults(c *Config) {
-	if c.Quota.LLMTokensPerDay == 0 {
+func applySlice13Defaults(c *Config, v *viper.Viper) {
+	// 0 disables a quota check; only apply built-in defaults when unset.
+	if !v.IsSet("quota.llm_tokens_per_day") && c.Quota.LLMTokensPerDay == 0 {
 		c.Quota.LLMTokensPerDay = 200000
 	}
-	if c.Quota.SandboxMaxActive == 0 {
+	if !v.IsSet("quota.sandbox_max_active") && c.Quota.SandboxMaxActive == 0 {
 		c.Quota.SandboxMaxActive = 5
 	}
-	if c.Quota.ToolInvokePerMinute == 0 {
+	if !v.IsSet("quota.tool_invoke_per_minute") && c.Quota.ToolInvokePerMinute == 0 {
 		c.Quota.ToolInvokePerMinute = 120
 	}
 	if c.RateLimit.PerMinute == 0 {

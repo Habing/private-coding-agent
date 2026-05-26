@@ -59,6 +59,14 @@ func TestHTTPFetch_DeniesHostNotInAllowlist(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestHTTPFetch_SetAllowHosts(t *testing.T) {
+	tool := tools.NewHTTPFetch(tools.HTTPFetchConfig{
+		Enabled: true, AllowHosts: []string{"a.example.com"},
+	})
+	tool.SetAllowHosts([]string{"*.baidu.com"})
+	require.Equal(t, []string{"*.baidu.com"}, tool.AllowHosts())
+}
+
 func httptestServerHost(t *testing.T, srv *httptest.Server) string {
 	t.Helper()
 	u, err := url.Parse(srv.URL)

@@ -79,6 +79,19 @@ var catalog = []Definition{
 			{Name: "steps", Type: "array", Required: true, Description: "数组项：{id, use, args}"},
 		},
 	},
+	{
+		ID:          "mock-inspect",
+		Name:        "Mock 状态巡检",
+		Description: "P0 验证：e2e-mock 查状态、分支告警或正常 echo（需 slug=e2e-mock）",
+		Slots: []SlotSpec{
+			{Name: "scenario", Type: "string", Required: false, Default: "degraded",
+				Description: "ok | degraded"},
+			{Name: "alert_text", Type: "string", Required: false,
+				Default: "ALERT: system degraded", Description: "异常分支 echo 文案"},
+			{Name: "ok_text", Type: "string", Required: false,
+				Default: "OK: system healthy", Description: "正常分支 echo 文案"},
+		},
+	},
 }
 
 // List returns a copy of the built-in template catalog.

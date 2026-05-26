@@ -14,6 +14,17 @@ export interface MeResponse {
   role: string
 }
 
+export interface LLMTokenQuota {
+  used: number
+  cap: number
+  enabled: boolean
+  resets_at?: string
+}
+
+export interface QuotaResponse {
+  llm_tokens: LLMTokenQuota
+}
+
 export interface Session {
   id: string
   tenant_id: string
@@ -301,6 +312,29 @@ export interface WorkflowInvokeResult {
   duration_ms: number
 }
 
+/** SSE step event from GET /admin/workflows/:slug/invoke/stream */
+export interface WorkflowInvokeStepEvent {
+  kind: 'step_start' | 'step_complete'
+  step_id: string
+  step_kind?: string
+  tool?: string
+  status?: 'ok' | 'error'
+  error?: string
+  output?: unknown
+  ts?: string
+}
+
+export type WorkflowInvokeLiveStepPhase = 'running' | 'ok' | 'error'
+
+export interface WorkflowInvokeLiveStep {
+  stepId: string
+  stepKind?: string
+  tool?: string
+  phase: WorkflowInvokeLiveStepPhase
+  error?: string
+  output?: unknown
+}
+
 export interface WorkflowTriggerRow {
   trigger_id: string
   kind: 'cron' | 'webhook'
@@ -374,6 +408,82 @@ export interface WorkflowProposal {
 
 export interface WorkflowProposalListResponse {
   proposals: WorkflowProposal[]
+}
+
+/** Slice 20 visual editor model */
+export interface WorkflowDesign {
+  id: string
+  name: string
+  description?: string
+  inputs?: WorkflowDesignInput[]
+  steps: WorkflowDesignStep[]
+  outputs?: WorkflowDesignOutput[]
+}
+
+export interface WorkflowDesignInput {
+  name: string
+  type: string
+  default?: unknown
+  label?: string
+  description?: string
+  widget?: string
+  options?: string[]
+}
+
+export interface WorkflowDesignOutput {
+  name: string
+  expr: string
+}
+
+export interface WorkflowDesignStep {
+  id: string
+  kind: 'tool' | 'assign' | 'if' | string
+  tool?: string
+  args?: WorkflowDesignArg[]
+  assignments?: WorkflowDesignAssign[]
+  condition?: WorkflowDesignCondition
+  then?: WorkflowDesignStep[]
+  else?: WorkflowDesignStep[]
+}
+
+export interface WorkflowDesignArg {
+  name: string
+  value: string
+  valueKind: 'literal' | 'expr' | string
+}
+
+export interface WorkflowDesignAssign {
+  var: string
+  expr: string
+  label?: string
+}
+
+export interface WorkflowDesignCondition {
+  left: string
+  op: string
+  right: string
+  rightKind?: string
+}
+
+export interface DesignCompileResponse {
+  dsl_yaml: string
+  warnings?: string[]
+}
+
+export interface DesignDecompileResponse {
+  design: WorkflowDesign
+  warnings?: string[]
+}
+
+export interface ToolSchemaEntry {
+  name: string
+  description: string
+  parameters: Record<string, unknown>
+  mutating: boolean
+}
+
+export interface ToolSchemasResponse {
+  tools: ToolSchemaEntry[]
 }
 
 export type MemoryProposalStatus = 'pending' | 'approved' | 'auto_approved' | 'rejected'
@@ -484,6 +594,13 @@ export interface ConnectorRecipeStatus {
   server_id?: string
   enabled: boolean
   tools: string[]
+  allow_hosts?: string[]
+}
+
+export interface HTTPFetchSettings {
+  enabled: boolean
+  allow_hosts: string[]
+  block_private_ips: boolean
 }
 
 export interface ConnectorCatalogResponse {

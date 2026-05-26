@@ -66,6 +66,11 @@ describe('<WorkflowProposalCard />', () => {
     expect(screen.getByTestId('proposal-mini-graph')).toBeInTheDocument()
   })
 
+  it('shows open in designer button when dry run passed', () => {
+    renderCard('admin')
+    expect(screen.getByRole('button', { name: '在设计器中打开' })).toBeInTheDocument()
+  })
+
   it('shows trigger summary from proposal graph', async () => {
     server.use(
       http.get('/agent/workflow/proposals/p1/graph', () =>

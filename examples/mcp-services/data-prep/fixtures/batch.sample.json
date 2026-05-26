@@ -1,0 +1,7 @@
+{
+  "batch_id": "sample-001",
+  "records": [
+    { "id": "1", "name": "  Alice  ", "email": "alice@EXAMPLE.com ", "note": "ok" },
+    { "id": "2", "name": "bob", "email": "BOB@example.com", "note": "needs review" }
+  ]
+}

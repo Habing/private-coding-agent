@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,6 +12,7 @@ import type {
   ConnectorCatalogResponse,
   ConnectorRecipeStatus,
   CreateMcpServerRequest,
+  HTTPFetchSettings,
   McpServer,
 } from '@/types/api'
 
@@ -27,6 +28,13 @@ export function Connectors() {
     queryKey: ['connector-catalog'],
     queryFn: () => api<ConnectorCatalogResponse>('/admin/connectors/catalog', { token }),
     enabled: !!token,
+  })
+
+  const httpFetchQ = useQuery({
+    queryKey: ['connector-http-fetch'],
+    queryFn: () => api<HTTPFetchSettings>('/admin/connectors/http-fetch', { token }),
+    enabled: !!token,
+    retry: false,
   })
 
   const installMut = useMutation({
@@ -90,9 +98,7 @@ export function Connectors() {
             可在工作流模板的「通知工具」槽位中选择。
           </p>
           <p>
-            HTTP 拉取使用 server 侧 <code className="text-xs">http.fetch</code>（见{' '}
-            <code className="text-xs">config.connectors.http_fetch</code>）。
-            详细部署说明见仓库 <code className="text-xs">docs/CONNECTORS.md</code>。
+            <code className="text-xs">http.fetch</code> 的域名白名单可在下方「HTTP 拉取」卡片中配置（立即生效，重启后仍保留）。
           </p>
           <Link to="/admin/mcp-servers" className="text-primary hover:underline">
             管理 MCP 服务 →
@@ -115,10 +121,24 @@ export function Connectors() {
               <CardContent className="flex flex-col gap-2 text-sm">
                 <p className="text-muted-foreground">{rec.description}</p>
                 <StatusBadge rec={rec} />
-                {rec.tools.length > 0 && (
+                {(rec.tools?.length ?? 0) > 0 && (
                   <p className="font-mono text-xs text-muted-foreground">
-                    工具：{rec.tools.join(', ')}
+                    工具：{(rec.tools ?? []).join(', ')}
                   </p>
+                )}
+                {rec.kind === 'http_fetch' && httpFetchQ.data && (
+                  <HttpFetchAllowlistEditor
+                    settings={httpFetchQ.data}
+                    onError={setError}
+                    onSaved={() => {
+                      setError(null)
+                      qc.invalidateQueries({ queryKey: ['connector-catalog'] })
+                      qc.invalidateQueries({ queryKey: ['connector-http-fetch'] })
+                    }}
+                  />
+                )}
+                {rec.kind === 'http_fetch' && !httpFetchQ.data && httpFetchQ.isError && (
+                  <p className="text-xs text-amber-600">http.fetch 未启用（需在 server 配置中开启）</p>
                 )}
                 {rec.kind === 'mcp' && !rec.installed && (
                   <>
@@ -170,17 +190,83 @@ export function Connectors() {
                     在 MCP 管理中编辑 / 测试
                   </Link>
                 )}
-                {rec.kind === 'http_fetch' && !rec.installed && (
-                  <p className="text-xs text-muted-foreground">
-                    在 server 配置中设置 <code>connectors.http_fetch.enabled: true</code> 并配置{' '}
-                    <code>allow_hosts</code>。
-                  </p>
-                )}
               </CardContent>
             </Card>
           </li>
         ))}
       </ul>
+    </div>
+  )
+}
+
+function HttpFetchAllowlistEditor({
+  settings,
+  onSaved,
+  onError,
+}: {
+  settings: HTTPFetchSettings
+  onSaved: () => void
+  onError: (msg: string | null) => void
+}) {
+  const token = useAuthStore((s) => s.token)
+  const [text, setText] = useState(settings.allow_hosts.join('\n'))
+
+  useEffect(() => {
+    setText(settings.allow_hosts.join('\n'))
+  }, [settings.allow_hosts])
+
+  const saveMut = useMutation({
+    mutationFn: (hosts: string[]) =>
+      api<HTTPFetchSettings>('/admin/connectors/http-fetch', {
+        method: 'PUT',
+        token,
+        body: JSON.stringify({ allow_hosts: hosts }),
+      }),
+    onSuccess: () => onSaved(),
+    onError: (e) => onError(humanError(e)),
+  })
+
+  function parseHosts(): string[] {
+    return text
+      .split(/[\n,]+/)
+      .map((h) => h.trim())
+      .filter(Boolean)
+  }
+
+  function addPreset(host: string) {
+    const set = new Set(parseHosts())
+    set.add(host)
+    setText(Array.from(set).join('\n'))
+  }
+
+  return (
+    <div className="flex flex-col gap-2 border-t pt-2">
+      <Label>域名白名单（每行一个）</Label>
+      <p className="text-xs text-muted-foreground">
+        支持精确域名或 <code>*.example.com</code>。Agent 的 <code>http.fetch</code> 仅可访问列表内 host。
+        {settings.block_private_ips && ' 已启用 SSRF 防护（拒绝内网 IP）。'}
+      </p>
+      <textarea
+        className="min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={'mock-provider\n*.baidu.com\ntop.baidu.com'}
+      />
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" type="button" onClick={() => addPreset('mock-provider')}>
+          + mock-provider
+        </Button>
+        <Button size="sm" variant="outline" type="button" onClick={() => addPreset('*.baidu.com')}>
+          + *.baidu.com
+        </Button>
+      </div>
+      <Button
+        size="sm"
+        disabled={saveMut.isPending || parseHosts().length === 0}
+        onClick={() => saveMut.mutate(parseHosts())}
+      >
+        {saveMut.isPending ? '保存中…' : '保存白名单'}
+      </Button>
     </div>
   )
 }

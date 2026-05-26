@@ -4,6 +4,8 @@ Slice 19a 把高频、步骤稳定的确定性流程从 ReAct 推理里下沉成
 
 适用场景：CI/巡检/发版预检/通知编排等"流程确定、token 浪费在让 LLM 一步步推"的任务。
 
+> **企业落地规划**：以 MCP 工具为节点能力、NL 建流发布为应用层，见 [`MCP-WORKFLOW-PLATFORM-PLAN.md`](MCP-WORKFLOW-PLATFORM-PLAN.md)、[`WORKFLOW-APP-ROADMAP.md`](WORKFLOW-APP-ROADMAP.md)。
+
 ---
 
 ## 1. 一分钟上手
@@ -394,6 +396,21 @@ curl -s -X POST http://localhost:8080/admin/workflows/graph-preview \
   -d '{"dsl_yaml":"id: x\nname: X\nsteps:\n  - id: a\n    assign:\n      v: \"1\"\n"}' \
   | jq '.nodes | length'   # 期望 ≥3（start + a + end）
 ```
+
+### 9.4 可视化设计器（Slice 20 + 21e ✅）
+
+**目标：** 用户 **选工具 + 填表 + 看流程图**；YAML 由 `WorkflowDesign` 编译生成，专家 YAML 在「高级」Tab。
+
+**默认画布：** [Sequential Workflow Designer](https://github.com/nocode-js/sequential-workflow-designer)（`SequentialWorkflowDesignerPane` + `swdAdapter`）。步骤参数在侧栏 `WorkflowDesignStepPanel`（`ArgsForm` / `ExprPicker` / 设置变量 / 条件分支）。概览 Tab 只读流程图为 `WorkflowGraphPreview`（dagre + React Flow，无 Workflow Builder SDK）。
+
+```text
+画布编辑 → WorkflowDesign → POST /admin/workflows/design/compile → dsl_yaml
+试运行 → GET /admin/workflows/:slug/invoke/stream（SSE 步骤事件）
+```
+
+- 设计：[`superpowers/specs/2026-05-25-workflow-visual-editor-design.md`](superpowers/specs/2026-05-25-workflow-visual-editor-design.md)
+- 计划：[`superpowers/plans/2026-05-25-slice-20-workflow-visual-editor.md`](superpowers/plans/2026-05-25-slice-20-workflow-visual-editor.md) · SWD：[`SWD-INTEGRATION-PLAN.md`](SWD-INTEGRATION-PLAN.md)
+- 选型结案：[`WORKFLOW-EDITOR-LIBRARY-EVALUATION.md`](WORKFLOW-EDITOR-LIBRARY-EVALUATION.md)
 
 ---
 

@@ -114,3 +114,36 @@ func TestSandboxCap_Getter(t *testing.T) {
 	svc, _ := newSvc(t, quota.Limits{SandboxMaxActive: 7})
 	require.Equal(t, 7, svc.SandboxCap())
 }
+
+func TestGetUsage_EmptyAndAfterIncr(t *testing.T) {
+	svc, _ := newSvc(t, quota.Limits{LLMTokensPerDay: 1000})
+	ctx := context.Background()
+	tid, uid := uuid.New(), uuid.New()
+
+	u, err := svc.GetUsage(ctx, quota.KindLLMTokens, tid, uid)
+	require.NoError(t, err)
+	require.Equal(t, 0, u.Used)
+	require.Equal(t, 1000, u.Cap)
+
+	require.NoError(t, svc.CheckAndIncr(ctx, quota.KindLLMTokens, tid, uid, 250))
+	u, err = svc.GetUsage(ctx, quota.KindLLMTokens, tid, uid)
+	require.NoError(t, err)
+	require.Equal(t, 250, u.Used)
+}
+
+func TestGetUsage_CapZeroDisabled(t *testing.T) {
+	svc, _ := newSvc(t, quota.Limits{LLMTokensPerDay: 0})
+	u, err := svc.GetUsage(context.Background(), quota.KindLLMTokens, uuid.New(), uuid.New())
+	require.NoError(t, err)
+	require.Equal(t, 0, u.Cap)
+	require.Equal(t, 0, u.Used)
+}
+
+func TestNextWindowStartUTC_LLMDay(t *testing.T) {
+	svc, _ := newSvc(t, quota.Limits{LLMTokensPerDay: 100})
+	t0 := time.Date(2026, 5, 24, 15, 30, 0, 0, time.UTC)
+	svc.SetNowForTest(func() time.Time { return t0 })
+	next, err := svc.NextWindowStartUTC(quota.KindLLMTokens)
+	require.NoError(t, err)
+	require.Equal(t, time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC), next)
+}

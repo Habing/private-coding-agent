@@ -1,10 +1,11 @@
 # Slice 24 — Workflow Triggers Implementation Plan
 
-> **Goal:** 已发布 workflow 支持 **cron + webhook** 自动触发；DSL `triggers:` 段；E2E **76–78**。
+> **状态**：**已完成**（2026-05-26）  
+> **Goal:** 已发布 workflow 支持 **cron + webhook** 自动触发；DSL `triggers:` 段；E2E **76–78**（compose **78/78**）。
 
 **Design:** [`specs/2026-05-24-slice-24-workflow-triggers-design.md`](../specs/2026-05-24-slice-24-workflow-triggers-design.md)
 
-**Depends on:** Slice 19a ✅、19b ✅（模板占位待替换）
+**Depends on:** Slice 19a ✅、19b ✅
 
 **Estimated effort:** 1.5–2 人周
 
@@ -14,21 +15,21 @@
 
 ## Context
 
-19b 模板 `cron-notify` / `webhook-forward` 在 DSL 里写 `trigger_note: "... pending Slice 24"`。用户对话建流后仍只能手动 invoke。Slice 24 补齐 **调度 + HTTP 入口**，复用 `Service.Invoke` 与 `workflow_runs` 落库。
+19b 模板 `cron-notify` / `webhook-forward` 曾用 `trigger_note` 占位；Slice 24 已改为真实 `triggers:` 段，并接入 **调度 + HTTP 入口**（`Service.Invoke` + `workflow_runs`）。
 
 ---
 
 ## Goal（交付清单）
 
-- [ ] `0025_workflow_triggers` migration
-- [ ] DSL `triggers:` parse + validate
-- [ ] `TriggerRepo` + publish/unpublish sync
-- [ ] `TriggerScheduler` 后台 cron
-- [ ] `POST /hooks/workflow/:token` webhook
-- [ ] Admin GET triggers + manual run + rotate-token
-- [ ] 模板 render 真实 triggers
-- [ ] Web UI 触发器摘要 + webhook URL
-- [ ] E2E 76–78；文档 §10
+- [x] `0025_workflow_triggers` migration
+- [x] DSL `triggers:` parse + validate
+- [x] `TriggerRepo` + publish/unpublish sync
+- [x] `TriggerScheduler` 后台 cron
+- [x] `POST /hooks/workflow/:token` webhook
+- [x] Admin GET triggers + manual run + rotate-token
+- [x] 模板 render 真实 triggers（无 `trigger_note` 占位）
+- [x] Web UI 触发器摘要 + webhook URL
+- [x] E2E 76–78；文档 [`WORKFLOW.md`](../../WORKFLOW.md) §10
 
 ---
 
@@ -246,8 +247,8 @@ cd deploy/compose && ./test-e2e.sh             # Task 9
 
 ## Acceptance checklist
 
-- [ ] 发布含 triggers 的 workflow 后 cron 自动产生 `workflow_runs`
-- [ ] Webhook token 可 invoke 且 unpublish 后失效
-- [ ] 审计含 `workflow.trigger.cron` / `workflow.trigger.webhook`
-- [ ] 模板无 `trigger pending Slice 24` 占位
-- [ ] compose E2E **78/78**
+- [x] 发布含 triggers 的 workflow 后 cron 自动产生 `workflow_runs`
+- [x] Webhook token 可 invoke 且 unpublish 后失效
+- [x] 审计含 `workflow.trigger.cron` / `workflow.trigger.webhook`
+- [x] 模板无 `trigger pending Slice 24` 占位
+- [x] compose E2E **78/78**

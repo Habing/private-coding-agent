@@ -9,6 +9,8 @@ Server 侧连接器让 Agent 访问外部系统，**沙箱无需出网**。
 
 Web UI：**连接器**（`/admin/connectors`）展示内置 recipe 与安装状态；工作流模板市场的「通知工具」槽位可从已注册工具中选择。
 
+**双路线规划**：MCP 开发与工作流编排分工见 [`MCP-TOOL-ROADMAP.md`](MCP-TOOL-ROADMAP.md)、[`MCP-WORKFLOW-PLATFORM-PLAN.md`](MCP-WORKFLOW-PLATFORM-PLAN.md)。
+
 ---
 
 ## Slack
@@ -51,13 +53,18 @@ Agent 或工作流步骤使用 `http.fetch`，参数见 ToolBus schema。
 
 ## Dev Mock（Compose E2E）
 
-Compose 内置 `mock-mcp`（`:8083`，工具 `echo`）。
+Compose 内置 `mock-mcp`（`:8083`，P0 三工具）：
+
+| tool | Bus | destructiveHint |
+|------|-----|-----------------|
+| `echo` | `mcp.e2e-mock.echo` | false |
+| `fetch_status` | `mcp.e2e-mock.fetch_status` | false |
+| `record_event` | `mcp.e2e-mock.record_event` | true |
 
 - **slug:** `e2e-mock`
 - **url:** `http://mock-mcp:8083`（server 容器内）
-- Bus 工具名：`mcp.e2e-mock.echo`
 
-E2E step 63 注册该服务并验证 connector catalog 中 **dev-mock** 为已安装。
+E2E step 63 注册该服务并验证 connector catalog 中 **dev-mock** 为已安装。P0 工作流：[`deploy/compose/examples/e2e-mock-chain.yaml`](../deploy/compose/examples/e2e-mock-chain.yaml)。
 
 示例 `cron-notify` 槽位：
 

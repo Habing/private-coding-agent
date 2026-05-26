@@ -61,7 +61,7 @@ providers:
 quota:
   # Per (tenant, user) caps. 0 disables the check entirely.
   # LLM tokens are summed across chat + embeddings, reset at UTC midnight.
-  llm_tokens_per_day: 200000
+  llm_tokens_per_day: 0        # 0 = 关闭 LLM token 日配额检查；生产建议 200000+
   # Active sandboxes per tenant (pending / running / destroying). DB-counted
   # at the create handler — independent of the Redis counters above.
   sandbox_max_active: 5

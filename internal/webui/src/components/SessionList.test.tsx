@@ -112,6 +112,29 @@ describe('<SessionList />', () => {
     await screen.findByText('chat:s-new')
   })
 
+  it('shows deleting indicator while delete is in flight', async () => {
+    let resolveDelete: (() => void) | undefined
+    const deleteDone = new Promise<void>((resolve) => {
+      resolveDelete = resolve
+    })
+    server.use(
+      http.get('/sessions', () => HttpResponse.json({ sessions: seedSessions })),
+      http.delete('/sessions/:id', async () => {
+        await deleteDone
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt('/')
+    const firstRow = (await screen.findByText('First')).closest('li')!
+    await user.click(within(firstRow).getByRole('button', { name: /删除|delete/i }))
+    expect(await within(firstRow).findByText('删除中…')).toBeInTheDocument()
+    resolveDelete!()
+    await waitFor(() => {
+      expect(within(firstRow).queryByText('删除中…')).toBeNull()
+    })
+  })
+
   it('deletes a session and removes it from the list', async () => {
     let listCallCount = 0
     server.use(

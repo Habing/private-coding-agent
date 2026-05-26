@@ -214,9 +214,9 @@ Mock：可用极短 cron + scheduler tick 30s；或 test hook 暴露 `POST /admi
 
 ## 13. 验收
 
-- [ ] DSL parse/validate triggers
-- [ ] Publish/unpublish 同步 DB
-- [ ] Cron scheduler 产生 run + audit
-- [ ] Webhook invoke + rotate token
-- [ ] 模板 cron-notify / webhook-forward 无占位
-- [ ] E2E 76–78 PASS；compose 全量 **78/78**
+- [x] DSL parse/validate triggers
+- [x] Publish/unpublish 同步 DB
+- [x] Cron scheduler 产生 run + audit
+- [x] Webhook invoke + rotate token
+- [x] 模板 cron-notify / webhook-forward 无占位
+- [x] E2E 76–78 PASS；compose 全量 **78/78**

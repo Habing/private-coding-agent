@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
+    "@jsonforms/core": "^3.4.1",
+    "@jsonforms/react": "^3.4.1",
     "@monaco-editor/react": "^4.7.0",
     "@radix-ui/react-label": "^2.1.0",
     "@radix-ui/react-scroll-area": "^1.2.0",
@@ -22,16 +24,23 @@
     "@xyflow/react": "^12.10.2",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
+    "i18next": "^24.2.3",
+    "i18next-browser-languagedetector": "^8.0.5",
+    "immer": "^10.1.1",
     "lucide-react": "^0.453.0",
     "monaco-editor": "^0.52.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-i18next": "^15.4.1",
     "react-markdown": "^9.0.1",
     "react-router-dom": "^6.26.2",
+    "sequential-workflow-designer": "^0.37.3",
+    "sequential-workflow-designer-react": "^0.37.3",
     "tailwind-merge": "^2.5.4",
-    "zustand": "^4.5.5"
+    "zustand": "^5.0.1"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.5.0",
     "@testing-library/react": "^16.0.1",
     "@testing-library/user-event": "^14.5.2",

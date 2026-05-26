@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 
+import { MarkdownContent } from '@/components/MarkdownContent'
 import { ToolCallCard } from '@/components/ToolCallCard'
 import { WorkflowProposalCard } from '@/components/WorkflowProposalCard'
 import { TypingIndicator } from '@/components/TypingIndicator'
@@ -10,6 +11,7 @@ import {
   parseJSONString,
 } from '@/lib/agentEvent'
 import { parseWorkflowProposalFromResult } from '@/lib/workflowProposal'
+import { formatQuotaErrorMessage } from '@/lib/quotaError'
 import { cn } from '@/lib/utils'
 import type { AgentEvent, Message } from '@/types/api'
 
@@ -34,11 +36,11 @@ function AssistantBubble({ text, streaming }: { text: string; streaming?: boolea
     <div className="flex justify-start">
       <div
         className={cn(
-          'max-w-[80%] whitespace-pre-wrap rounded-2xl border bg-card px-3 py-2 text-sm',
+          'max-w-[80%] rounded-2xl border bg-card px-3 py-2 text-sm',
           streaming && 'border-primary/30 shadow-sm',
         )}
       >
-        {text}
+        <MarkdownContent source={text} />
         {streaming && (
           <span
             className="ml-0.5 inline-block h-[1em] w-0.5 animate-pulse bg-primary align-[-0.15em]"
@@ -61,12 +63,13 @@ function SystemBubble({ text }: { text: string }) {
 }
 
 function ErrorBanner({ text }: { text: string }) {
+  const message = formatQuotaErrorMessage(text)
   return (
     <div
       role="alert"
       className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
     >
-      {text}
+      {message}
     </div>
   )
 }

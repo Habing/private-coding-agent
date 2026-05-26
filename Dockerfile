@@ -1,7 +1,7 @@
 # ---- stage 1: web ----
 FROM node:20-alpine AS web
 WORKDIR /web
-COPY internal/webui/package.json internal/webui/package-lock.json ./
+COPY internal/webui/package.json internal/webui/package-lock.json internal/webui/.npmrc ./
 RUN npm ci
 COPY internal/webui/ ./
 RUN npm run build
@@ -17,6 +17,8 @@ RUN go mod download
 COPY . .
 # Drop in the freshly-built front-end so go:embed picks it up.
 COPY --from=web /web/dist ./internal/webui/dist
+# vendor/ may lag go.mod in dev trees; image build uses module cache from go mod download.
+ENV GOFLAGS=-mod=mod
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
 
 FROM alpine:latest

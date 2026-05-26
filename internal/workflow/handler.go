@@ -1,7 +1,11 @@
 package workflow
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -18,6 +22,7 @@ import (
 type AdminHandler struct {
 	svc          *Service
 	maxBodyChars int
+	toolLister   ToolLister
 }
 
 func NewAdminHandler(svc *Service) *AdminHandler {
@@ -28,6 +33,7 @@ func (h *AdminHandler) Register(rg *gin.RouterGroup) {
 	g := rg.Group("/admin/workflows")
 	g.POST("", h.create)
 	g.POST("/graph-preview", h.graphPreview)
+	h.registerDesignRoutes(g)
 	g.GET("", h.list)
 	g.GET("/:slug/graph", h.graph)
 	g.GET("/:slug", h.get)
@@ -36,6 +42,7 @@ func (h *AdminHandler) Register(rg *gin.RouterGroup) {
 	g.POST("/:slug/publish", h.publish)
 	g.POST("/:slug/unpublish", h.unpublish)
 	g.POST("/:slug/invoke", h.invoke)
+	g.GET("/:slug/invoke/stream", h.invokeStream)
 	g.GET("/:slug/runs", h.runs)
 }
 
@@ -239,6 +246,112 @@ func (h *AdminHandler) invoke(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, res)
+}
+
+// invokeStream streams step_start/step_complete events as SSE while the workflow runs.
+// It is intentionally GET + query-string so the browser can use EventSource.
+//
+// Query:
+// - inputs_b64: base64(JSON object)
+// - dry_run: true|1
+func (h *AdminHandler) invokeStream(c *gin.Context) {
+	tid, uid, ok := h.claims(c)
+	if !ok {
+		return
+	}
+
+	var inputs map[string]any
+	if b64 := c.Query("inputs_b64"); b64 != "" {
+		raw, err := base64.StdEncoding.DecodeString(b64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_inputs", "detail": err.Error()})
+			return
+		}
+		if err := json.Unmarshal(raw, &inputs); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_inputs", "detail": err.Error()})
+			return
+		}
+	}
+	if inputs == nil {
+		inputs = map[string]any{}
+	}
+	dryRun := false
+	if v := c.Query("dry_run"); v == "true" || v == "1" {
+		dryRun = true
+	}
+
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+
+	fl, ok := c.Writer.(http.Flusher)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "stream_unsupported"})
+		return
+	}
+
+	events := make(chan StepEvent, 64)
+	done := make(chan *InvokeResult, 1)
+	errCh := make(chan error, 1)
+
+	go func() {
+		res, err := h.svc.InvokeWithEvents(c.Request.Context(), tid, uid, c.Param("slug"), inputs, dryRun, events)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		done <- res
+	}()
+
+	write := func(event string, data any) error {
+		raw, _ := json.Marshal(data)
+		if _, err := io.WriteString(c.Writer, fmt.Sprintf("event: %s\n", event)); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(c.Writer, "data: "); err != nil {
+			return err
+		}
+		if _, err := c.Writer.Write(raw); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(c.Writer, "\n\n"); err != nil {
+			return err
+		}
+		fl.Flush()
+		return nil
+	}
+
+	_ = write("ready", gin.H{"ok": true})
+
+	drainStepEvents := func() {
+		for {
+			select {
+			case ev := <-events:
+				_ = write("step", ev)
+			default:
+				return
+			}
+		}
+	}
+
+	for {
+		select {
+		case <-c.Request.Context().Done():
+			return
+		case err := <-errCh:
+			drainStepEvents()
+			_ = write("error", gin.H{"error": "internal", "detail": err.Error()})
+			return
+		case ev := <-events:
+			_ = write("step", ev)
+		case res := <-done:
+			// Workflow may finish while step events are still buffered; drain before "done".
+			drainStepEvents()
+			_ = write("done", res)
+			return
+		}
+	}
 }
 
 func (h *AdminHandler) runs(c *gin.Context) {

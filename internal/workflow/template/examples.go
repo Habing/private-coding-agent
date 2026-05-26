@@ -56,6 +56,12 @@ func ExampleSlots(templateID string) (map[string]any, error) {
 				},
 			},
 		}, nil
+	case "mock-inspect":
+		return map[string]any{
+			"scenario":   "degraded",
+			"alert_text": "ALERT: system degraded",
+			"ok_text":    "OK: system healthy",
+		}, nil
 	default:
 		return nil, fmt.Errorf("template: unknown id %q", templateID)
 	}

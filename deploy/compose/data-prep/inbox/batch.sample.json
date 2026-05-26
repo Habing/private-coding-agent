@@ -1,0 +1,8 @@
+{
+  "records": [
+    { "id": "1", "name": "Alice", "amount": "100", "note": "ok" },
+    { "id": "1", "name": "Alice duplicate", "amount": "100", "note": "dup" },
+    { "id": "2", "name": "", "amount": "0", "noise": true },
+    { "id": "3", "name": "Bob", "amount": "bad", "note": "needs cleanup" }
+  ]
+}

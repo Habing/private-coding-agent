@@ -43,7 +43,7 @@ func TestProposalHandler_ListTemplates(t *testing.T) {
 		Templates []struct{ ID string `json:"id"` } `json:"templates"`
 	}
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
-	require.Len(t, body.Templates, 5)
+	require.Len(t, body.Templates, 6)
 }
 
 func TestProposalHandler_CreateAndConfirmAdmin(t *testing.T) {

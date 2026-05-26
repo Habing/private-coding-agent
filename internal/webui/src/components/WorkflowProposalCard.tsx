@@ -1,8 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
-
 import { Button } from '@/components/ui/button'
+import { OpenProposalInDesignerButton } from '@/components/workflow/OpenProposalInDesignerButton'
 import { WorkflowGraphMini } from '@/components/WorkflowGraph'
 import { ApiError, api } from '@/lib/api'
 import { isAdmin } from '@/lib/roles'
@@ -111,10 +110,11 @@ export function WorkflowProposalCard({ payload }: WorkflowProposalCardProps) {
               {confirmMut.isPending ? '处理中…' : admin ? '确认发布' : '提交审批'}
             </Button>
           )}
-          {admin && payload.slug && (
-            <Button size="sm" variant="outline" asChild>
-              <Link to="/workflows">在工作流页编辑</Link>
-            </Button>
+          {payload.proposal_id && payload.dry_run_ok && (
+            <OpenProposalInDesignerButton
+              proposalId={payload.proposal_id}
+              variant="outline"
+            />
           )}
         </div>
 

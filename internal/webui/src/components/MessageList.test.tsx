@@ -220,6 +220,18 @@ describe('<MessageList />', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('boom')
   })
 
+  it('renders friendly message for llm token quota errors', () => {
+    const events: AgentEvent[] = [
+      {
+        kind: 'error',
+        error: 'quota exceeded: llm.tokens tenant=x used=221150 cap=200000',
+      },
+    ]
+    renderList({ history: [], events })
+    expect(screen.getByRole('alert')).toHaveTextContent('今日 LLM 用量已达上限')
+    expect(screen.getByRole('alert')).not.toHaveTextContent('quota exceeded')
+  })
+
   it('shows empty placeholder when nothing to render', () => {
     renderList({ history: [], events: [] })
     expect(screen.getByText(/还没有消息/)).toBeInTheDocument()
@@ -240,5 +252,19 @@ describe('<MessageList />', () => {
     renderList({ history: [], events, awaitingReply: true })
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
     expect(screen.getByText('ans')).toBeInTheDocument()
+  })
+
+  it('renders assistant markdown instead of raw syntax', () => {
+    const events: AgentEvent[] = [
+      {
+        kind: 'assistant_message',
+        text: '**bold** and `code`',
+        step: 1,
+      },
+    ]
+    const { container } = renderList({ history: [], events })
+    expect(container.querySelector('strong')).toHaveTextContent('bold')
+    expect(container.querySelector('code')).toHaveTextContent('code')
+    expect(screen.queryByText(/\*\*bold\*\*/)).not.toBeInTheDocument()
   })
 })

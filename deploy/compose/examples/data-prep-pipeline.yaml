@@ -1,0 +1,43 @@
+# Register MCP slug=data-prep (http://mcp-data-prep:8085/) then import/publish this workflow.
+id: data-prep-pipeline
+name: AI 文件数据降噪
+description: 从 inbox 读文件，经 MCP 内 LLM 语义清洗后写入 outbox
+
+inputs:
+  source_file: { type: string }
+  output_file: { type: string }
+  cleaning_instructions:
+    type: string
+    default: "移除无效与重复记录，修正明显格式错误，保持业务字段语义一致"
+
+steps:
+  - id: load
+    use: mcp.data-prep.load_file
+    args:
+      path: ${inputs.source_file}
+      format: json
+
+  - id: denoise
+    use: mcp.data-prep.ai_denoise_records
+    args:
+      records: ${steps.load.output.records}
+      instructions: ${inputs.cleaning_instructions}
+
+  - id: summary
+    use: mcp.data-prep.summarize_run
+    args:
+      before: ${steps.load.output.records}
+      after: ${steps.denoise.output.records}
+      changelog: ${steps.denoise.output.changelog}
+
+  - id: write
+    use: mcp.data-prep.write_file
+    args:
+      path: ${inputs.output_file}
+      records: ${steps.denoise.output.records}
+      format: json
+
+outputs:
+  output_file: ${inputs.output_file}
+  stats: ${steps.summary.output}
+  changelog: ${steps.denoise.output.changelog}

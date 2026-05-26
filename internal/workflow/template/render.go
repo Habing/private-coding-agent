@@ -41,6 +41,8 @@ func Render(templateID string, in RenderInput) (string, error) {
 		doc, err = renderLLMSummarizeNotify(in, slots)
 	case "tool-chain":
 		doc, err = renderToolChain(in, slots)
+	case "mock-inspect":
+		doc, err = renderMockInspect(in, slots)
 	default:
 		return "", fmt.Errorf("template: no renderer for %q", templateID)
 	}
@@ -87,6 +89,9 @@ type yamlStep struct {
 	Use     string            `yaml:"use,omitempty"`
 	Args    map[string]any    `yaml:"args,omitempty"`
 	Assign  map[string]string `yaml:"assign,omitempty"`
+	If      string            `yaml:"if,omitempty"`
+	Then    []yamlStep        `yaml:"then,omitempty"`
+	Else    []yamlStep        `yaml:"else,omitempty"`
 	Timeout string            `yaml:"timeout,omitempty"`
 	OnError string            `yaml:"on_error,omitempty"`
 }
@@ -178,6 +183,59 @@ func renderLLMSummarizeNotify(in RenderInput, slots map[string]any) (yamlDoc, er
 			{ID: "notify", Use: tool, Args: args, OnError: "fail"},
 		},
 		Outputs: map[string]string{"summary": "${vars.summary}"},
+	}, nil
+}
+
+func renderMockInspect(in RenderInput, slots map[string]any) (yamlDoc, error) {
+	scenario := slotString(slots, "scenario")
+	if scenario == "" {
+		scenario = "degraded"
+	}
+	alert := slotString(slots, "alert_text")
+	if alert == "" {
+		alert = "ALERT: system degraded"
+	}
+	okText := slotString(slots, "ok_text")
+	if okText == "" {
+		okText = "OK: system healthy"
+	}
+	return yamlDoc{
+		ID: in.Slug, Name: in.Name, Description: in.Description,
+		Inputs: map[string]yamlInput{
+			"scenario": {Type: "string", Default: scenario},
+		},
+		Steps: []yamlStep{
+			{
+				ID: "status", Use: "mcp.e2e-mock.fetch_status",
+				Args: map[string]any{"scenario": "${inputs.scenario}"},
+			},
+			{
+				ID: "pick",
+				Assign: map[string]string{
+					"health": "${steps.status.output.content.0.text}",
+				},
+			},
+			{
+				ID:   "gate",
+				If:   "${vars.health == \"degraded\"}",
+				Then: []yamlStep{
+					{
+						ID: "record", Use: "mcp.e2e-mock.record_event",
+						Args: map[string]any{
+							"kind": "inspect", "detail": "${vars.health}",
+						},
+					},
+					{ID: "alert", Use: "mcp.e2e-mock.echo", Args: map[string]any{"text": alert}},
+				},
+				Else: []yamlStep{
+					{ID: "ok_msg", Use: "mcp.e2e-mock.echo", Args: map[string]any{"text": okText}},
+				},
+			},
+		},
+		Outputs: map[string]string{
+			"health": "${vars.health}",
+			"branch": "${vars.health}",
+		},
 	}, nil
 }
 

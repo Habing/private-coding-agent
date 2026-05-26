@@ -1,0 +1,42 @@
+# P0 validation workflow — requires MCP slug=e2e-mock (mock-mcp:8083) with 3 tools.
+id: e2e-mock-chain
+name: Mock 状态巡检
+description: 查询 mock 状态；异常时记录事件并 echo 告警，否则 echo 正常
+
+inputs:
+  scenario:
+    type: string
+    default: degraded
+    description: "ok | degraded — 传给 fetch_status"
+
+steps:
+  - id: status
+    use: mcp.e2e-mock.fetch_status
+    args:
+      scenario: ${inputs.scenario}
+
+  - id: pick
+    assign:
+      health: ${steps.status.output.content.0.text}
+
+  - id: gate
+    if: ${vars.health == "degraded"}
+    then:
+      - id: record
+        use: mcp.e2e-mock.record_event
+        args:
+          kind: inspect
+          detail: ${vars.health}
+      - id: alert
+        use: mcp.e2e-mock.echo
+        args:
+          text: "ALERT: system degraded"
+    else:
+      - id: ok_msg
+        use: mcp.e2e-mock.echo
+        args:
+          text: "OK: system healthy"
+
+outputs:
+  health: ${vars.health}
+  branch: ${vars.health}

@@ -1,3 +1,56 @@
+@import 'sequential-workflow-designer/css/designer.css';
+@import 'sequential-workflow-designer/css/designer-light.css';
+@import 'sequential-workflow-designer/css/designer-dark.css';
+
+/* Dagre + React Flow graph preview (概览 / 提案，只读) */
+.workflow-graph-preview .react-flow {
+  height: 100% !important;
+  width: 100% !important;
+}
+
+.workflow-graph-preview .react-flow__node {
+  font-family: inherit;
+}
+
+/* Sequential Workflow Designer */
+.swd-embed {
+  isolation: isolate;
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.swd-embed .sqd-designer-react {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.swd-embed .sqd-designer {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+}
+
+.swd-embed .sqd-toolbox {
+  width: 168px;
+}
+
+.swd-embed .sqd-toolbox-body {
+  max-height: min(420px, calc(100% - 48px));
+}
+
+.swd-embed .sqd-scrollbox {
+  min-height: 140px;
+}
+
+.swd-embed .sqd-toolbox-group-title,
+.swd-embed .sqd-toolbox-item {
+  visibility: visible;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

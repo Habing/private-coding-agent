@@ -100,6 +100,19 @@ type StepResult struct {
 	Error  string `json:"error,omitempty"`
 }
 
+// StepEvent is an optional streaming hook emitted by Engine while a workflow
+// executes. It is not persisted; callers can use it to drive UI highlights.
+type StepEvent struct {
+	Kind      string    `json:"kind"` // step_start | step_complete
+	StepID    string    `json:"step_id"`
+	StepKind  NodeKind  `json:"step_kind,omitempty"`
+	Tool      string    `json:"tool,omitempty"`
+	Status    string    `json:"status,omitempty"` // ok | error (for step_complete)
+	Error     string    `json:"error,omitempty"`
+	Output    any       `json:"output,omitempty"` // set on step_complete when ok
+	Timestamp time.Time `json:"ts"`
+}
+
 // ExecutionInput packages everything Engine.Execute needs in one struct so the
 // signature stays stable as fields accrue (e.g. tracer attributes).
 type ExecutionInput struct {
@@ -108,6 +121,10 @@ type ExecutionInput struct {
 	UserID   uuid.UUID
 	Inputs   map[string]any
 	DryRun   bool
+	// StepEvents, when non-nil, receives step_start/step_complete events.
+	// The engine will not block indefinitely; if the receiver is slow, events
+	// may be dropped.
+	StepEvents chan<- StepEvent
 }
 
 // ExecutionResult is what Engine.Execute returns; Service.Invoke persists most
